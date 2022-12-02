@@ -8,7 +8,7 @@ option(laps_BUILD_TESTS "Build Tests laps" OFF)
 
 # Define the project name and version
 project(laps
-        VERSION 0.0.1
+        VERSION 0.0.2
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 

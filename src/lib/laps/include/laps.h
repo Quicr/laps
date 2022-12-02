@@ -14,7 +14,7 @@
 std::string lapsVersion();
 
 const uint16_t lapsDefaultPort = 33434;
-const uint16_t slowerMTU = 1500;
+const uint16_t slowerMTU = 9000;
 
 typedef struct {
   socklen_t addrLen;

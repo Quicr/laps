@@ -23,69 +23,42 @@
 int main(int argc, char* argv[]) {
   if ( ( argc != 2 ) && (  argc != 3 ) ) {
     std::string lapsVer = lapsVersion();
-    std::cerr << "Relay address and port set in SLOWR_RELAY and SLOWR_PORT env variables as well as SLOWR_ORG" << std::endl; 
-    std::cerr << "Usage PUB: slowTest <team>/<channel>/<device/<message> pubData" << std::endl; 
-    std::cerr << "Usage SUB: slowTest <team>/<channel>/<device/<message>" << std::endl; 
-    std::cerr << "Usage SUB: slowTest <team>/<channel>/<device>" << std::endl;
-    std::cerr << "Usage SUB: slowTest <team>/<channel>" << std::endl;
+    std::cerr << "Relay address and port set in LAPS_RELAY and LAPS_PORT env variables as well as LAPS_ORG" << std::endl;
     std::cerr <<  std::endl; 
-    std::cerr << "Usage PUB: slowTest FF0001 pubData" << std::endl; 
-    std::cerr << "Usage SUB: slowTest FF0000:16" << std::endl;
-    std::cerr << "slowTest lib version " << lapsVer << std::endl;
+    std::cerr << "Usage PUB: lapsTest FF0001 pubData" << std::endl; 
+    std::cerr << "Usage SUB: lapsTest FF0000:16" << std::endl;
+    std::cerr << "lapsTest lib version " << lapsVer << std::endl;
     exit(-1);
   }
   
-  char* relayName =  getenv( "SLOWR_RELAY" );
+  char* relayName =  getenv( "LAPS_RELAY" );
   if ( !relayName ) {
-    static  char defaultRelay[]  = "relay.us-east-2.qmsg.ctgpoc.com ";
+    static  char defaultRelay[]  = "relay.us-east-2.media10x.ctgpoc.com ";
     relayName = defaultRelay;
   }
    
   uint32_t org = 1;
-  char* orgVar = getenv( "SLOWR_ORG" ); 
+  char* orgVar = getenv( "LAPS_ORG" ); 
   if ( orgVar ) {
     org = atoi( orgVar );
   }
 
-  int port = 5004;
-  char* portVar = getenv( "SLOWR_PORT" ); 
+  int port = 33434;
+  char* portVar = getenv( "LAPS_PORT" ); 
   if ( portVar ) {
     port = atoi( portVar );
   }
 
   std::string nameString( argv[1] );
-  MsgShortName shortName;
-  int len=58; // Start length after org
+	MsgShortName msn { 0 };
 
-  try {
-    if ( nameString.find('/') != std::string::npos ) {
-      uint32_t team=1;
-      uint32_t channel=1;
-      uint32_t device=0;
-      uint32_t msgID=0;
+	int len = 0;
 
-      team    = std::stoul( nameString.substr(0,  nameString.find('/') ), nullptr, 16);
-      nameString.erase( 0, nameString.find('/') );
+	try {
 
-      channel = std::stoul( nameString.substr(1,  nameString.find('/',1) ), nullptr, 16);
-      nameString.erase( 0, nameString.find('/',1) );
-
-      len += 30;
-
-      if ( nameString.length() > 0 ) {
-        device  = std::stoul( nameString.substr(1,  nameString.find('/',1) ), nullptr, 16);
-        nameString.erase( 0, nameString.find('/',1) );
-        len += 20;
-        
-        if ( nameString.length() > 0 ) {
-          msgID   = std::stoul( nameString.substr(1,  nameString.length() ), nullptr, 16);
-          nameString.erase( 0, nameString.length() );
-          len += 20;
-        }
-      }
-      
-      Name nameObj( NamePath::message, org, team, channel, device , msgID );
-      shortName = nameObj.shortName();
+		int pos = 0;
+		for (int i=0; i < strlen(argv[1]); i+=2) {
+			msn.data[pos++] = std::stoul( nameString.substr(i, 2 ), nullptr, 16);
     }
 
   } catch ( ... ) {
@@ -93,9 +66,7 @@ int main(int argc, char* argv[]) {
     exit (1);
   }
  
-  std::cerr << "Name=" << Name( shortName ).shortString()
-            << " " <<  Name( shortName ).longString()
-            << " length: " << len
+  std::cerr << "Name = " << Name( msn ).shortString()
             << std::endl;
   
     
@@ -125,16 +96,16 @@ int main(int argc, char* argv[]) {
   if ( data.size() > 0  ) {
     // do publish
     std::clog << "PUB to "
-              <<  Name( shortName ).shortString()
+              <<  Name( msn ).shortString()
               << " aka "
-              << Name( shortName ).longString()
+              << Name( msn ).longString()
               << std::endl;
     MsgHeaderMetrics metrics = {0};
 
     metrics.pub_millis = std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::system_clock::now().time_since_epoch() ).count();
 
 
-    err = slowerPub( slower,  shortName,  (char*)data.data() , data.size(), NULL, &metrics);
+    err = slowerPub( slower,  msn,  (char*)data.data() , data.size(), NULL, &metrics);
     assert( err == 0 );
 
      while ( true ) {
@@ -144,7 +115,7 @@ int main(int argc, char* argv[]) {
       MsgShortName recvName;
       err = slowerRecvAck( slower, &recvName );
       assert( err == 0 );
-      if ( recvName == shortName ) {
+      if ( recvName == msn ) {
         std::clog << "   Got ACK for " << Name( recvName ).longString() << std::endl;
         break;
       }
@@ -153,12 +124,12 @@ int main(int argc, char* argv[]) {
   else {
     // do subscribe 
     std::clog << "SUB to "
-              <<  Name( shortName ).shortString() << ":" << len
+              <<  Name( msn ).shortString() << ":" << len
               << " aka "
-              << Name( shortName ).longString()   << ":" << len
+              << Name( msn ).longString()   << ":" << len
               << std::endl;
 
-    err = slowerSub( slower,  shortName, len  );
+    err = slowerSub( slower,  msn, len  );
     assert( err == 0 );
 
     while ( true ) {
@@ -203,7 +174,7 @@ int main(int argc, char* argv[]) {
       }
     }
     
-    err = slowerUnSub( slower, shortName, len);
+    err = slowerUnSub( slower, msn, len);
     assert( err == 0 );
   }
     

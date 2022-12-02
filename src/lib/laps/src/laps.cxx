@@ -1,5 +1,4 @@
 
-#include <arpa/inet.h>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -18,6 +17,7 @@
 #ifdef __linux__
 #include <net/ethernet.h>
 #include <netpacket/packet.h>
+#include <arpa/inet.h>
 #else
 #include <net/if_dl.h>
 #endif
@@ -63,7 +63,7 @@ bool operator!=(const MsgShortName& a, const MsgShortName& b ){
 }
 
 std::string getMsgShortNameHexString(const u_char *data) {
-  char hexStr[37];
+  char hexStr[37] = {0};
   char *hexStrPtr = hexStr;
 
   for (int i=0; i < MSG_SHORT_NAME_LEN; i++) {
@@ -71,7 +71,8 @@ std::string getMsgShortNameHexString(const u_char *data) {
       *hexStrPtr++ = '-';
     }
 
-    sprintf(hexStrPtr, "%02X", data[i]);
+    snprintf(hexStrPtr, 3, "%02X", data[i]);
+	  //printf("i = %d hex: %s data: %02X\n", i, hexStr, data[i]);
     hexStrPtr += 2;
   }
 

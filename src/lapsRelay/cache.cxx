@@ -3,47 +3,85 @@
 #include <iostream>
 #include <cstring>
 
+#include "Logger.h"
 #include "cache.h"
+#include "name.h"
 
+
+Cache::Cache(Logger *logPtr) {
+	logger = logPtr;
+
+
+	// TODO: Add config for buffers
+	CacheMaxBuffers = 10;
+	CacheMapCapacity = 200000;
+
+	// Current buffer starts at zero
+	cacheBufferPos = 0;
+
+	// initialize the buffers
+	for (int i=0; i <= CacheMaxBuffers; i++) {
+		cacheBuffer[i].clear();
+	}
+
+}
 
 void Cache::put(const MsgShortName& name, const std::vector<uint8_t>& data ) {
-  assert( data.size() > 0 );
 
-  std::vector<uint8_t>* vec = new std::vector<uint8_t>( data );
+	// Move to next buffer if current buffer is at capacity
+	if (cacheBuffer[cacheBufferPos].size() >= CacheMapCapacity) {
+		LOG_INFO("Current buffer %d full, moving to next buffer", cacheBufferPos);
+		cacheBufferPos++;
 
-  std::pair<MsgShortName, std::vector<uint8_t>* > pair;
-  pair = make_pair( name, vec );
+		// Wrap the buffer position if at the end
+		if (cacheBufferPos >= CacheMaxBuffers) {
+			LOG_INFO("Buffer wrapped");
+			cacheBufferPos = 0;
+		}
 
-  dataCache.insert( pair );
+		// Clear the previous buffer cache if it is not empty
+		if (cacheBuffer[cacheBufferPos].size() > 0) {
+			LOG_INFO("Clearing oldest buffer");
+			cacheBuffer[cacheBufferPos].clear();
+		}
+	}
 
-  // Prune the cache if needed
-  if (dataCache.size() > 1000000) {
-        dataCache.erase(std::next(dataCache.begin(), 1), std::next(dataCache.begin(), 40000));
-  }
-
+	cacheBuffer[cacheBufferPos].emplace(name, data);
 }
 
 
 const std::vector<uint8_t>* Cache::get( const MsgShortName& name ) const {
-  auto mapPtr = dataCache.find( name );
-  if ( mapPtr == dataCache.end() ) {
-    return &emptyVec;
-  }
 
-  const std::vector<uint8_t>* vecP =  mapPtr->second;
-  assert( vecP );
-  assert( vecP->size() > 0 );
+	// Check all buffers as if they are one
+	for (int i = 0; i <= CacheMaxBuffers; i++) {
+		auto mapPtr = cacheBuffer.at(i).find(name);
 
-  return  vecP;
+		if ( mapPtr != cacheBuffer.at(i).end() ) {
+			// Return found data
+			return &mapPtr->second;
+		}
+	}
+
+	return &emptyVec;
 }
 
 
 bool Cache::exists(  const MsgShortName& name ) const {
-  auto mapPtr = dataCache.find( name );
-  if ( mapPtr == dataCache.end() ) {
-    return false;
-  }
-  return true; 
+
+	// Check all buffers as if they are one
+	for (int i = 0; i <= CacheMaxBuffers; i++) {
+		auto mapPtr = cacheBuffer.at(i).find(name);
+
+		Name name = Name(const_cast<MsgShortName&>(mapPtr->first));
+
+		if ( mapPtr != cacheBuffer.at(i).end() ) {
+			// Return found data
+			return true;
+		}
+
+	}
+
+  return false;
 }
 
 
@@ -74,27 +112,25 @@ std::list<MsgShortName> Cache::find(const MsgShortName& name, const int len ) co
     endName.data[sig_bytes] = 0xff;
   }
 
-  auto start = dataCache.lower_bound( startName );
-  auto end = dataCache.upper_bound( endName );
-  
-  for ( auto it = start; it != end; it++ ) {
-    MsgShortName dataName = it->first;
+	// Check all buffers as if they are one
+	for (int i = 0; i <= CacheMaxBuffers; i++) {
+		auto start = cacheBuffer.at(i).lower_bound(startName);
+		auto end = cacheBuffer.at(i).upper_bound(endName);
 
-    assert( it->second );
-    assert( it->second->size() > 0 );
-    
-    ret.push_back( dataName );
-  }
+		for (auto it = start; it != end; it++) {
+			MsgShortName dataName = it->first;
+
+			ret.push_back(dataName);
+		}
+	}
   
   return ret;
 }
 
-
 Cache::~Cache(){
-  for( auto it =  dataCache.begin(); it != dataCache.end(); it++ ) {
-    assert( it->second );
-    delete it->second;
-    dataCache.erase( it );
+  for( auto it =  cacheBuffer.begin(); it != cacheBuffer.end(); it++ ) {
+    it->second.clear();
   }
-  dataCache.clear();
+
+	cacheBuffer.clear();
 }

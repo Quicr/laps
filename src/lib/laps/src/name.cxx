@@ -11,7 +11,6 @@
 
 Name::Name(MsgShortName &n) {
     name.msgShortName = n;
-    //std::memcpy(name.data, n.data,sizeof(name.data));
 };
 
 Name::Name(NamePath path, uint32_t org, uint32_t team, uint16_t channel,

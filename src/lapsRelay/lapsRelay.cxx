@@ -3,26 +3,41 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <cstdlib>
-#include <cstring>
 #include <iostream>
-#include <netdb.h>
 #include <sstream>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <laps.h>
 #include <name.h>
 
 #include "subscription.h"
 #include "cache.h"
+#include "Logger.h"
 
+static Logger *logger;                              // Local source logger reference
+
+bool initLogger() {
+	try {
+		logger = new Logger(NULL, NULL);
+	} catch (char const *str) {
+		std::cout << "Failed to open log file for read/write : " << str << std::endl;
+		return true;
+	}
+
+	// Set up defaults for logging
+	logger->setWidthFilename(15);
+	logger->setWidthFunction(18);
+
+	if (getenv( "LAPS_DEBUG" ))
+		logger->enableDebug();
+
+	return false;
+}
 
 int main(int argc, char* argv[]) {
-  std::clog << "Starting LAPS Relay (laps version " << lapsVersion() << ")" << std::endl;
+	initLogger();
+
+  LOG_INFO("Starting LAPS Relay (version %s)", lapsVersion().c_str());
   SlowerConnection slower;
 
   int port = lapsDefaultPort;
@@ -40,9 +55,10 @@ int main(int argc, char* argv[]) {
      SlowerRemote relay;
      err = slowerRemote( relay , argv[i] );
      if ( err ) {
-       std::cerr << "Could not lookup IP address for relay: " << argv[i]  << std::endl;
+       LOG_ERR("Could not lookup IP address for relay: %s", argv[i]);
+
      } else {
-       std::clog << "Using relay at " << inet_ntoa( relay.addr.sin_addr)  << ":" <<  ntohs(relay.addr.sin_port) << std::endl;
+			 LOG_INFO("Using relay at %s:%d", inet_ntoa( relay.addr.sin_addr), ntohs(relay.addr.sin_port));
        relays.push_back( relay );
      }
   }
@@ -62,9 +78,9 @@ int main(int argc, char* argv[]) {
       SlowerRemote relay;
       err = slowerRemote( relay , (char*)r.c_str(), port );
       if ( err ) {
-        std::cerr << "Could not lookup IP address for relay: " << r  << std::endl;
+        LOG_ERR("Could not lookup IP address for relay: %s", r.c_str());
       } else {
-        std::clog << "Using relay at " << inet_ntoa( relay.addr.sin_addr)  << ":" <<  ntohs(relay.addr.sin_port) << std::endl;
+        LOG_INFO("Using relay at %s: %d", inet_ntoa( relay.addr.sin_addr), ntohs(relay.addr.sin_port));
         relays.push_back( relay );
       }
     }
@@ -73,7 +89,7 @@ int main(int argc, char* argv[]) {
 
   // ========== MAIN Loop ==============
   Subscriptions subscribeList;
-  Cache cache;
+  Cache cache(logger);
 
   while (true ) {
     //std::cerr << "Waiting ... ";
@@ -91,7 +107,7 @@ int main(int argc, char* argv[]) {
     err=slowerRecvMulti(  slower, &mhdr, &remote, &len,  buf, sizeof(buf), &bufLen, &metrics );
 
     if (err != 0) {
-      std::clog << "Error reading message" << std::endl;
+      LOG_WARN("Error reading message");
       continue;
     }
 
@@ -100,12 +116,11 @@ int main(int argc, char* argv[]) {
       bool duplicate = cache.exists( mhdr.name );
 
       if (duplicate) {
-        std::clog << "Got "
-                  << (duplicate ? "dup " : "")
-                  << "PUB " << Name(mhdr.name).longString()
-                  << " from " << inet_ntoa(remote.addr.sin_addr)
-                  << ":" << ntohs(remote.addr.sin_port)
-                  << std::endl;
+        LOG_INFO("Got %s PUB %s from %s:%d",
+								 (duplicate ? "dup " : ""),
+								 Name(mhdr.name).longString().c_str(),
+								 inet_ntoa(remote.addr.sin_addr),
+								 ntohs(remote.addr.sin_port));
       }
 
       err = slowerAck( slower, mhdr.name, &remote );
@@ -157,11 +172,13 @@ int main(int argc, char* argv[]) {
 
     // ============ SUBSCRIBE ==================
     if ( mhdr.type == SlowerMsgSub  ) {
-      std::clog << "Got SUB" 
-                << " for " << Name(mhdr.name).longString()  << " " << len
-                << " from " << inet_ntoa( remote.addr.sin_addr) << ":" <<  ntohs( remote.addr.sin_port )
-                << " shortname: " << getMsgShortNameHexString(mhdr.name.data)
-                << std::endl;
+      LOG_INFO("Got SUB for %s/%d from %s:%d shortname: %s",
+               Name(mhdr.name).longString().c_str(),
+							 len,
+							 inet_ntoa( remote.addr.sin_addr),
+							 ntohs( remote.addr.sin_port ),
+							 getMsgShortNameHexString(mhdr.name.data).c_str());
+
       subscribeList.add( mhdr.name, len, remote );
 
       // TODO: change if and what we send from cache
@@ -186,10 +203,12 @@ int main(int argc, char* argv[]) {
 
     // ============== Un SUBSCRIBE ===========
     if ( mhdr.type == SlowerMsgUnSub  ) {
-       std::clog << "Got UnSUB" 
-                 << " for " <<  Name(mhdr.name).longString() << "*" << len
-                 << " from " << inet_ntoa( remote.addr.sin_addr) << ":" <<  ntohs( remote.addr.sin_port )
-                 << std::endl;
+			LOG_INFO("Got UnSUB for %s/%d from %s:%d",
+			         Name(mhdr.name).longString().c_str(),
+							 len,
+							 inet_ntoa( remote.addr.sin_addr),
+							 ntohs( remote.addr.sin_port ));
+
        subscribeList.remove( mhdr.name, len, remote );
     }  
   }

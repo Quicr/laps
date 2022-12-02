@@ -1,6 +1,21 @@
 # Latency Aware Publish Subscriber (laps)
 
+## Development
+
+### Version
+Version is defined in [CMakeLists.txt](CMakeLists.txt) under the **project** command for ```laps```.
+In code, the ```version_config.h``` file is generated. Each binary, library and docker container tag will have
+this version. 
+
+The last octet of the version should be incremented on any change, unless it's the first version (zero) of a
+```major.minor``` change. 
+
 ## Build
+
+> **MacOS** command line tools are required. If you get errors on a Mac, run the below.
+```
+xcode-select --install
+```
 
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPROJECT_NAME=laps-relay
@@ -42,7 +57,8 @@ docker run --rm -p '33434:33434/udp` -it laps-amd64:latest
 ### Build - amd64
 
 ```
-DOCKER_TAG=$(git rev-list --count HEAD)
+#DOCKER_TAG=$(git rev-list --count HEAD)
+DOCKER_TAG=$(egrep "[ \t]+VERSION[ ]+[0-9]+\.[0-9]+\.[0-9]+" CMakeLists.txt | head -1 | sed -r 's/[ \t]+VERSION[ \t]+([0-9]+\.[0-9]+\.[0-9]+)/\1/')
 docker buildx build --progress=plain \
         --output type=docker --platform linux/amd64 \
         -f Dockerfile -t quicr/laps-relay:${DOCKER_TAG}-amd64 .   
@@ -50,7 +66,9 @@ docker buildx build --progress=plain \
 
 ### Tag the image
 ```
-DOCKER_TAG=$(git rev-list --count HEAD)
+#DOCKER_TAG=$(git rev-list --count HEAD)
+DOCKER_TAG=$(egrep "[ \t]+VERSION[ ]+[0-9]+\.[0-9]+\.[0-9]+" CMakeLists.txt | head -1 | sed -r 's/[ \t]+VERSION[ \t]+([0-9]+\.[0-9]+\.[0-9]+)/\1/')
+
 docker tag quicr/laps-relay:${DOCKER_TAG}-amd64 \
     017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
 ```
@@ -75,6 +93,8 @@ docker run --rm \
 ### Push Image
 
 ```
-DOCKER_TAG=$(git rev-list --count HEAD)
+#DOCKER_TAG=$(git rev-list --count HEAD)
+DOCKER_TAG=$(egrep "[ \t]+VERSION[ ]+[0-9]+\.[0-9]+\.[0-9]+" CMakeLists.txt | head -1 | sed -r 's/[ \t]+VERSION[ \t]+([0-9]+\.[0-9]+\.[0-9]+)/\1/')
+
 docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
 ```

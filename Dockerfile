@@ -20,10 +20,11 @@ RUN apk add --no-cache \
 WORKDIR /ws
 
 COPY ./src ./src
-COPY ./CMakeLists.txt .
+COPY ./* ./
 
 #RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPROJECT_NAME=laps-relay \
+RUN  rm -rf build/ \
+    && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPROJECT_NAME=laps-relay \
     && cmake --build build
 
 RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
