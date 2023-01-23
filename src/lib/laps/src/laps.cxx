@@ -49,24 +49,24 @@ bool operator<( const SlowerRemote& a, const SlowerRemote& b ){
 }
 
 
-bool operator<(const MsgShortName& a, const MsgShortName& b )
+bool operator<(const PubName& a, const PubName& b )
 {
-  return (std::memcmp(&a.data, &b.data, sizeof(MsgShortName)) < 0 );
+  return (std::memcmp(&a.data, &b.data, sizeof(PubName)) < 0 );
 }
 
-bool operator==(const MsgShortName& a, const MsgShortName& b ) {
-  return (std::memcmp(&a.data, &b.data, sizeof(MsgShortName)) == 0 );
+bool operator==(const PubName& a, const PubName& b ) {
+  return (std::memcmp(&a.data, &b.data, sizeof(PubName)) == 0 );
 }
 
-bool operator!=(const MsgShortName& a, const MsgShortName& b ){
-  return (std::memcmp(&a.data, &b.data, sizeof(MsgShortName)) == 0 );
+bool operator!=(const PubName& a, const PubName& b ){
+  return (std::memcmp(&a.data, &b.data, sizeof(PubName)) == 0 );
 }
 
 std::string getMsgShortNameHexString(const u_char *data) {
   char hexStr[37] = {0};
   char *hexStrPtr = hexStr;
 
-  for (int i=0; i < MSG_SHORT_NAME_LEN; i++) {
+  for (int i=0; i < PUB_NAME_LEN; i++) {
     if (i % 4 == 0 && i != 0) {
       *hexStrPtr++ = '-';
     }
@@ -79,14 +79,14 @@ std::string getMsgShortNameHexString(const u_char *data) {
   return std::string(hexStr);
 }
 
-void getMaskedMsgShortName(const MsgShortName &src, MsgShortName &dst, const int len) {
+void getMaskedMsgShortName(const PubName &src, PubName &dst, const int len) {
 
   // Set the data len to the size of bytes to keep at 8 bit boundaries.  The last byte is a wildcard
   //   that will be added back so that it can be masked.
   u_char dst_len = len > 0 ? (len / 8) : 0;
   u_char dst_bits = len % 8;
 
-  bzero(&dst, MSG_SHORT_NAME_LEN);
+  bzero(&dst, PUB_NAME_LEN);
 
   if (dst_len == 0) {
     return;
@@ -279,7 +279,7 @@ int slowerAddRelay( SlowerConnection& slower, const SlowerRemote& remote ){
 }
 
   
-int slowerPub(SlowerConnection& slower, const MsgShortName& name, char buf[], int bufLen,
+int slowerPub(SlowerConnection& slower, const PubName& name, char buf[], int bufLen,
               SlowerRemote* remote, MsgHeaderMetrics *metrics) {
   assert( bufLen < slowerMTU-20 ); 
   assert( slower.fd > 0 );
@@ -356,7 +356,7 @@ int slowerRecvMulti(SlowerConnection& slower, MsgHeader *msgHeader, SlowerRemote
 
 //  std::clog << "MSG HDR:" << std::endl
 //      << " Type       : " << SlowerMsgType(mhdr.type) << std::endl
-//      << " MsgShortName  : " << std::endl
+//      << " PubName  : " << std::endl
 //      << " -------------------------------" << std::endl
 //      << "   Origin   : " << mhdr.name.spec.origin_id << std::endl
 //      << "   App ID   : " << (int) mhdr.name.spec.app_id << std::endl
@@ -416,7 +416,7 @@ int slowerRecvMulti(SlowerConnection& slower, MsgHeader *msgHeader, SlowerRemote
   return 0;
 }
 
-int slowerRecvAck(SlowerConnection& slower, MsgShortName* name ){
+int slowerRecvAck(SlowerConnection& slower, PubName* name ){
   assert( name );
 
   MsgHeader mhdr = {0};
@@ -432,7 +432,7 @@ int slowerRecvAck(SlowerConnection& slower, MsgShortName* name ){
     return err;
   }
 
-  memcpy(name->data, mhdr.name.data, MSG_SHORT_NAME_LEN);
+  memcpy(name->data, mhdr.name.data, PUB_NAME_LEN);
 
   if ( mhdr.type != SlowerMsgAck ) {
     bzero( name, sizeof( *name ) );
@@ -465,7 +465,7 @@ int slowerRecvPub(SlowerConnection& slower, MsgHeader* msgHeader, char buf[], in
 }
 
 
-int slowerAck(SlowerConnection& slower, const MsgShortName& name, SlowerRemote* remote ){
+int slowerAck(SlowerConnection& slower, const PubName& name, SlowerRemote* remote ){
   assert( slower.fd > 0 );
   
   char msg[slowerMTU];
@@ -483,7 +483,7 @@ int slowerAck(SlowerConnection& slower, const MsgShortName& name, SlowerRemote* 
   return err;
 }
 
-int slowerSub(SlowerConnection& slower, const MsgShortName& name, int len , SlowerRemote* remote ){
+int slowerSub(SlowerConnection& slower, const PubName& name, int len , SlowerRemote* remote ){
   assert( slower.fd > 0 );
   assert(len >= 0 );
   assert(len <= 128 );
@@ -513,7 +513,7 @@ int slowerSub(SlowerConnection& slower, const MsgShortName& name, int len , Slow
 }
 
 
-int slowerUnSub(SlowerConnection& slower, const MsgShortName& name, int len , SlowerRemote* remote  ) {
+int slowerUnSub(SlowerConnection& slower, const PubName& name, int len , SlowerRemote* remote  ) {
   assert( slower.fd > 0 );
   assert(len >= 0 );
   assert(len <= 128 );

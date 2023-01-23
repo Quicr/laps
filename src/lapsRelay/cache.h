@@ -10,17 +10,17 @@
 class Cache {
 public:
 	Cache(Logger *logPtr);
-  void put(const MsgShortName& name, const std::vector<uint8_t>& data );
+  void put(const PubName& name, const std::vector<uint8_t>& data );
 
-  const std::vector<uint8_t>* get( const MsgShortName& name ) const;
-  bool exists(  const MsgShortName& name ) const;
+  const std::vector<uint8_t>* get( const PubName& name ) const;
+  bool exists(  const PubName& name ) const;
 
-  std::list<MsgShortName> find(const MsgShortName& name, const int len ) const;
+  std::list<PubName> find(const PubName& name, const int len ) const;
 
   ~Cache();
   
 private:
-	typedef std::map<MsgShortName, std::vector<uint8_t> > CacheMap;
+	typedef std::map<PubName, std::vector<uint8_t> > CacheMap;
 
 	Logger                      *logger;            // Logging class pointer
 

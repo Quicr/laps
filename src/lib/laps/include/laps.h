@@ -9,8 +9,6 @@
 
 #include "version_config.h"
 
-// TODO - flip this to be a class
-
 std::string lapsVersion();
 
 const uint16_t lapsDefaultPort = 33434;
@@ -39,23 +37,25 @@ enum class NamePath : uint8_t {
 };
 
 /**
- * Defines the "MsgShortName" binary header. This is the binary
+ * LAPS
+ * Defines the Published Name. This is the binary
  *     encoded name for published messages. Subscribers subscribe using bits/len,
  *     where name_length defines the number of significant bits.
  */
-#define MSG_SHORT_NAME_LEN    16
+#define PUB_NAME_LEN    16
 typedef struct {
-    u_char       data[MSG_SHORT_NAME_LEN];       ///< Buffer for the spec struct, this must be the size of the packed spec
-} __attribute__ ((__packed__, __aligned__(1))) MsgShortName;
+    u_char       data[PUB_NAME_LEN];       ///< Buffer for the spec struct, this must be the size of the packed spec
+} __attribute__ ((__packed__, __aligned__(1))) PubName;
 
 /**
- * Defines the "MsgShortName" binary header. This is the binary
+ * QMsg named object
+ * Defines the published name for qmsg over pub/sub. This is the binary
  *     encoded name from string qmsg://msg/org-<org>/team-<team>/ch-<channel>/dev-<device>/<msgNum>
  *
  *     See https://github.com/Quicr/qmsg/blob/main/doc/protocol.md for more details.
  */
  typedef union {
-     struct { // 128 bits / 16 bytes
+     struct {
 
          uint32_t         origin_id: 24;          ///< Origin ID
          u_char           app_id;                 ///< App ID
@@ -69,13 +69,11 @@ typedef struct {
 
      } __attribute__ ((__packed__, __aligned__(1))) spec;
 
-     MsgShortName        msgShortName;            ///< Common Message shortName
+     PubName        msgShortName;            ///< Common Message name
 
-     u_char       data[MSG_SHORT_NAME_LEN];       ///< Buffer for the spec struct, this must be the size of the packed spec
+     u_char       data[PUB_NAME_LEN];       ///< Buffer for the spec struct, this must be the size of the packed spec
  } __attribute__ ((__packed__, __aligned__(1))) QMsgShortName;
  
-
-// TODO: Add Key Package and Welcome ShortNames
 
 /**
  * Message types
@@ -103,7 +101,7 @@ struct MsgHeaderFlags {
 struct MsgHeader {
     int8_t                        type;                 ///< Message type as defined by enum SlowerMsgType
     MsgHeaderFlags                flags;                ///< Flags as defined by MsgHeaderFlags struct
-    MsgShortName                  name;
+    PubName                  name;
 } __attribute__ ((__packed__, __aligned__(1)));
 
 /**
@@ -131,9 +129,9 @@ struct MsgSubHeader {
 } __attribute__ ((__packed__, __aligned__(1)));
 
 
-bool operator==(const MsgShortName& a, const MsgShortName& b );
-bool operator!=(const MsgShortName& a, const MsgShortName& b );
-bool operator<(const MsgShortName& a, const MsgShortName& b );
+bool operator==(const PubName& a, const PubName& b );
+bool operator!=(const PubName& a, const PubName& b );
+bool operator<(const PubName& a, const PubName& b );
 
 bool operator!=( const SlowerRemote& a, const SlowerRemote& b );
 bool operator<( const SlowerRemote& a, const SlowerRemote& b );
@@ -150,18 +148,18 @@ int slowerWait( SlowerConnection& slower );
 
 int slowerGetFD( SlowerConnection& slower);
 
-int slowerPub(SlowerConnection& slower, const MsgShortName& name, char buf[], int bufLen,
+int slowerPub(SlowerConnection& slower, const PubName& name, char buf[], int bufLen,
               SlowerRemote* remote=NULL, MsgHeaderMetrics *metrics=NULL);
-int slowerAck(SlowerConnection& slower, const MsgShortName& name, SlowerRemote* remote=NULL );
-int slowerSub(SlowerConnection& slower, const MsgShortName& name, int len, SlowerRemote* remote=NULL );
-int slowerUnSub(SlowerConnection& slower, const MsgShortName& name, int len, SlowerRemote* remote=NULL );
+int slowerAck(SlowerConnection& slower, const PubName& name, SlowerRemote* remote=NULL );
+int slowerSub(SlowerConnection& slower, const PubName& name, int len, SlowerRemote* remote=NULL );
+int slowerUnSub(SlowerConnection& slower, const PubName& name, int len, SlowerRemote* remote=NULL );
 
 int slowerRecvPub(SlowerConnection& slower, MsgHeader* msgHeader, char buf[], int bufSize, int* bufLen,
                   MsgHeaderMetrics *metrics=NULL);
-int slowerRecvAck(SlowerConnection& slower, MsgShortName* name  );
+int slowerRecvAck(SlowerConnection& slower, PubName* name  );
 int slowerRecvMulti(SlowerConnection& slower, MsgHeader *msgHeader, SlowerRemote* remote,
                     int* len, char buf[], int bufSize, int* bufLen, MsgHeaderMetrics *metrics=NULL );
-void getMaskedMsgShortName(const MsgShortName &src, MsgShortName &dst, const int len);
+void getMaskedMsgShortName(const PubName &src, PubName &dst, const int len);
 std::string getMsgShortNameHexString(const u_char *data);
 
 #endif  // LAPS_H

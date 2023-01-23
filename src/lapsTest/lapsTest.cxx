@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::string nameString( argv[1] );
-	MsgShortName msn { 0 };
+	PubName msn {0 };
 
 	int len = 0;
 
@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
       err=slowerWait( slower );
       assert( err == 0 );
 
-      MsgShortName recvName;
+      PubName recvName;
       err = slowerRecvAck( slower, &recvName );
       assert( err == 0 );
       if ( recvName == msn ) {

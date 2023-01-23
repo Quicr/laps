@@ -183,7 +183,7 @@ int main(int argc, char* argv[]) {
 
       // TODO: change if and what we send from cache
       /*
-      std::list<MsgShortName> names = cache.find(mhdr.name, len );
+      std::list<PubName> names = cache.find(mhdr.name, len );
       // names.reverse(); // send the highest (and likely most recent) first
 
       for ( auto n : names ) {

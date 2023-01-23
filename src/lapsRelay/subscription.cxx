@@ -12,8 +12,8 @@ Subscriptions::Subscriptions() {
   subscriptions.resize(129);
 }
 
-void Subscriptions::add(const MsgShortName& name, const int len, const SlowerRemote& remote ) {
-  MsgShortName group;
+void Subscriptions::add(const PubName& name, const int len, const SlowerRemote& remote ) {
+  PubName group;
 
   bzero(group.data, sizeof(group.data));
   getMaskedMsgShortName(name, group, len);
@@ -26,7 +26,7 @@ void Subscriptions::add(const MsgShortName& name, const int len, const SlowerRem
   if ( mapPtr == subscriptions[len].end() ) {
     std::set<SlowerRemote> list;
     list.insert( remote );
-    std::pair<MsgShortName,std::set<SlowerRemote>> pair;
+    std::pair<PubName,std::set<SlowerRemote>> pair;
     pair = make_pair( group , list );
     subscriptions[len].insert(pair );
   }
@@ -38,8 +38,8 @@ void Subscriptions::add(const MsgShortName& name, const int len, const SlowerRem
   }
 }
   
-void Subscriptions::remove(const MsgShortName& name, const int len, const SlowerRemote& remote ) {
-  MsgShortName group;
+void Subscriptions::remove(const PubName& name, const int len, const SlowerRemote& remote ) {
+  PubName group;
   getMaskedMsgShortName(name, group, len);
 
   auto mapPtr = subscriptions[len].find(group );
@@ -51,9 +51,9 @@ void Subscriptions::remove(const MsgShortName& name, const int len, const Slower
   }
 }
   
-std::list<SlowerRemote> Subscriptions::find(  const MsgShortName& name  ) {
+std::list<SlowerRemote> Subscriptions::find(  const PubName& name  ) {
   std::list<SlowerRemote> ret;
-  MsgShortName group;
+  PubName group;
 
   // TODO: Fix this to not have to iterate for each mask bit
   for ( int len=0; len <= 128 ; len++ ) {

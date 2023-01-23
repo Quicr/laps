@@ -26,7 +26,7 @@ Cache::Cache(Logger *logPtr) {
 
 }
 
-void Cache::put(const MsgShortName& name, const std::vector<uint8_t>& data ) {
+void Cache::put(const PubName& name, const std::vector<uint8_t>& data ) {
 
 	// Move to next buffer if current buffer is at capacity
 	if (cacheBuffer[cacheBufferPos].size() >= CacheMapCapacity) {
@@ -50,7 +50,7 @@ void Cache::put(const MsgShortName& name, const std::vector<uint8_t>& data ) {
 }
 
 
-const std::vector<uint8_t>* Cache::get( const MsgShortName& name ) const {
+const std::vector<uint8_t>* Cache::get( const PubName& name ) const {
 
 	// Check all buffers as if they are one
 	for (int i = 0; i <= CacheMaxBuffers; i++) {
@@ -66,13 +66,13 @@ const std::vector<uint8_t>* Cache::get( const MsgShortName& name ) const {
 }
 
 
-bool Cache::exists(  const MsgShortName& name ) const {
+bool Cache::exists(  const PubName& name ) const {
 
 	// Check all buffers as if they are one
 	for (int i = 0; i <= CacheMaxBuffers; i++) {
 		auto mapPtr = cacheBuffer.at(i).find(name);
 
-		Name name = Name(const_cast<MsgShortName&>(mapPtr->first));
+		Name name = Name(const_cast<PubName&>(mapPtr->first));
 
 		if ( mapPtr != cacheBuffer.at(i).end() ) {
 			// Return found data
@@ -85,21 +85,21 @@ bool Cache::exists(  const MsgShortName& name ) const {
 }
 
 
-std::list<MsgShortName> Cache::find(const MsgShortName& name, const int len ) const {
-  std::list<MsgShortName> ret;
+std::list<PubName> Cache::find(const PubName& name, const int len ) const {
+  std::list<PubName> ret;
 
-  MsgShortName startName = name;
+  PubName startName = name;
 
   getMaskedMsgShortName(name, startName, len);
 
-  MsgShortName endName =  startName;
+  PubName endName =  startName;
 
   // Set the non-significant bits to 1
   u_char sig_bytes = len / 8; // example 121 / 8 = 15 bytes significant, one bit in the last byte is significant
 
   // Set all 8 bits for bytes that should be set.
-  if (sig_bytes < MSG_SHORT_NAME_LEN - 1) {
-    std::memset(endName.data + sig_bytes, 0xff, MSG_SHORT_NAME_LEN - sig_bytes - 1);
+  if (sig_bytes < PUB_NAME_LEN - 1) {
+    std::memset(endName.data + sig_bytes, 0xff, PUB_NAME_LEN - sig_bytes - 1);
   }
 
   // Handle the last byte of the significant bits. For example, /110 has 13 significant bytes + 1 bit of byte 14
@@ -118,7 +118,7 @@ std::list<MsgShortName> Cache::find(const MsgShortName& name, const int len ) co
 		auto end = cacheBuffer.at(i).upper_bound(endName);
 
 		for (auto it = start; it != end; it++) {
-			MsgShortName dataName = it->first;
+			PubName dataName = it->first;
 
 			ret.push_back(dataName);
 		}

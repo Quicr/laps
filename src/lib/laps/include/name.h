@@ -9,7 +9,7 @@ private:
   const uint8_t qmsgAppID = 0x88; // app ID for QMsg stuff in this ITAD
 
 public:
-  Name(MsgShortName &n);
+  Name(PubName &n);
   Name(NamePath path, uint32_t org, uint32_t team,
        uint64_t fingerprint); // key package & welcome
   Name(NamePath path, uint32_t org, uint32_t team, uint16_t channel,
@@ -27,7 +27,7 @@ public:
   uint32_t epoch();
   uint32_t rand();
 
-  MsgShortName shortName();
+  PubName shortName();
 
   std::string shortString();
 

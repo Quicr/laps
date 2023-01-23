@@ -9,7 +9,7 @@
 #include <name.h>
 #include <laps.h>
 
-Name::Name(MsgShortName &n) {
+Name::Name(PubName &n) {
     name.msgShortName = n;
 };
 
@@ -62,8 +62,8 @@ uint32_t Name::msgNum() {
   return ntohl((uint32_t)(name.spec.msg_id) << 12);
 };
 
-MsgShortName Name::shortName() {
-  MsgShortName n;
+PubName Name::shortName() {
+  PubName n;
   std::memcpy(n.data, name.data, sizeof(n.data));
   return n;
 }
