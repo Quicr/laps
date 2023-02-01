@@ -23,6 +23,9 @@
 #endif
 
 #include <laps.h>
+#include <quicr/quicr_server.h>
+#include <transport/transport.h>
+
 
 static int slowerRecv( SlowerConnection& slower, char buf[], int bufSize, int* bufLen, SlowerRemote* remote );
 static int slowerSend( SlowerConnection& slower, char buf[], int bufLen, SlowerRemote& remote );

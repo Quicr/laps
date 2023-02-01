@@ -17,7 +17,9 @@ The last octet of the version should be incremented on any change, unless it's t
 xcode-select --install
 ```
 
+
 ```
+git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPROJECT_NAME=laps-relay
 
 cmake --build build 
