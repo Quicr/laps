@@ -1,14 +1,17 @@
-cmake_minimum_required(VERSION 3.10 )
-
 project( lapsRelay )
-
-set(CMAKE_CXX_STANDARD 14) 
-set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 file(GLOB RELAY_SOURCES *.cxx)
 file(GLOB RELAY_HEADER *.h)
 
 add_executable( lapsRelay  ${RELAY_SOURCES} ${RELAY_HEADERS} )
 
-target_link_libraries( lapsRelay LINK_PUBLIC laps )
-
+target_link_libraries( lapsRelay PUBLIC laps quicr quicr-transport )
+target_compile_options(lapsRelay
+        PRIVATE
+        $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
+        $<$<CXX_COMPILER_ID:MSVC>: >)
+set_target_properties(lapsRelay
+        PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS ON)
