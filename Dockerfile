@@ -1,11 +1,5 @@
 #---------------------------------------------------------------------
 # LAPS-Relay Docker image
-#
-#  docker buildx build --progress=plain \
-#         --output type=docker --platform linux/amd64 \
-#         -f slow-relay.Dockerfile -t quicr/laps-relay:$(git rev-list --count HEAD)-amd64 .
-#
-#
 #---------------------------------------------------------------------
 
 # Build layer
@@ -19,13 +13,13 @@ RUN apk add --no-cache \
 
 WORKDIR /ws
 
+COPY ./Makefile ./
+COPY ./CMakeLists.txt ./
+COPY ./version_config.h.in ./
+COPY ./dependencies ./dependencies
 COPY ./src ./src
-COPY ./* ./
 
-#RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-RUN  rm -rf build/ \
-    && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPROJECT_NAME=laps-relay \
-    && cmake --build build
+RUN  make all
 
 RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
     && cp  build/src/lapsTest/lapsTest  /usr/local/bin/.

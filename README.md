@@ -19,18 +19,37 @@ xcode-select --install
 
 
 ```
-git submodule update --init --recursive
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPROJECT_NAME=laps-relay
-
-cmake --build build 
+make build
 ```
 
 ## Build with Docker
+
+To build an image, make sure to have docker running. 
+
+**amd64 image**
+
+```make image-amd64```
+
+**arm64 image**
+
+```make image-arm64```
+
+### Notes on docker build
+#### **MUST** run ```git submodule ...``` **BEFORE BUILD**
+
+Before running the docker build, you **MUST** first run the below to update the dependencies.
+*This cannot be performed during the docker build process due to the use of **private repos**.*
+
+```
+git submodule update --init --recursive
+```
+
 
 ```
 docker build --no-cache --platform linux/amd64 --tag laps-amd64:latest .
 docker build --no-cache --platform linux/arm64/v8 --tag laps-arm64:latest . 
 ```
+
 
 ## Run with Docker
 
