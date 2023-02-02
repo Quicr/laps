@@ -13,14 +13,7 @@
 
 #include "Logger.h"
 
-/*********************************************************************//**
- * Constructor for class
- *
- * \param [in]  log_filename  log file name or NULL to use stdout
- * \param [in]  debug_filename = debug log filename or NULL to use stdout
- *
- * \throws const char * with the error message
- ***********************************************************************/
+
 Logger::Logger(const char *log_filename, const char *debug_filename) {
 
     /*
@@ -63,9 +56,6 @@ Logger::Logger(const char *log_filename, const char *debug_filename) {
     }
 }
 
-/*********************************************************************//**
- * Destructor for class
- ***********************************************************************/
 Logger::~Logger() {
 
     /*
@@ -78,50 +68,24 @@ Logger::~Logger() {
         fclose(debugFile);
 }
 
-/*********************************************************************//**
- * Enables debug logging
- ***********************************************************************/
 void Logger::enableDebug(void) {
     debugEnabled = true;
 }
 
-/*********************************************************************//**
- * Disables debug logging
- ***********************************************************************/
 void Logger::disableDebug(void) {
     debugEnabled = false;
 }
 
-/*********************************************************************//**
- * Sets the function width for printing
- *
- * \param[in] width     Column width to use for printing
- ***********************************************************************/
 void Logger::setWidthFunction(u_char width) {
     if (width > 5 && width < 60)
         width_function = width;
 }
 
-/*********************************************************************//**
- * Sets the filename width for printing
- *
- * \param[in] width     Column width to use for printing
- ***********************************************************************/
 void Logger::setWidthFilename(u_char width) {
     if (width > 5 && width < 60)
         width_filename = width;
 }
 
-/*********************************************************************//**
- * Prints debug message if debug is enabled
- *
- * \param[in]  filename     the source file that originated the debug message
- * \param[in]  line_num     the line number from the file that originated the debug message
- * \param[in]  func_name    function name of the calling function
- * \param[in]  msg          message to print, can contain sprintf formats
- * \param[in]  ...          Optional list of args for vfprintf
- *
- ***********************************************************************/
 void Logger::DebugPrint(const char *filename, int line_num, const char *func_name, const char *msg, ...)
 {
     va_list     args;                                     // varialbe args
@@ -154,15 +118,6 @@ void Logger::Print(const char *sev, const char *func_name, const char *msg, ...)
     va_end(args);
 }
 
-/*********************************************************************//**
- * Prints the message
- *
- *
- * \param[in]  sev          the logging severity
- * \param[in]  func_name    function name of the calling function
- * \param[in]  msg          message to print, can contain sprintf formats
- * \param[in]  ...          Optional list of args for vfprintf
- ***********************************************************************/
 void Logger::printV(const char *sev,
                    FILE *output,
                    const char *filename,
