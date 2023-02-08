@@ -31,7 +31,8 @@ build-prep: CMakeLists.txt
 
 ## build: Builds the project
 build: build-prep
-	git submodule update --init --recursive
+	@echo "Skipping submodule update due to possible custom changes"
+#	git submodule update --init --recursive
 	cmake --build ${BUILD_DIR}
 
 ## clean: cmake clean - soft clean
@@ -51,7 +52,8 @@ format:
 # NOTE: This will not work on Windows
 DOCKER_TAG := $(shell egrep "[ \t]+VERSION[ ]+[0-9]+\.[0-9]+\.[0-9]+" CMakeLists.txt | head -1 | sed -r 's/[ \t]+VERSION[ \t]+([0-9]+\.[0-9]+\.[0-9]+)/\1/')
 docker-prep:
-	@git submodule update --init --recursive
+	@echo "Prep normally requires submodule update, but skipping considering possible custom changes"
+#	@git submodule update --init --recursive
 
 ## image-amd64: Create AMD64 docker image
 image-amd64: docker-prep
@@ -65,4 +67,20 @@ image-arm64: docker-prep
 			--output type=docker --platform linux/arm64 \
 			-f Dockerfile -t quicr/laps-relay:${DOCKER_TAG}-arm64 .
 
-# TODO: Add ECR targets to publish the image
+ecr-login:
+	@echo "==> Logging into ECR using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+	@docker run --rm \
+    	-e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+    	amazon/aws-cli \
+    	ecr get-login-password --region us-west-1 \
+		|  docker login --username AWS --password-stdin 017125485914.dkr.ecr.us-west-1.amazonaws.com
+
+## publish-image: Publish amd64 image to ECR
+publish-image: ecr-login
+	@echo "==> Tagging docker image to 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64"
+	@docker tag quicr/laps-relay:${DOCKER_TAG}-amd64 \
+    	017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
+	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64 to ECR"
+	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
+
+

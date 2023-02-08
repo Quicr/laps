@@ -1,22 +1,19 @@
 /*
- * Copyright (c) 2022 Cisco Systems, Inc. and others.  All rights reserved.
+ * Copyright (c) 2023 Cisco Systems, Inc. and others.  All rights reserved.
  */
-#ifndef LOGGER_H_
-#define LOGGER_H_
+#pragma once
 
+#include "transport/transport.h"
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <sys/types.h>
 
-/*
- * DEBUG is a macro for DebugPrint with FILE, LINE, FUNCTION added
- */
 #define DEBUG(...)                                                             \
   logger->DebugPrint(__FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define SELF_DEBUG(...)                                                        \
   if (debug)                                                                   \
-  logger->DebugPrint(__FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+  logger->DebugPrint(__FILE__, __LINE__, __PRETTY_FUNCTION__, __VA_ARGS__)
 
 /*
  * Below defines LOG macros for various severities
@@ -25,6 +22,8 @@
 #define LOG_WARN(...) logger->Print("WARN", __FUNCTION__, __VA_ARGS__)
 #define LOG_NOTICE(...) logger->Print("NOTICE", __FUNCTION__, __VA_ARGS__)
 #define LOG_ERR(...) logger->Print("ERROR", __FUNCTION__, __VA_ARGS__)
+
+namespace laps {
 
 /**
  * @class   Logger
@@ -61,7 +60,7 @@
  *      Logger          *log;         ///< Logging class pointer
  *
  */
-class Logger {
+class Logger : public qtransport::LogHandler {
 public:
   /**
    * Constructor for class
@@ -102,11 +101,16 @@ public:
    */
   void setWidthFilename(u_char width);
 
+  /*
+   * Implemented logHandler callback function
+   */
+  void log(qtransport::LogLevel, const std::string &) override;
+
   /**
    * Prints message
    *
-   * @param[in]  sev     			Severity string value, such as INFO, ERROR,
-   * WARN, ...
+   * @param[in]  sev     			Severity string value, such as
+   * INFO, ERROR, WARN, ...
    * @param[in]  func_name    function name of the calling function
    * @param[in]  msg          message to print, can contain sprintf formats
    * @param[in]  ...          Optional list of args for vfprintf
@@ -128,12 +132,12 @@ public:
 
 private:
   bool logFile_REALFILE; ///< Indicates if the log file is using a real file or
-                         ///< not
+  ///< not
   bool debugFile_REALFILE; ///< Indicates if the debug log file is using a real
-                           ///< file or not
-  FILE *debugFile;         ///< Debug log file
-  FILE *logFile;           ///< Log file
-  bool debugEnabled;       ///< Enable Debug
+  ///< file or not
+  FILE *debugFile;   ///< Debug log file
+  FILE *logFile;     ///< Log file
+  bool debugEnabled; ///< Enable Debug
 
   u_char
       width_function; ///< Defines the width of the function field when printed
@@ -151,4 +155,5 @@ private:
   void printV(const char *sev, FILE *output, const char *filename, int line_num,
               const char *func_name, const char *msg, va_list args);
 };
-#endif /* LOGGER_H_ */
+
+} // namespace laps
