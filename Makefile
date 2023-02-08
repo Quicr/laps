@@ -31,7 +31,8 @@ build-prep: CMakeLists.txt
 
 ## build: Builds the project
 build: build-prep
-	git submodule update --init --recursive
+	@echo "Skipping submodule update due to possible custom changes"
+#	git submodule update --init --recursive
 	cmake --build ${BUILD_DIR}
 
 ## clean: cmake clean - soft clean
@@ -51,7 +52,8 @@ format:
 # NOTE: This will not work on Windows
 DOCKER_TAG := $(shell egrep "[ \t]+VERSION[ ]+[0-9]+\.[0-9]+\.[0-9]+" CMakeLists.txt | head -1 | sed -r 's/[ \t]+VERSION[ \t]+([0-9]+\.[0-9]+\.[0-9]+)/\1/')
 docker-prep:
-	@git submodule update --init --recursive
+	@echo "Prep normally requires submodule update, but skipping considering possible custom changes"
+#	@git submodule update --init --recursive
 
 ## image-amd64: Create AMD64 docker image
 image-amd64: docker-prep

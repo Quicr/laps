@@ -40,11 +40,6 @@ endif()
 add_subdirectory(dependencies)
 
 ###
-### Build the laps library
-###
-add_subdirectory(src/lib/laps)
-
-###
 ### Build relay
 ###
 add_subdirectory(src/lapsRelay)

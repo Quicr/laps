@@ -1,22 +1,51 @@
-
+#pragma once
 
 #include <list>
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
-#include <laps.h>
+#include <quicr/quicr_name.h>
+#include <quicr/quicr_namespace.h>
+#include <transport/transport.h>
 
+#include "config.h"
+#include "logger.h"
+
+namespace laps {
 class Subscriptions {
 public:
-  Subscriptions();
+  struct Remote {
+    uint64_t subscribe_id;
+    u_int64_t context_id;
+    u_int64_t stream_id;
 
-  void add(const PubName &name, const int len, const SlowerRemote &remote);
+    bool operator==(const Remote &o) const {
+      return subscribe_id == o.subscribe_id && context_id == o.context_id &&
+             stream_id == o.stream_id;
+    }
 
-  void remove(const PubName &name, const int len, const SlowerRemote &remote);
+    bool operator<(const Remote &o) const {
+      return std::tie(subscribe_id, context_id, stream_id) <
+             std::tie(o.subscribe_id, o.context_id, o.stream_id);
+    }
+  };
 
-  std::list<SlowerRemote> find(const PubName &name);
+  Subscriptions(const Config &cfg);
+
+  void get_masked_quicRName(const quicr::Name &src, quicr::Name &dst,
+                            const int len);
+
+  void add(const quicr::Name &name, const int len, const Remote &remote);
+
+  void remove(const quicr::Name &name, const int len, const Remote &remote);
+
+  std::list<Remote> find(const quicr::Name &name);
 
 private:
-  std::vector<std::map<PubName, std::set<SlowerRemote>>> subscriptions;
+  std::vector<std::map<quicr::Name, std::set<Remote>>> subscriptions;
+  const Config &config;
 };
+
+} // namespace laps
