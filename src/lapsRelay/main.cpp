@@ -17,7 +17,7 @@ static Logger *logger;
 
 std::string lapsVersion() { return LAPS_VERSION; }
 
-int main(int argc, char *argv[]) {
+int main(int /* argc */, char *[] /* argv[] */) {
   Config cfg;
   logger = cfg.logger;
 

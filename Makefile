@@ -67,4 +67,20 @@ image-arm64: docker-prep
 			--output type=docker --platform linux/arm64 \
 			-f Dockerfile -t quicr/laps-relay:${DOCKER_TAG}-arm64 .
 
-# TODO: Add ECR targets to publish the image
+ecr-login:
+	@echo "==> Logging into ECR using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+	@docker run --rm \
+    	-e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+    	amazon/aws-cli \
+    	ecr get-login-password --region us-west-1 \
+		|  docker login --username AWS --password-stdin 017125485914.dkr.ecr.us-west-1.amazonaws.com
+
+## publish-image: Publish amd64 image to ECR
+publish-image: ecr-login
+	@echo "==> Tagging docker image to 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64"
+	@docker tag quicr/laps-relay:${DOCKER_TAG}-amd64 \
+    	017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
+	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64 to ECR"
+	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
+
+
