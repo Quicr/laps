@@ -5,7 +5,7 @@
 #include <iostream>
 
 void testLogger::log(qtransport::LogLevel level, const std::string &string) {
-  char *lvl;
+  const char *lvl;
   switch (level) {
   case qtransport::LogLevel::fatal:
     lvl = "FATAL";
