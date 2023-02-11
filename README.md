@@ -93,12 +93,3 @@ export AWS_SECRET_ACCESS_KEY=<your secret key>
 
 make publish-image
 ```
-
-### Push Image
-
-```
-#DOCKER_TAG=$(git rev-list --count HEAD)
-DOCKER_TAG=$(egrep "[ \t]+VERSION[ ]+[0-9]+\.[0-9]+\.[0-9]+" CMakeLists.txt | head -1 | sed -r 's/[ \t]+VERSION[ \t]+([0-9]+\.[0-9]+\.[0-9]+)/\1/')
-
-docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
-```

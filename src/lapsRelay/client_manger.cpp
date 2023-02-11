@@ -38,28 +38,40 @@ void ClientManager::onPublishIntent(const quicr::Namespace & /* quicr_name */,
                                     const std::string & /* auth_token */,
                                     quicr::bytes && /* e2e_token */) {}
 
-void ClientManager::onPublisherObject(const quicr::Name &quicr_name,
-                                      uint8_t /* priority */,
-                                      uint16_t /* expiry_age_ms */,
-                                      bool /* use_reliable_transport */,
-                                      quicr::bytes &&data) {
+void ClientManager::onPublisherObject(
+    const quicr::Name &quicr_name,
+    const qtransport::TransportContextId &context_id,
+    const qtransport::MediaStreamId &stream_id, uint8_t /* priority */,
+    uint16_t /* expiry_age_ms */, bool /* use_reliable_transport */,
+    quicr::bytes &&data) {
 
   DEBUG("onPublishedObject Name: %s", quicr_name.to_hex().c_str());
 
-  if (cache.exists(quicr_name)) {
-    // duplicate, ignore
-    DEBUG("Duplicate message Name: %s", quicr_name.to_hex().c_str());
-    return;
+  /* TODO: Remove duplicate check for now till apps support unique names
+if (cache.exists(quicr_name)) {
+// duplicate, ignore
+DEBUG("Duplicate message Name: %s", quicr_name.to_hex().c_str());
+return;
 
-  } else {
-    cache.put(quicr_name, data);
-  }
+} else {
+cache.put(quicr_name, data);
+} */
+  cache.put(quicr_name, data);
 
   std::list<Subscriptions::Remote> list = subscribeList->find(quicr_name);
 
   // TODO: Send to peers (aka other relays)
 
   for (auto dest : list) {
+
+    if (dest.context_id == context_id && dest.stream_id == stream_id) {
+      // split horizon - drop packets back to the source that originated the
+      // published object
+      DEBUG("Subscriber is source, dropping object '%s' to subscriber %d ",
+            quicr_name.to_hex().c_str(), dest.subscribe_id);
+      continue;
+    }
+
     DEBUG("Sending object '%s' to subscriber %d", quicr_name.to_hex().c_str(),
           dest.subscribe_id);
 
