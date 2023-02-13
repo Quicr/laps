@@ -21,7 +21,7 @@ void Subscriptions::add(const quicr::Name &name, const int len,
   } else {
     std::set<Remote> &list = mapPtr->second;
     if (list.find(remote) == list.end()) {
-      list.insert(remote); // TODO - rethink if list is right thing here
+      list.insert(remote);
     }
   }
 }
