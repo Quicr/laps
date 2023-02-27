@@ -39,15 +39,15 @@ void ClientManager::onPublishIntent(const quicr::Namespace & /* quicr_name */,
                                     quicr::bytes && /* e2e_token */) {}
 
 void ClientManager::onPublisherObject(
-    const quicr::Name &quicr_name,
     const qtransport::TransportContextId &context_id,
-    const qtransport::MediaStreamId &stream_id, uint8_t /* priority */,
-    uint16_t /* expiry_age_ms */, bool /* use_reliable_transport */,
-    quicr::bytes &&data) {
+    const qtransport::MediaStreamId &stream_id,
+    bool /* use_reliable_transport */,
+    quicr::messages::PublishDatagram &&datagram) {
 
-  DEBUG("onPublishedObject Name: %s from context_id: %d stream_id: %d",
-				quicr_name.to_hex().c_str(),
-				context_id, stream_id);
+  DEBUG(
+      "onPublishedObject Name: %s from context_id: %d stream_id: %d offset: %d",
+      datagram.header.name.to_hex().c_str(), context_id, stream_id,
+      datagram.header.offset_and_fin);
 
   /* TODO: Remove duplicate check for now till apps support unique names
 if (cache.exists(quicr_name)) {
@@ -58,9 +58,10 @@ return;
 } else {
 cache.put(quicr_name, data);
 } */
-  cache.put(quicr_name, data);
+  cache.put(datagram.header.name, datagram.media_data);
 
-  std::list<Subscriptions::Remote> list = subscribeList->find(quicr_name);
+  std::list<Subscriptions::Remote> list =
+      subscribeList->find(datagram.header.name);
 
   // TODO: Send to peers (aka other relays)
 
@@ -70,31 +71,22 @@ cache.put(quicr_name, data);
       // split horizon - drop packets back to the source that originated the
       // published object
       DEBUG("Subscriber is source, dropping object '%s' to subscriber %d",
-            quicr_name.to_hex().c_str(), dest.subscribe_id);
+            datagram.header.name.to_hex().c_str(), dest.subscribe_id);
       continue;
     }
 
-    DEBUG("Sending object '%s' to subscriber %d (%d/%d)", quicr_name.to_hex().c_str(),
-          dest.subscribe_id, dest.context_id, dest.stream_id);
+    DEBUG("Sending object '%s' to subscriber %d (%d/%d)",
+          datagram.header.name.to_hex().c_str(), dest.subscribe_id,
+          dest.context_id, dest.stream_id);
 
-    quicr::bytes copy = data;
-    server->sendNamedObject(dest.subscribe_id, quicr_name, 0, 0, false,
-                            std::move(copy));
+    server->sendNamedObject(dest.subscribe_id, false, datagram);
   }
 }
 
-void ClientManager::onPublishedFragment(const quicr::Name & /* quicr_name */,
-                                        uint8_t /* priority */,
-                                        uint16_t /* expiry_age_ms */,
-                                        bool /* use_reliable_transport */,
-                                        const uint64_t & /* offset */,
-                                        bool /* is_last_fragment */,
-                                        quicr::bytes && /* data */) {}
-
 void ClientManager::onSubscribe(
     const quicr::Namespace &quicr_namespace, const uint64_t &subscriber_id,
-    const qtransport::TransportContextId& context_id,
-    const qtransport::MediaStreamId& stream_id,
+    const qtransport::TransportContextId &context_id,
+    const qtransport::MediaStreamId &stream_id,
     const quicr::SubscribeIntent /* subscribe_intent */,
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
@@ -112,7 +104,20 @@ void ClientManager::onSubscribe(
   // respond with response
   auto result = quicr::SubscribeResult{
       quicr::SubscribeResult::SubscribeStatus::Ok, "", {}, {}};
-  server->subscribeResponse(quicr_namespace, 0x0, result);
-};
+  server->subscribeResponse(subscriber_id, quicr_namespace, result);
+}
+
+void ClientManager::onUnsubscribe(const quicr::Namespace& quicr_namespace,
+                                  const uint64_t& subscriber_id,
+                                  const std::string& /* auth_token */) {
+
+  DEBUG("onUnsubscribe namespace: %s/%d", quicr_namespace.to_hex().c_str(),
+        quicr_namespace.length());
+
+
+  server->subscriptionEnded(subscriber_id, quicr_namespace, quicr::SubscribeResult::SubscribeStatus::Ok);
+
+  subscribeList->remove(quicr_namespace.name(), quicr_namespace.length(), subscriber_id);
+}
 
 } // namespace laps

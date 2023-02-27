@@ -40,11 +40,13 @@ public:
   void add(const quicr::Name &name, const int len, const Remote &remote);
 
   void remove(const quicr::Name &name, const int len, const Remote &remote);
+  void remove(const quicr::Name &name, const int len, const uint64_t& subscriber_id);
 
   std::list<Remote> find(const quicr::Name &name);
 
 private:
-  std::vector<std::map<quicr::Name, std::set<Remote>>> subscriptions;
+  // subscriptions[name length in bits][quicr name][subscriber id] = remote info
+  std::vector<std::map<quicr::Name, std::map<uint64_t, Remote>>> subscriptions;
   const Config &config;
 };
 

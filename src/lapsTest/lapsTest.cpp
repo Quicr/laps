@@ -13,15 +13,33 @@ public:
   ~subDelegate() override = default;
 
   void onSubscribeResponse(
-      const quicr::Namespace &quicr_namespace,
-      const quicr::SubscribeResult::SubscribeStatus &result) override {}
+    [[ maybe_unused ]] const quicr::Namespace &quicr_namespace,
+    [[ maybe_unused ]] const quicr::SubscribeResult &result) override {
 
-  void onSubscriptionEnded(const quicr::Namespace &quicr_namespace,
-                           const quicr::SubscribeResult &result) override {}
+    std::stringstream log_msg;
+    log_msg << "onSubscriptionResponse: name: " << quicr_namespace.to_hex()
+            << "/" << int(quicr_namespace.length())
+            << " status: " << int(static_cast<uint8_t>(result.status));
 
-  void onSubscribedObject(const quicr::Name &quicr_name, uint8_t priority,
-                          uint16_t expiry_age_ms, bool use_reliable_transport,
-                          quicr::bytes &&data) override {
+    logger.log(qtransport::LogLevel::info, log_msg.str());
+
+  }
+
+  void onSubscriptionEnded([[ maybe_unused ]] const quicr::Namespace &quicr_namespace,
+                           [[ maybe_unused ]] const quicr::SubscribeResult::SubscribeStatus &reason) override {
+
+    std::stringstream log_msg;
+    log_msg << "onSubscriptionEnded: name: " << quicr_namespace.to_hex()
+            << "/" << int(quicr_namespace.length());
+
+    logger.log(qtransport::LogLevel::info, log_msg.str());
+  }
+
+  void onSubscribedObject([[ maybe_unused ]] const quicr::Name &quicr_name,
+                          [[ maybe_unused ]] uint8_t priority,
+                          [[ maybe_unused ]] uint16_t expiry_age_ms,
+                          [[ maybe_unused ]] bool use_reliable_transport,
+                          [[ maybe_unused ]] quicr::bytes &&data) override {
     std::stringstream log_msg;
 
     log_msg << "recv object: name: " << quicr_name.to_hex()
@@ -33,11 +51,13 @@ public:
     logger.log(qtransport::LogLevel::info, log_msg.str());
   }
 
-  void onSubscribedObjectFragment(const quicr::Name &quicr_name,
-                                  uint8_t priority, uint16_t expiry_age_ms,
-                                  bool use_reliable_transport,
-                                  const uint64_t &offset, bool is_last_fragment,
-                                  quicr::bytes &&data) override {}
+  void onSubscribedObjectFragment([[ maybe_unused ]] const quicr::Name &quicr_name,
+                                  [[ maybe_unused ]] uint8_t priority,
+                                  [[ maybe_unused ]] uint16_t expiry_age_ms,
+                                  [[ maybe_unused ]] bool use_reliable_transport,
+                                  [[ maybe_unused ]] const uint64_t &offset,
+                                  [[ maybe_unused ]] bool is_last_fragment,
+                                  [[ maybe_unused ]] quicr::bytes &&data) override {}
 
 private:
   testLogger &logger;
@@ -48,8 +68,8 @@ public:
   ~pubDelegate() override = default;
 
   void
-  onPublishIntentResponse(const quicr::Namespace &quicr_namespace,
-                          const quicr::PublishIntentResult &result) override {}
+  onPublishIntentResponse([[ maybe_unused ]] const quicr::Namespace &quicr_namespace,
+                          [[ maybe_unused ]] const quicr::PublishIntentResult &result) override {}
 };
 
 int main(int argc, char *argv[]) {
@@ -67,7 +87,7 @@ int main(int argc, char *argv[]) {
 
   char *relayName = getenv("LAPS_RELAY");
   if (!relayName) {
-    static char defaultRelay[] = "relay.us-east-2.quicr.ctgpoc.com ";
+    static char defaultRelay[] = "localhost";
     relayName = defaultRelay;
   }
 
@@ -127,8 +147,14 @@ int main(int argc, char *argv[]) {
     client.subscribe(sd, nspace, intent, "origin_url", false, "auth_token",
                      std::move(empty));
 
-    logger.log(qtransport::LogLevel::info, "Sleeping for 30 seconds");
-    std::this_thread::sleep_for(std::chrono::seconds(30));
+    logger.log(qtransport::LogLevel::info, "Sleeping for 20 seconds before unsubscribing");
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+
+    logger.log(qtransport::LogLevel::info, "Now unsubscribing");
+    client.unsubscribe(nspace, {}, {});
+
+    logger.log(qtransport::LogLevel::info, "Sleeping for 15 seconds before exiting");
+    std::this_thread::sleep_for(std::chrono::seconds(15));
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(1));

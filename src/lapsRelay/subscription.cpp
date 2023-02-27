@@ -13,31 +13,40 @@ void Subscriptions::add(const quicr::Name &name, const int len,
 
   auto mapPtr = subscriptions[len].find(prefix.name());
   if (mapPtr == subscriptions[len].end()) {
-    std::set<Remote> list;
-    list.insert(remote);
-    std::pair<quicr::Name, std::set<Remote>> pair;
-    pair = make_pair(prefix.name(), list);
-    subscriptions[len].insert(pair);
+    // Add name and first subscriber
+    subscriptions[len][prefix.name()].emplace(remote.subscribe_id, remote);
+
   } else {
-    std::set<Remote> &list = mapPtr->second;
-    if (list.find(remote) == list.end()) {
-      list.insert(remote);
+    if (mapPtr->second.count(remote.subscribe_id) > 0) {
+      // Add new subscriber to name/len map
+      mapPtr->second.emplace(remote.subscribe_id, remote);
     }
   }
 }
 
 void Subscriptions::remove(const quicr::Name &name, const int len,
                            const Remote &remote) {
-  quicr::Namespace prefix(name, len);
 
-  auto mapPtr = subscriptions[len].find(prefix.name());
-  if (mapPtr != subscriptions[len].end()) {
-    std::set<Remote> &list = mapPtr->second;
-    if (list.find(remote) == list.end()) {
-      list.erase(remote);
+  remove(name, len, remote.subscribe_id);
+}
+
+void Subscriptions::remove(const quicr::Name &name, const int len,
+                             const uint64_t& subscriber_id) {
+    quicr::Namespace prefix(name, len);
+
+    auto mapPtr = subscriptions[len].find(prefix.name());
+    if (mapPtr != subscriptions[len].end()) {
+      if (mapPtr->second.count(subscriber_id) > 0) {
+        // Remove subscriber
+        mapPtr->second.erase(subscriber_id);
+
+        if (mapPtr->second.size() == 0) {
+          // No subscribers, remove name from map
+          subscriptions[len].erase(mapPtr);
+        }
+      }
     }
   }
-}
 
 std::list<Subscriptions::Remote> Subscriptions::find(const quicr::Name &name) {
   std::list<Remote> ret;
@@ -48,10 +57,9 @@ std::list<Subscriptions::Remote> Subscriptions::find(const quicr::Name &name) {
 
     auto mapPtr = subscriptions[len].find(prefix.name());
     if (mapPtr != subscriptions[len].end()) {
-      std::set<Remote> &list = mapPtr->second;
-      for (const Remote &remote : list) {
-        Remote dest = remote;
-        ret.push_back(dest);
+
+      for (const auto& subs : mapPtr->second ) {
+        ret.push_back(subs.second);
       }
     }
   }
