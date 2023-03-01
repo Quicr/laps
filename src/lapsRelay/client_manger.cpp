@@ -91,8 +91,8 @@ void ClientManager::onSubscribe(
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
-  DEBUG("onSubscribe namespace: %s/%d", quicr_namespace.to_hex().c_str(),
-        quicr_namespace.length());
+  DEBUG("onSubscribe namespace: %s/%d %d (%d/%d)", quicr_namespace.to_hex().c_str(),
+        quicr_namespace.length(), subscriber_id, context_id, stream_id);
 
   Subscriptions::Remote remote = {
       .subscribe_id = subscriber_id,
