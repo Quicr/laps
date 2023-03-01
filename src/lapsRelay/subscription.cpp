@@ -17,7 +17,7 @@ void Subscriptions::add(const quicr::Name &name, const int len,
     subscriptions[len][prefix.name()].emplace(remote.subscribe_id, remote);
 
   } else {
-    if (mapPtr->second.count(remote.subscribe_id) > 0) {
+    if (mapPtr->second.count(remote.subscribe_id) == 0) {
       // Add new subscriber to name/len map
       mapPtr->second.emplace(remote.subscribe_id, remote);
     }
