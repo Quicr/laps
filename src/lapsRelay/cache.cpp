@@ -1,4 +1,5 @@
 
+#include <cstring>
 #include <iostream>
 
 #include "cache.h"
@@ -7,6 +8,7 @@
 namespace laps {
 Cache::Cache(const Config &cfg) : config(cfg) {
 
+  stop = false;
   logger = cfg.logger;
   CacheMaxBuffers = cfg.cache_max_buffers;
   CacheMapCapacity = cfg.cache_map_capacity;
@@ -15,16 +17,54 @@ Cache::Cache(const Config &cfg) : config(cfg) {
   cacheBufferPos = 0;
 
   // initialize the buffers
-  for (int i = 0; i <= CacheMaxBuffers; i++) {
+  for (uint i = 0; i < CacheMaxBuffers; i++) {
     cacheBuffer[i].clear();
+  }
+
+  cache_mon_thr = std::thread([this] { monitor_thread(); });
+}
+
+void Cache::monitor_thread() {
+  LOG_INFO("Running cache monitor thread");
+
+  std::unique_lock<std::mutex> lock(w_mutex);
+  lock.unlock();
+
+  while (not stop) {
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+
+    uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+    for (const auto &entry : cacheBuffer) {
+
+      if (entry.second.size() > 0) {
+        uint64_t ms;
+        std::memcpy(&ms, entry.second.at(CACHE_INFO_NAME).at(0).data(), 8);
+
+        if (now_ms - ms > MAX_CACHE_MS_AGE) {
+          DEBUG("cache i: %d time: %llu is over max age %llu > %llu, purging "
+                "cache",
+                entry.first, ms, now_ms - ms, MAX_CACHE_MS_AGE);
+
+          lock.lock();
+
+          cacheBuffer[cacheBufferPos].clear();
+
+          lock.unlock();
+        }
+      }
+    }
   }
 }
 
-void Cache::put(const quicr::Name &name, const std::vector<uint8_t> &data) {
+void Cache::put(const quicr::Name &name, unsigned int offset,
+                const std::vector<uint8_t> &data) {
   std::lock_guard<std::mutex> lock(w_mutex);
 
   // Move to next buffer if current buffer is at capacity
-  if ((int)cacheBuffer[cacheBufferPos].size() >= CacheMapCapacity) {
+  if (cacheBuffer[cacheBufferPos].size() >= CacheMapCapacity) {
     DEBUG("Current buffer %d full, moving to next buffer", cacheBufferPos);
     cacheBufferPos++;
 
@@ -34,47 +74,64 @@ void Cache::put(const quicr::Name &name, const std::vector<uint8_t> &data) {
       cacheBufferPos = 0;
     }
 
-    // Clear the previous buffer cache if it is not empty
+    // Clear the moved-to buffer cache if it is not empty
     if (cacheBuffer[cacheBufferPos].size() > 0) {
       DEBUG("Clearing oldest buffer");
       cacheBuffer[cacheBufferPos].clear();
     }
   }
 
-  cacheBuffer[cacheBufferPos].emplace(name, data);
-}
+  if (cacheBuffer[cacheBufferPos].size() == 0) {
+    // Add cache specific named object to track time of creation
+    uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
 
-const std::vector<uint8_t> Cache::get(const quicr::Name &name) {
-
-  std::lock_guard<std::mutex> lock(w_mutex);
-
-  // Check all buffers as if they are one
-  for (int i = 0; i <= CacheMaxBuffers; i++) {
-    auto mapPtr = cacheBuffer.at(i).find(name);
-
-    if (mapPtr != cacheBuffer.at(i).end()) {
-      // Return found data
-      return mapPtr->second;
-    }
+    DEBUG("New cache buffer %d, time is %llu", cacheBufferPos, ms);
+    std::vector<uint8_t> time;
+    time.resize(8);
+    std::memcpy(time.data(), &ms, 8);
+    cacheBuffer[cacheBufferPos][CACHE_INFO_NAME].emplace(0, time);
   }
 
-  return emptyVec;
+  cacheBuffer[cacheBufferPos][name].emplace(offset, data);
 }
 
-bool Cache::exists(const quicr::Name &name) {
+const Cache::CacheMapEntry Cache::get(const quicr::Name &name) {
+
   std::lock_guard<std::mutex> lock(w_mutex);
 
   // Check all buffers as if they are one
-  for (int i = 0; i <= CacheMaxBuffers; i++) {
-    auto mapPtr = cacheBuffer.at(i).find(name);
+  uint i = cacheBufferPos;
+  do {
+    if (cacheBuffer[i].count(name) > 0) {
+      return cacheBuffer[i][name];
+    }
 
-    // quicr::Name name = quicr::Name(const_cast<quicr::Name &>(mapPtr->first));
+    if (++i >= CacheMaxBuffers) // Wrap to start if hit end of buffers
+      i = 0;
 
-    if (mapPtr != cacheBuffer.at(i).end()) {
-      // Return found data
+  } while (i != cacheBufferPos);
+
+  return emptyCacheMapEntry;
+}
+
+bool Cache::exists(const quicr::Name &name, unsigned int offset) {
+  std::lock_guard<std::mutex> lock(w_mutex);
+
+  // Check all buffers as if they are one
+  uint i = cacheBufferPos;
+  do {
+
+    if (cacheBuffer.at(i).count(name) > 0 &&
+        cacheBuffer[i][name].count(offset) > 0) {
       return true;
     }
-  }
+
+    if (++i >= CacheMaxBuffers)
+      i = 0;
+
+  } while (i != cacheBufferPos);
 
   return false;
 }
@@ -102,7 +159,8 @@ std::list<quicr::Name> Cache::find(const quicr::Name &name, const int len) {
   std::lock_guard<std::mutex> lock(w_mutex);
 
   // Check all buffers as if they are one
-  for (int i = 0; i <= CacheMaxBuffers; i++) {
+  uint i = cacheBufferPos;
+  do {
     auto start = cacheBuffer.at(i).lower_bound(startName);
     auto end = cacheBuffer.at(i).upper_bound(endName);
 
@@ -111,7 +169,11 @@ std::list<quicr::Name> Cache::find(const quicr::Name &name, const int len) {
 
       ret.push_back(dataName);
     }
-  }
+
+    if (++i >= CacheMaxBuffers)
+      i = 0;
+
+  } while (i != cacheBufferPos);
 
   return ret;
 }

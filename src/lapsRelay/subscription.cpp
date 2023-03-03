@@ -31,22 +31,22 @@ void Subscriptions::remove(const quicr::Name &name, const int len,
 }
 
 void Subscriptions::remove(const quicr::Name &name, const int len,
-                             const uint64_t& subscriber_id) {
-    quicr::Namespace prefix(name, len);
+                           const uint64_t &subscriber_id) {
+  quicr::Namespace prefix(name, len);
 
-    auto mapPtr = subscriptions[len].find(prefix.name());
-    if (mapPtr != subscriptions[len].end()) {
-      if (mapPtr->second.count(subscriber_id) > 0) {
-        // Remove subscriber
-        mapPtr->second.erase(subscriber_id);
+  auto mapPtr = subscriptions[len].find(prefix.name());
+  if (mapPtr != subscriptions[len].end()) {
+    if (mapPtr->second.count(subscriber_id) > 0) {
+      // Remove subscriber
+      mapPtr->second.erase(subscriber_id);
 
-        if (mapPtr->second.size() == 0) {
-          // No subscribers, remove name from map
-          subscriptions[len].erase(mapPtr);
-        }
+      if (mapPtr->second.size() == 0) {
+        // No subscribers, remove name from map
+        subscriptions[len].erase(mapPtr);
       }
     }
   }
+}
 
 std::list<Subscriptions::Remote> Subscriptions::find(const quicr::Name &name) {
   std::list<Remote> ret;
@@ -58,7 +58,7 @@ std::list<Subscriptions::Remote> Subscriptions::find(const quicr::Name &name) {
     auto mapPtr = subscriptions[len].find(prefix.name());
     if (mapPtr != subscriptions[len].end()) {
 
-      for (const auto& subs : mapPtr->second ) {
+      for (const auto &subs : mapPtr->second) {
         ret.push_back(subs.second);
       }
     }

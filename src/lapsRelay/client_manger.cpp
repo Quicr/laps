@@ -49,16 +49,18 @@ void ClientManager::onPublisherObject(
       datagram.header.name.to_hex().c_str(), context_id, stream_id,
       datagram.header.offset_and_fin);
 
-  /* TODO: Remove duplicate check for now till apps support unique names
-if (cache.exists(quicr_name)) {
-// duplicate, ignore
-DEBUG("Duplicate message Name: %s", quicr_name.to_hex().c_str());
-return;
+  if (cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
+    // duplicate, ignore
+    DEBUG("Duplicate message Name: %s", datagram.header.name.to_hex().c_str());
+    return;
 
-} else {
-cache.put(quicr_name, data);
-} */
-  cache.put(datagram.header.name, datagram.media_data);
+  } else {
+    cache.put(datagram.header.name, datagram.header.offset_and_fin,
+              datagram.media_data);
+  }
+
+  // cache.put(datagram.header.name, datagram.header.offset_and_fin,
+  // datagram.media_data);
 
   std::list<Subscriptions::Remote> list =
       subscribeList->find(datagram.header.name);
@@ -91,8 +93,9 @@ void ClientManager::onSubscribe(
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
-  DEBUG("onSubscribe namespace: %s/%d %d (%d/%d)", quicr_namespace.to_hex().c_str(),
-        quicr_namespace.length(), subscriber_id, context_id, stream_id);
+  DEBUG("onSubscribe namespace: %s/%d %d (%d/%d)",
+        quicr_namespace.to_hex().c_str(), quicr_namespace.length(),
+        subscriber_id, context_id, stream_id);
 
   Subscriptions::Remote remote = {
       .subscribe_id = subscriber_id,
@@ -107,17 +110,18 @@ void ClientManager::onSubscribe(
   server->subscribeResponse(subscriber_id, quicr_namespace, result);
 }
 
-void ClientManager::onUnsubscribe(const quicr::Namespace& quicr_namespace,
-                                  const uint64_t& subscriber_id,
-                                  const std::string& /* auth_token */) {
+void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
+                                  const uint64_t &subscriber_id,
+                                  const std::string & /* auth_token */) {
 
   DEBUG("onUnsubscribe namespace: %s/%d", quicr_namespace.to_hex().c_str(),
         quicr_namespace.length());
 
+  server->subscriptionEnded(subscriber_id, quicr_namespace,
+                            quicr::SubscribeResult::SubscribeStatus::Ok);
 
-  server->subscriptionEnded(subscriber_id, quicr_namespace, quicr::SubscribeResult::SubscribeStatus::Ok);
-
-  subscribeList->remove(quicr_namespace.name(), quicr_namespace.length(), subscriber_id);
+  subscribeList->remove(quicr_namespace.name(), quicr_namespace.length(),
+                        subscriber_id);
 }
 
 } // namespace laps

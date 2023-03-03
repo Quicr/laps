@@ -49,10 +49,9 @@ public:
                    const std::string &origin_url, bool use_reliable_transport,
                    const std::string &auth_token, quicr::bytes &&data) override;
 
-  void onUnsubscribe(const quicr::Namespace& quicr_namespace,
-                     const uint64_t& subscriber_id,
-                     const std::string& auth_token) override;
-
+  void onUnsubscribe(const quicr::Namespace &quicr_namespace,
+                     const uint64_t &subscriber_id,
+                     const std::string &auth_token) override;
 
 private:
   Subscriptions *subscribeList;

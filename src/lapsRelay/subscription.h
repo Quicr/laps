@@ -40,7 +40,8 @@ public:
   void add(const quicr::Name &name, const int len, const Remote &remote);
 
   void remove(const quicr::Name &name, const int len, const Remote &remote);
-  void remove(const quicr::Name &name, const int len, const uint64_t& subscriber_id);
+  void remove(const quicr::Name &name, const int len,
+              const uint64_t &subscriber_id);
 
   std::list<Remote> find(const quicr::Name &name);
 

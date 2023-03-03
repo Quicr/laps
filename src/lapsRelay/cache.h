@@ -4,6 +4,7 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <thread>
 #include <vector>
 
 #include <quicr/quicr_common.h>
@@ -17,32 +18,42 @@ namespace laps {
  */
 class Cache {
 public:
+  typedef std::map<uint, std::vector<uint8_t>> CacheMapEntry;
+  typedef std::map<quicr::Name, CacheMapEntry> CacheMap;
+
   Cache(const Config &cfg);
 
-  void put(const quicr::Name &name, const std::vector<uint8_t> &data);
+  void put(const quicr::Name &name, unsigned int offset,
+           const std::vector<uint8_t> &data);
 
-  const std::vector<uint8_t> get(const quicr::Name &name);
+  const CacheMapEntry get(const quicr::Name &name);
 
-  bool exists(const quicr::Name &name);
+  bool exists(const quicr::Name &name, unsigned int offset);
 
   std::list<quicr::Name> find(const quicr::Name &name, const int len);
 
   ~Cache();
 
 private:
-  typedef std::map<quicr::Name, std::vector<uint8_t>> CacheMap;
+  void monitor_thread();
 
+  const quicr::Name CACHE_INFO_NAME{"0x00000000000000000000000000000000"};
+  const uint MAX_CACHE_MS_AGE = 45000;
+
+  bool stop;
   std::mutex w_mutex;
+  std::thread cache_mon_thr;
 
   const Config &config;
   Logger *logger;
 
-  int CacheMaxBuffers;  // Max number of cache buffers
-  int CacheMapCapacity; // Max capacity for cache map
+  uint CacheMaxBuffers;  // Max number of cache buffers
+  uint CacheMapCapacity; // Max capacity for cache map
 
-  int cacheBufferPos; // Current cache buffer that is active
-  std::map<int, CacheMap>
-      cacheBuffer; // Cache buffers. Acts like an array of data cache buffers
-  const std::vector<uint8_t> emptyVec;
+  uint cacheBufferPos; // Current cache buffer that is active
+  std::map<uint, CacheMap>
+      cacheBuffer; // Cache buffers. An array of data cache buffers
+  const CacheMapEntry emptyCacheMapEntry;
+  const CacheMap emptyCacheMap;
 };
 } // namespace laps

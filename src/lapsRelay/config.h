@@ -13,8 +13,8 @@ public:
   uint16_t client_port; /// Local client listening port, defaults to 33434
 
   // Cache
-  int cache_max_buffers;  /// Max number of cache buffers
-  int cache_map_capacity; /// Max capacity for cache map
+  unsigned int cache_max_buffers;  /// Max number of cache buffers
+  unsigned int cache_map_capacity; /// Max capacity for cache map
 
   // constructor
   Config();
