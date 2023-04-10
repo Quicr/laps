@@ -33,7 +33,7 @@ build-prep: CMakeLists.txt
 build: build-prep
 	@echo "Skipping submodule update due to possible custom changes"
 #	git submodule update --init --recursive
-	cmake --build ${BUILD_DIR}
+	cmake --build ${BUILD_DIR} -j 4
 
 ## clean: cmake clean - soft clean
 clean:

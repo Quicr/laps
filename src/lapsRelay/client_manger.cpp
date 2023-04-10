@@ -16,38 +16,63 @@ ClientManager::ClientManager(const Config &cfg, Cache &cache)
 
   subscribeList = new Subscriptions(cfg);
 
-  quicr::RelayInfo relayInfo = {.hostname = config.client_bind_addr,
+  quicr::RelayInfo relayInfo = {.hostname
+                                = config.client_bind_addr,
                                 .port = config.client_port,
-                                .proto = quicr::RelayInfo::Protocol::UDP};
+                                .proto = config.protocol };
+
+  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
+                                     .tls_key_filename = config.tls_key_filename };
 
   server =
-      std::make_unique<quicr::QuicRServer>(relayInfo, *this, *config.logger);
+      std::make_unique<quicr::QuicRServer>(relayInfo, std::move(tcfg), *this, *config.logger);
 }
 
 ClientManager::~ClientManager() {
+  server.reset();
+
   if (subscribeList != NULL) {
     delete subscribeList;
   }
 }
 
-void ClientManager::start() { server->run(); }
+bool ClientManager::ready() {
+  if (not running || not server->is_transport_ready())
+    return false;
+  else
+    return true;
+}
 
-void ClientManager::onPublishIntent(const quicr::Namespace & /* quicr_name */,
-                                    const std::string & /* origin_url */,
+void ClientManager::start() {
+  running = server->run();
+}
+
+
+
+void ClientManager::onPublishIntent(const quicr::Namespace& /* quicr_name */,
+                                    const std::string& /* origin_url */,
                                     bool /* use_reliable_transport */,
-                                    const std::string & /* auth_token */,
-                                    quicr::bytes && /* e2e_token */) {}
+                                    const std::string& /* auth_token */,
+                                    quicr::bytes&& /* e2e_token */) {}
+
+
+  void ClientManager::onPublishIntentEnd(
+    [[maybe_unused]] const quicr::Namespace& quicr_namespace,
+    [[maybe_unused]] const std::string& auth_token,
+    [[maybe_unused]] quicr::bytes&& e2e_token) {
+
+  }
 
 void ClientManager::onPublisherObject(
     const qtransport::TransportContextId &context_id,
-    const qtransport::MediaStreamId &stream_id,
+    [[maybe_unused]] const qtransport::StreamId &stream_id,
     bool /* use_reliable_transport */,
     quicr::messages::PublishDatagram &&datagram) {
 
-  DEBUG(
-      "onPublishedObject Name: %s from context_id: %d stream_id: %d offset: %d",
-      datagram.header.name.to_hex().c_str(), context_id, stream_id,
-      datagram.header.offset_and_fin);
+//  DEBUG(
+//      "onPublishedObject Name: %s from context_id: %d stream_id: %d offset: %d",
+//      datagram.header.name.to_hex().c_str(), context_id, stream_id,
+//      datagram.header.offset_and_fin);
 
   if (cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
     // duplicate, ignore
@@ -69,17 +94,17 @@ void ClientManager::onPublisherObject(
 
   for (auto dest : list) {
 
-    if (dest.context_id == context_id && dest.stream_id == stream_id) {
+    if (not config.disable_splithz && dest.context_id == context_id) {
       // split horizon - drop packets back to the source that originated the
       // published object
-      DEBUG("Subscriber is source, dropping object '%s' to subscriber %d",
-            datagram.header.name.to_hex().c_str(), dest.subscribe_id);
+//      DEBUG("Subscriber is source, dropping object '%s' to subscriber %d",
+//            datagram.header.name.to_hex().c_str(), dest.subscribe_id);
       continue;
     }
 
-    DEBUG("Sending object '%s' to subscriber %d (%d/%d)",
-          datagram.header.name.to_hex().c_str(), dest.subscribe_id,
-          dest.context_id, dest.stream_id);
+//    DEBUG("Sending object '%s' to subscriber %d (%d/%d)",
+//          datagram.header.name.to_hex().c_str(), dest.subscribe_id,
+//          dest.context_id, dest.stream_id);
 
     server->sendNamedObject(dest.subscribe_id, false, datagram);
   }
@@ -88,7 +113,7 @@ void ClientManager::onPublisherObject(
 void ClientManager::onSubscribe(
     const quicr::Namespace &quicr_namespace, const uint64_t &subscriber_id,
     const qtransport::TransportContextId &context_id,
-    const qtransport::MediaStreamId &stream_id,
+    const qtransport::StreamId &stream_id,
     const quicr::SubscribeIntent /* subscribe_intent */,
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
@@ -123,5 +148,6 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
   subscribeList->remove(quicr_namespace.name(), quicr_namespace.length(),
                         subscriber_id);
 }
+
 
 } // namespace laps

@@ -26,25 +26,30 @@ public:
   ClientManager(const Config &cfg, Cache &cache);
 
   void start();
+  bool ready();
 
   /*
    * Overloads
    */
+
   void onPublishIntent(const quicr::Namespace &quicr_name,
                        const std::string &origin_url,
                        bool use_reliable_transport,
                        const std::string &auth_token,
                        quicr::bytes &&e2e_token) override;
 
+  void onPublishIntentEnd(const quicr::Namespace &quicr_namespace, const std::string &auth_token,
+                          quicr::bytes &&e2e_token) override;
+
   void onPublisherObject(const qtransport::TransportContextId &context_id,
-                         const qtransport::MediaStreamId &stream_id,
+                         const qtransport::StreamId &stream_id,
                          bool use_reliable_transport,
                          quicr::messages::PublishDatagram &&datagram) override;
 
   void onSubscribe(const quicr::Namespace &quicr_namespace,
                    const uint64_t &subscriber_id,
                    const qtransport::TransportContextId &context_id,
-                   const qtransport::MediaStreamId &stream_id,
+                   const qtransport::StreamId &stream_id,
                    const quicr::SubscribeIntent subscribe_intent,
                    const std::string &origin_url, bool use_reliable_transport,
                    const std::string &auth_token, quicr::bytes &&data) override;
@@ -58,6 +63,7 @@ private:
   const Config &config;
   Cache &cache;
   Logger *logger;
+  bool running {false};
 
   std::unique_ptr<quicr::QuicRServer> server;
   std::shared_ptr<qtransport::ITransport> transport;

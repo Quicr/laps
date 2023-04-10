@@ -17,9 +17,27 @@ The last octet of the version should be incremented on any change, unless it's t
 xcode-select --install
 ```
 
-
 ```
 make build
+```
+### Running tests
+
+Run relay:
+
+```
+cd build/src/lapsRelay
+openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
+    -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.quicr.ctgpoc.com" \
+    -keyout server-key.pem -out server-cert.pem
+
+./lapsRelay
+```
+
+Run test:
+
+```
+cd build/src/lapsRelay
+./lapsTest
 ```
 
 ## Build with Docker
@@ -55,12 +73,12 @@ docker build --no-cache --platform linux/arm64/v8 --tag laps-arm64:latest .
 
 On Intel:
 ```
-docker run --rm -it laps-amd64:latest /bin/bash 
+docker run --rm -it quicr/laps-relay:0.1.4-amd64 /bin/bash 
 ```
 
 On Mac silicon:
 ```
-docker run --rm -it laps-arm64:latest /bin/bash 
+docker run --rm -it quicr/laps-relay:0.1.4-arm64 /bin/bash 
 ```
 
 ## Run relay with Docker

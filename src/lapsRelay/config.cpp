@@ -15,6 +15,12 @@ Config::Config() : logger(NULL) {
 void Config::init_defaults() {
   client_bind_addr = "127.0.0.1";
   client_port = 33434;
+  protocol = quicr::RelayInfo::Protocol::UDP;
+
+  disable_splithz = false;
+
+  tls_key_filename = NULL;
+  tls_cert_filename = NULL;
 
   cache_map_capacity = 20000;
   cache_max_buffers = 10;
@@ -23,9 +29,24 @@ void Config::init_defaults() {
 void Config::cfg_from_env() {
   char *envVar;
 
+  envVar = getenv("LAPS_TLS_CERT_FILENAME");
+  if (envVar) {
+    tls_cert_filename = envVar;
+  }
+
+  envVar = getenv("LAPS_TLS_KEY_FILENAME");
+  if (envVar) {
+    tls_key_filename = envVar;
+  }
+
   envVar = getenv("LAPS_CLIENT_BIND_ADDR");
   if (envVar) {
     client_bind_addr = envVar;
+  }
+
+  envVar = getenv("LAPS_DISABLE_SPLITHZ");
+  if (envVar) {
+    disable_splithz = atoi(envVar) == 1 ? true : false;
   }
 
   envVar = getenv("LAPS_CLIENT_PORT");

@@ -179,6 +179,11 @@ std::list<quicr::Name> Cache::find(const quicr::Name &name, const int len) {
 }
 
 Cache::~Cache() {
+  stop = true;
+
+  if (cache_mon_thr.joinable())
+    cache_mon_thr.join();
+
   for (auto it = cacheBuffer.begin(); it != cacheBuffer.end(); it++) {
     it->second.clear();
   }
