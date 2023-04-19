@@ -24,6 +24,7 @@ void Config::init_defaults() {
 
   cache_map_capacity = 20000;
   cache_max_buffers = 10;
+  data_queue_size = 300;
 }
 
 void Config::cfg_from_env() {
@@ -52,6 +53,11 @@ void Config::cfg_from_env() {
   envVar = getenv("LAPS_CLIENT_PORT");
   if (envVar) {
     client_port = atoi(envVar);
+  }
+
+  envVar = getenv("LAPS_CLIENT_QUEUE_SIZE");
+  if (envVar) {
+    data_queue_size = atoi(envVar);
   }
 
   envVar = getenv("LAPS_CACHE_MAX_BUFFERS");

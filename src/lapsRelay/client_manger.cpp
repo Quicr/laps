@@ -1,7 +1,7 @@
 #include <quicr/quicr_common.h>
 #include <quicr/quicr_server.h>
 
-#include "subscription.h"
+#include "client_subscriptions.h"
 #include <set>
 
 #include "cache.h"
@@ -9,12 +9,13 @@
 
 namespace laps {
 
-ClientManager::ClientManager(const Config &cfg, Cache &cache)
-    : config(cfg), cache(cache) {
+ClientManager::ClientManager(const Config& cfg, Cache& cache,
+                             ClientSubscriptions& subscriptions)
+    : subscribeList(subscriptions)
+      , config(cfg), cache(cache)
+      , client_mgr_id(cfg.client_port) {
 
   logger = cfg.logger;
-
-  subscribeList = new Subscriptions(cfg);
 
   quicr::RelayInfo relayInfo = {.hostname
                                 = config.client_bind_addr,
@@ -22,7 +23,10 @@ ClientManager::ClientManager(const Config &cfg, Cache &cache)
                                 .proto = config.protocol };
 
   qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
-                                     .tls_key_filename = config.tls_key_filename };
+                                     .tls_key_filename = config.tls_key_filename,
+                                     .data_queue_size = config.data_queue_size };
+
+  logger->log(qtransport::LogLevel::info, "Starting client manager id " + std::to_string(client_mgr_id));
 
   server =
       std::make_unique<quicr::QuicRServer>(relayInfo, std::move(tcfg), *this, *config.logger);
@@ -30,10 +34,6 @@ ClientManager::ClientManager(const Config &cfg, Cache &cache)
 
 ClientManager::~ClientManager() {
   server.reset();
-
-  if (subscribeList != NULL) {
-    delete subscribeList;
-  }
 }
 
 bool ClientManager::ready() {
@@ -84,29 +84,23 @@ void ClientManager::onPublisherObject(
               datagram.media_data);
   }
 
-  // cache.put(datagram.header.name, datagram.header.offset_and_fin,
-  // datagram.media_data);
+  std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
+      subscribeList.find(datagram.header.name);
 
-  std::list<Subscriptions::Remote> list =
-      subscribeList->find(datagram.header.name);
+  // TODO: Add sending to peers (aka other relays)
 
-  // TODO: Send to peers (aka other relays)
+  for (const auto& cMgr: list) {
+    for (const auto& dest : cMgr.second) {
 
-  for (auto dest : list) {
+      if (not config.disable_splithz &&
+          dest.second.client_mgr_id == client_mgr_id &&
+          dest.second.conn_id == context_id) {
+        continue;
+      }
 
-    if (not config.disable_splithz && dest.context_id == context_id) {
-      // split horizon - drop packets back to the source that originated the
-      // published object
-//      DEBUG("Subscriber is source, dropping object '%s' to subscriber %d",
-//            datagram.header.name.to_hex().c_str(), dest.subscribe_id);
-      continue;
+      dest.second.sendObjFunc(datagram);
+      // server->sendNamedObject(dest.second.subscribe_id, false, datagram);
     }
-
-//    DEBUG("Sending object '%s' to subscriber %d (%d/%d)",
-//          datagram.header.name.to_hex().c_str(), dest.subscribe_id,
-//          dest.context_id, dest.stream_id);
-
-    server->sendNamedObject(dest.subscribe_id, false, datagram);
   }
 }
 
@@ -122,12 +116,17 @@ void ClientManager::onSubscribe(
         quicr_namespace.to_hex().c_str(), quicr_namespace.length(),
         subscriber_id, context_id, stream_id);
 
-  Subscriptions::Remote remote = {
+  ClientSubscriptions::Remote remote = {
+      .client_mgr_id = client_mgr_id,
       .subscribe_id = subscriber_id,
-      .context_id = context_id,
-      .stream_id = stream_id,
+      .conn_id = context_id,
+      .sendObjFunc = [&, subscriber_id]
+                      (const quicr::messages::PublishDatagram& datagram) {
+        server->sendNamedObject(subscriber_id, false, datagram);
+      }
   };
-  subscribeList->add(quicr_namespace.name(), quicr_namespace.length(), remote);
+  subscribeList.add(quicr_namespace.name(), quicr_namespace.length(),
+                     client_mgr_id, remote);
 
   // respond with response
   auto result = quicr::SubscribeResult{
@@ -145,8 +144,8 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
   server->subscriptionEnded(subscriber_id, quicr_namespace,
                             quicr::SubscribeResult::SubscribeStatus::Ok);
 
-  subscribeList->remove(quicr_namespace.name(), quicr_namespace.length(),
-                        subscriber_id);
+  subscribeList.remove(quicr_namespace.name(), quicr_namespace.length(),
+                        client_mgr_id, subscriber_id);
 }
 
 

@@ -4,7 +4,7 @@
 # Set CMAKE_GENERATOR in the environment to select how you build, e.g.:
 #   CMAKE_GENERATOR=Ninja
 
-BUILD_DIR=build
+BUILD_DIR?=build
 CLANG_FORMAT=clang-format -i
 
 PROJECTNAME := laps

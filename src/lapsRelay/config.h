@@ -20,6 +20,7 @@ public:
 
   const char* tls_cert_filename;
   const char* tls_key_filename;
+  uint16_t data_queue_size;
 
   // Cache
   unsigned int cache_max_buffers;  /// Max number of cache buffers

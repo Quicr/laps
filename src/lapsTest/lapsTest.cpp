@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
     port = atoi(portVar);
   }
 
-  auto name = quicr::Name(argv[1]);
+  auto name = quicr::Name(std::string(argv[1]));
   int len = 0;
 
   std::stringstream log_msg;

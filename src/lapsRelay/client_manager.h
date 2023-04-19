@@ -11,8 +11,8 @@
 #include <quicr/quicr_server.h>
 
 #include "cache.h"
+#include "client_subscriptions.h"
 #include "config.h"
-#include "subscription.h"
 
 namespace laps {
 
@@ -23,7 +23,8 @@ class ClientManager : public quicr::ServerDelegate {
 public:
   ~ClientManager();
 
-  ClientManager(const Config &cfg, Cache &cache);
+  ClientManager(const Config& cfg, Cache& cache,
+                ClientSubscriptions &subscriptions);
 
   void start();
   bool ready();
@@ -59,9 +60,10 @@ public:
                      const std::string &auth_token) override;
 
 private:
-  Subscriptions *subscribeList;
+  ClientSubscriptions &subscribeList;
   const Config &config;
   Cache &cache;
+  const uint16_t client_mgr_id;             /// This client mgr ID, uses listening port
   Logger *logger;
   bool running {false};
 

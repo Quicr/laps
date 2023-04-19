@@ -62,10 +62,11 @@ ntohs(relay.addr.sin_port)); relays.push_back( relay );
 }
   */
 
+  ClientSubscriptions subscriptions(cfg);
   Cache cache(cfg);
 
   // Start UDP client manager
-  ClientManager udp_mgr(cfg, cache);
+  ClientManager udp_mgr(cfg, cache, subscriptions);
   udp_mgr.start();
 
   // Start QUIC client manager using the UDP port plus one
@@ -78,10 +79,8 @@ ntohs(relay.addr.sin_port)); relays.push_back( relay );
 
   cfg.protocol = quicr::RelayInfo::Protocol::QUIC;
 
-  ClientManager quic_mgr(cfg, cache);
+  ClientManager quic_mgr(cfg, cache, subscriptions);
   quic_mgr.start();
-
-
 
   while (quic_mgr.ready() && udp_mgr.ready()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));

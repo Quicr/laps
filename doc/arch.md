@@ -91,7 +91,7 @@ class ConnectionManagerInterface {
 ```
 
 ## Session Manager
-Session manager handles new sessions and subscription changes.  Subscriptions can take milliseconds
+Session manager handles new sessions and subscription changes.  ClientSubscriptions can take milliseconds
 to process. Handling subscriptions asynchronously from the forwarding process reduces relay latency.  
 
 Session manager performs the following:
@@ -114,7 +114,7 @@ struct session_object {
 };
 ```
 
-## Subscriptions
+## ClientSubscriptions
 Clients subscribe to SNs using a mask bit name_length. This is similar to IP network prefix/len notation. A client that
 subscribes to a shorter bit name_length SN will receive all messages equal to or longer than the bit name_length specified. A
 client may subscribe to more specifics, which will be ignored in favor of the less specific.  For example, subscribe

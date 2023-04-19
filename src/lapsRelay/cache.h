@@ -38,7 +38,7 @@ public:
 private:
   void monitor_thread();
 
-  const quicr::Name CACHE_INFO_NAME{"0x00000000000000000000000000000000"};
+  const quicr::Name CACHE_INFO_NAME = 0x00000000000000000000000000000000_name;
   const uint MAX_CACHE_MS_AGE = 45000;
 
   std::atomic<bool> stop;
