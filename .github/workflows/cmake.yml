@@ -17,7 +17,7 @@ jobs:
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     strategy:
       matrix:
-        os: [  macos-latest, alpine-latest ]
+        os: [  macos-latest, ubuntu-latest ]
 
     runs-on: ${{ matrix.os }}
     continue-on-error: true
@@ -30,10 +30,6 @@ jobs:
       - name: Install MacOS Packages
         run: brew install pkg-config
         if: matrix.os != 'alpine-latest'
-
-      - name: Install Alpine Packages
-        run: apk add cmake alpine-sdk openssl-dev go perl linux-headers  clang lld curl
-        if: matrix.os == 'alpine-latest'
 
       - name: Configure CMake
         # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
