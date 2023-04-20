@@ -6,6 +6,7 @@
 #include <set>
 #include <thread>
 #include <vector>
+#include <atomic>
 
 #include <quicr/quicr_common.h>
 
@@ -37,10 +38,10 @@ public:
 private:
   void monitor_thread();
 
-  const quicr::Name CACHE_INFO_NAME{"0x00000000000000000000000000000000"};
+  const quicr::Name CACHE_INFO_NAME = 0x00000000000000000000000000000000_name;
   const uint MAX_CACHE_MS_AGE = 45000;
 
-  bool stop;
+  std::atomic<bool> stop;
   std::mutex w_mutex;
   std::thread cache_mon_thr;
 

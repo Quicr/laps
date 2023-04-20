@@ -5,6 +5,7 @@
 #include <quicr/quicr_client.h>
 #include <quicr/quicr_common.h>
 #include <sstream>
+#include <cstring>
 #include <thread>
 
 class subDelegate : public quicr::SubscriberDelegate {
@@ -89,17 +90,17 @@ int main(int argc, char *argv[]) {
 
   char *relayName = getenv("LAPS_RELAY");
   if (!relayName) {
-    static char defaultRelay[] = "localhost";
+    static char defaultRelay[] = "127.0.0.1";
     relayName = defaultRelay;
   }
 
-  int port = 33434;
+  int port = 33435;
   char *portVar = getenv("LAPS_PORT");
   if (portVar) {
     port = atoi(portVar);
   }
 
-  auto name = quicr::Name(argv[1]);
+  auto name = quicr::Name(std::string(argv[1]));
   int len = 0;
 
   std::stringstream log_msg;
@@ -110,7 +111,7 @@ int main(int argc, char *argv[]) {
   std::vector<uint8_t> data;
   if (argc == 3) {
     data.insert(data.end(), (uint8_t *)(argv[2]),
-                ((uint8_t *)(argv[2])) + strlen(argv[2]));
+                ((uint8_t *)(argv[2])) + std::strlen(argv[2]));
   }
 
   log_msg.str("");
@@ -119,15 +120,24 @@ int main(int argc, char *argv[]) {
 
   quicr::RelayInfo relay{.hostname = relayName,
                          .port = uint16_t(port),
-                         .proto = quicr::RelayInfo::Protocol::UDP};
+                         .proto = quicr::RelayInfo::Protocol::QUIC};
 
-  quicr::QuicRClient client(relay, logger);
+  qtransport::TransportConfig tcfg { .tls_cert_filename = NULL, .tls_key_filename = NULL};
+  quicr::QuicRClient client(relay, std::move(tcfg), logger);
 
   // TODO: Update to use status to check when ready - For now sleep to give it
   // some time
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
   if (data.size() > 0) {
+    auto pd = std::make_shared<pubDelegate>();
+    auto nspace = quicr::Namespace(name, 96);
+
+    logger.log(qtransport::LogLevel::info, "PublishIntent");
+
+    client.publishIntent(pd, nspace, {}, {}, {});
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
     // do publish
     logger.log(qtransport::LogLevel::info, "Publish");
     client.publishNamedObject(name, 0, 10000, false, std::move(data));
@@ -161,6 +171,6 @@ int main(int argc, char *argv[]) {
     std::this_thread::sleep_for(std::chrono::seconds(15));
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   return 0;
 }

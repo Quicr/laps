@@ -62,12 +62,28 @@ ntohs(relay.addr.sin_port)); relays.push_back( relay );
 }
   */
 
+  ClientSubscriptions subscriptions(cfg);
   Cache cache(cfg);
-  ClientManager client_mgr(cfg, cache);
 
-  client_mgr.start();
+  // Start UDP client manager
+  ClientManager udp_mgr(cfg, cache, subscriptions);
+  udp_mgr.start();
 
-  while (true) {
+  // Start QUIC client manager using the UDP port plus one
+  cfg.client_port++;
+
+  if (cfg.tls_cert_filename == NULL) {
+    cfg.tls_cert_filename = "./server-cert.pem";
+    cfg.tls_key_filename = "./server-key.pem";
+  }
+
+  cfg.protocol = quicr::RelayInfo::Protocol::QUIC;
+
+  ClientManager quic_mgr(cfg, cache, subscriptions);
+  quic_mgr.start();
+
+  while (quic_mgr.ready() && udp_mgr.ready()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
   }
+
 }
