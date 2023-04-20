@@ -5,6 +5,7 @@
 #include <quicr/quicr_client.h>
 #include <quicr/quicr_common.h>
 #include <sstream>
+#include <cstring>
 #include <thread>
 
 class subDelegate : public quicr::SubscriberDelegate {
@@ -110,7 +111,7 @@ int main(int argc, char *argv[]) {
   std::vector<uint8_t> data;
   if (argc == 3) {
     data.insert(data.end(), (uint8_t *)(argv[2]),
-                ((uint8_t *)(argv[2])) + strlen(argv[2]));
+                ((uint8_t *)(argv[2])) + std::strlen(argv[2]));
   }
 
   log_msg.str("");
