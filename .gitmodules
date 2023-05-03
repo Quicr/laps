@@ -3,4 +3,4 @@
 	url = https://github.com/doctest/doctest.git
 [submodule "dependencies/libquicr"]
 	path = dependencies/libquicr
-	url = git@github.com:Quicr/new-libquicr.git
+	url = git@github.com:Quicr/libquicr.git
