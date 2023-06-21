@@ -24,7 +24,7 @@ ClientManager::ClientManager(const Config& cfg, Cache& cache,
 
   qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
                                      .tls_key_filename = config.tls_key_filename,
-                                     .data_queue_size = config.data_queue_size };
+                                     .time_queue_init_queue_size = config.data_queue_size };
 
   logger->log(qtransport::LogLevel::info, "Starting client manager id " + std::to_string(client_mgr_id));
 
@@ -49,11 +49,25 @@ void ClientManager::start() {
 
 
 
-void ClientManager::onPublishIntent(const quicr::Namespace& /* quicr_name */,
+void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     const std::string& /* origin_url */,
                                     bool /* use_reliable_transport */,
                                     const std::string& /* auth_token */,
-                                    quicr::bytes&& /* e2e_token */) {}
+                                    quicr::bytes&& /* e2e_token */) {
+
+  DEBUG("onPublished namespace: %s/%d",
+        quicr_namespace.to_hex().c_str(), quicr_namespace.length());
+
+  // TODO: Add publish intent state and
+
+  // respond with response
+  /* TODO: Add the below
+  auto  result = quicr::PublishIntentResult { quicr::messages::Response::Ok,
+                                              {}, {} };
+
+  server->publishIntentResponse(subscriber_id, quicr_namespace, result);
+ */
+}
 
 
   void ClientManager::onPublishIntentEnd(
@@ -122,7 +136,7 @@ void ClientManager::onSubscribe(
       .conn_id = context_id,
       .sendObjFunc = [&, subscriber_id]
                       (const quicr::messages::PublishDatagram& datagram) {
-        server->sendNamedObject(subscriber_id, false, datagram);
+        server->sendNamedObject(subscriber_id, false, 1, 350, datagram);
       }
   };
   subscribeList.add(quicr_namespace.name(), quicr_namespace.length(),
