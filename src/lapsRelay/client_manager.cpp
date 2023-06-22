@@ -55,7 +55,7 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     const std::string& /* auth_token */,
                                     quicr::bytes&& /* e2e_token */) {
 
-  DEBUG("onPublished namespace: %s/%d",
+  DEBUG("onPublishIntent namespace: %s",
         quicr_namespace.to_hex().c_str(), quicr_namespace.length());
 
   // TODO: Add publish intent state and
@@ -83,12 +83,8 @@ void ClientManager::onPublisherObject(
     bool /* use_reliable_transport */,
     quicr::messages::PublishDatagram &&datagram) {
 
-//  DEBUG(
-//      "onPublishedObject Name: %s from context_id: %d stream_id: %d offset: %d",
-//      datagram.header.name.to_hex().c_str(), context_id, stream_id,
-//      datagram.header.offset_and_fin);
-
-  if (cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
+  if (not config.disable_dedup &&
+      cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
     // duplicate, ignore
     DEBUG("Duplicate message Name: %s", datagram.header.name.to_hex().c_str());
     return;
@@ -113,7 +109,6 @@ void ClientManager::onPublisherObject(
       }
 
       dest.second.sendObjFunc(datagram);
-      // server->sendNamedObject(dest.second.subscribe_id, false, datagram);
     }
   }
 }
@@ -126,7 +121,7 @@ void ClientManager::onSubscribe(
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
-  DEBUG("onSubscribe namespace: %s/%d %d (%d/%d)",
+  DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
         quicr_namespace.to_hex().c_str(), quicr_namespace.length(),
         subscriber_id, context_id, stream_id);
 
@@ -134,9 +129,11 @@ void ClientManager::onSubscribe(
       .client_mgr_id = client_mgr_id,
       .subscribe_id = subscriber_id,
       .conn_id = context_id,
-      .sendObjFunc = [&, subscriber_id]
+      .sendObjFunc = [&, subscriber_id, context_id, stream_id]
                       (const quicr::messages::PublishDatagram& datagram) {
-        server->sendNamedObject(subscriber_id, false, 1, 350, datagram);
+
+        server->sendNamedObject(subscriber_id,false, 1,
+                                config.time_queue_ttl_default, datagram);
       }
   };
   subscribeList.add(quicr_namespace.name(), quicr_namespace.length(),
@@ -152,8 +149,7 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
                                   const uint64_t &subscriber_id,
                                   const std::string & /* auth_token */) {
 
-  DEBUG("onUnsubscribe namespace: %s/%d", quicr_namespace.to_hex().c_str(),
-        quicr_namespace.length());
+  DEBUG("onUnsubscribe namespace: %s", quicr_namespace.to_hex().c_str());
 
   server->subscriptionEnded(subscriber_id, quicr_namespace,
                             quicr::SubscribeResult::SubscribeStatus::Ok);

@@ -16,11 +16,14 @@ public:
   uint16_t client_port; /// Local client listening port, defaults to 33434
   quicr::RelayInfo::Protocol protocol;
 
+
   bool disable_splithz;   /// Disable split horizon
+  bool disable_dedup;     /// Disable Deduplication
 
   const char* tls_cert_filename;
   const char* tls_key_filename;
   uint16_t data_queue_size;
+  uint16_t time_queue_ttl_default;
 
   // Cache
   unsigned int cache_max_buffers;  /// Max number of cache buffers

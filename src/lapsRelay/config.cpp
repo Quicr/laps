@@ -24,7 +24,9 @@ void Config::init_defaults() {
 
   cache_map_capacity = 20000;
   cache_max_buffers = 10;
-  data_queue_size = 300;
+  data_queue_size = 500;
+  time_queue_ttl_default = 200;
+  disable_dedup = false;
 }
 
 void Config::cfg_from_env() {
@@ -50,6 +52,12 @@ void Config::cfg_from_env() {
     disable_splithz = atoi(envVar) == 1 ? true : false;
   }
 
+  envVar = getenv("LAPS_DISABLE_DEDUP");
+  if (envVar) {
+    disable_dedup = atoi(envVar) == 1 ? true : false;
+  }
+
+
   envVar = getenv("LAPS_CLIENT_PORT");
   if (envVar) {
     client_port = atoi(envVar);
@@ -58,6 +66,11 @@ void Config::cfg_from_env() {
   envVar = getenv("LAPS_CLIENT_QUEUE_SIZE");
   if (envVar) {
     data_queue_size = atoi(envVar);
+  }
+
+  envVar = getenv("LAPS_CLIENT_TQ_TTL");
+  if (envVar) {
+    time_queue_ttl_default = atoi(envVar);
   }
 
   envVar = getenv("LAPS_CACHE_MAX_BUFFERS");
