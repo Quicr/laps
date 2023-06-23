@@ -25,6 +25,9 @@ public:
   uint16_t data_queue_size;
   uint16_t time_queue_ttl_default;
 
+  // Peering Manager
+  std::vector<std::string> peers;
+
   // Cache
   unsigned int cache_max_buffers;  /// Max number of cache buffers
   unsigned int cache_map_capacity; /// Max capacity for cache map

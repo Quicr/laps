@@ -1,6 +1,9 @@
 
 #include "config.h"
 #include <cstdlib>
+#include <string>
+#include <sstream>
+#include <vector>
 
 namespace laps {
 
@@ -36,6 +39,17 @@ void Config::cfg_from_env() {
   if (envVar) {
     tls_cert_filename = envVar;
   }
+
+  envVar = getenv("LAPS_PEERS");
+  if (envVar) {
+    std::stringstream ss(envVar);
+
+    std::string host;
+    while (std::getline(ss, host, ' ')) {
+      peers.push_back(host);
+    }
+  }
+
 
   envVar = getenv("LAPS_TLS_KEY_FILENAME");
   if (envVar) {

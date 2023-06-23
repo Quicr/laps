@@ -10,10 +10,13 @@
 namespace laps {
 
 ClientManager::ClientManager(const Config& cfg, Cache& cache,
-                             ClientSubscriptions& subscriptions)
+                             ClientSubscriptions& subscriptions,
+                             PeerManager::peerQueue &peer_queue)
     : subscribeList(subscriptions)
       , config(cfg), cache(cache)
-      , client_mgr_id(cfg.client_port) {
+      , client_mgr_id(cfg.client_port)
+      , _peer_queue(peer_queue)
+{
 
   logger = cfg.logger;
 
@@ -24,7 +27,8 @@ ClientManager::ClientManager(const Config& cfg, Cache& cache,
 
   qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
                                      .tls_key_filename = config.tls_key_filename,
-                                     .time_queue_init_queue_size = config.data_queue_size };
+                                     .time_queue_init_queue_size = config.data_queue_size,
+                                     .debug = false };
 
   logger->log(qtransport::LogLevel::info, "Starting client manager id " + std::to_string(client_mgr_id));
 
@@ -94,10 +98,11 @@ void ClientManager::onPublisherObject(
               datagram.media_data);
   }
 
+  // Send to peers
+  _peer_queue.push(datagram);
+
   std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
       subscribeList.find(datagram.header.name);
-
-  // TODO: Add sending to peers (aka other relays)
 
   for (const auto& cMgr: list) {
     for (const auto& dest : cMgr.second) {
