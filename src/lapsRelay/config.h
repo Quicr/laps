@@ -32,6 +32,7 @@ namespace laps {
         struct peerConfig {
             std::string bind_addr;          /// bind address, defaults to client bind address
             uint16_t listen_port;           /// Peering listening port
+            uint16_t peer_port;             /// Peering destination port to connect to
             quicr::RelayInfo::Protocol protocol;
 
             std::vector<std::string> peers; /// Default peers to connect to

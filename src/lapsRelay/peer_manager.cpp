@@ -43,7 +43,7 @@ namespace laps {
 
         for (const auto& peer : cfg.peer_config.peers) {
             TransportRemote remote{ peer,
-                                    cfg.peer_config.listen_port,
+                                    cfg.peer_config.peer_port,
                                     cfg.peer_config.protocol == RelayInfo::Protocol::UDP ? TransportProtocol::UDP
                                                                                          : TransportProtocol::QUIC };
 

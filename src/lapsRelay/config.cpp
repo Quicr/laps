@@ -28,6 +28,7 @@ namespace laps {
         disable_dedup = false;
 
         peer_config.listen_port = client_config.listen_port;
+        peer_config.peer_port = peer_config.listen_port;
         peer_config.bind_addr = client_config.bind_addr;
         peer_config.protocol = client_config.protocol;
         peer_config.latitude = 0;
@@ -70,7 +71,8 @@ namespace laps {
         env_value(disable_splithz, "LAPS_DISABLE_SPLITHZ");
 
         env_value(peer_config.id, "LAPS_PEER_ID");
-        env_value(peer_config.listen_port , "LAPS_PEER_PORT");
+        env_value(peer_config.peer_port , "LAPS_PEER_PORT");
+        env_value(peer_config.listen_port , "LAPS_PEER_LISTEN_PORT");
         env_value(peer_config.peers, "LAPS_PEERS");
         env_value(peer_config.sub_namespaces, "LAPS_PEER_NAMESPACES");
     }

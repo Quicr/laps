@@ -135,7 +135,7 @@ void ClientManager::onSubscribe(
       .client_mgr_id = client_mgr_id,
       .subscribe_id = subscriber_id,
       .conn_id = context_id,
-      .sendObjFunc = [&, subscriber_id, context_id, stream_id]
+      .sendObjFunc = [&, subscriber_id]
                       (const quicr::messages::PublishDatagram& datagram) {
 
         server->sendNamedObject(subscriber_id,false, 1,

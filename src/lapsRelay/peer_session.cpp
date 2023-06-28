@@ -13,8 +13,8 @@ namespace laps {
                              Cache& cache,
                              ClientSubscriptions& subscriptions,
                              PeerSubscriptions& peer_subscriptions)
-      : _config(cfg)
-      , peer_config(peer_remote)
+      : peer_config(peer_remote)
+      , _config(cfg)
       , _peer_queue(peer_queue)
       , _cache(cache)
       , _subscriptions(subscriptions)

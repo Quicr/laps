@@ -58,10 +58,6 @@ namespace laps {
           , _peer_subscriptions { other._peer_subscriptions }
         {}
 
-
-        PeerSession& operator=(const PeerSession&) = default;
-        PeerSession& operator=(PeerSession&&) = default;
-
         /**
          * @brief Constructor to create a new peer session
          *
