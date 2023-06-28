@@ -11,22 +11,22 @@ namespace laps {
 
 ClientManager::ClientManager(const Config& cfg, Cache& cache,
                              ClientSubscriptions& subscriptions,
-                             PeerManager::peerQueue &peer_queue)
+                             peerQueue &peer_queue)
     : subscribeList(subscriptions)
       , config(cfg), cache(cache)
-      , client_mgr_id(cfg.client_port)
+      , client_mgr_id(cfg.client_config.listen_port)
       , _peer_queue(peer_queue)
 {
 
   logger = cfg.logger;
 
   quicr::RelayInfo relayInfo = {.hostname
-                                = config.client_bind_addr,
-                                .port = config.client_port,
-                                .proto = config.protocol };
+                                = config.client_config.bind_addr,
+                                .port = config.client_config.listen_port,
+                                .proto = config.client_config.protocol };
 
-  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
-                                     .tls_key_filename = config.tls_key_filename,
+  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : config.tls_cert_filename.c_str(),
+                                     .tls_key_filename = config.tls_cert_filename.empty() ? NULL : config.tls_key_filename.c_str(),
                                      .time_queue_init_queue_size = config.data_queue_size,
                                      .debug = false };
 
@@ -99,7 +99,8 @@ void ClientManager::onPublisherObject(
   }
 
   // Send to peers
-  _peer_queue.push(datagram);
+
+  _peer_queue.push({ "_client_", datagram });
 
   std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
       subscribeList.find(datagram.header.name);

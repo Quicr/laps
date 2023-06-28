@@ -26,7 +26,7 @@ public:
 
   ClientManager(const Config& cfg, Cache& cache,
                 ClientSubscriptions &subscriptions,
-                PeerManager::peerQueue &peer_queue);
+                peerQueue &peer_queue);
 
   void start();
   bool ready();
@@ -72,6 +72,6 @@ private:
   std::unique_ptr<quicr::QuicRServer> server;
   std::shared_ptr<qtransport::ITransport> transport;
   std::set<uint64_t> subscribers = {};
-  PeerManager::peerQueue& _peer_queue;
+  peerQueue& _peer_queue;
 };
 } // namespace laps

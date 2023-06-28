@@ -1,85 +1,107 @@
 #pragma once
 
-#include <thread>
+
 #include <atomic>
 #include <memory>
+#include <unordered_set>
 #include <quicr/encode.h>
 #include <quicr/quicr_namespace.h>
-#include <quicr/quicr_client.h>
-#include <quicr/quicr_client_delegate.h>
+#include <transport/transport.h>
+#include <thread>
 #include <transport/safe_queue.h>
-#include "config.h"
+
+#include "peer_common.h"
+#include "peer_protocol.h"
+#include "peer_session.h"
 #include "cache.h"
 #include "client_subscriptions.h"
+#include "config.h"
+
 
 namespace laps {
-using namespace qtransport;
-using namespace quicr;
+    using namespace qtransport;
+    using namespace quicr;
+
+    /**
+     * @brief Peering manager class. Manages relay to relay (peering) forwarding of
+     *      subscriber objects.
+     */
+    class PeerManager
+      : public ITransport::TransportDelegate
+    {
+      public:
+
+        PeerManager(const Config& cfg,
+                    safeQueue<PeerObject>& peer_queue,
+                    Cache& cache,
+                    ClientSubscriptions& subscriptions);
+
+        ~PeerManager();
+
+        /*
+         * Delegate functions
+         */
+        void on_connection_status(const TransportContextId& context_id, const TransportStatus status) override;
+        void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;
+        void on_new_stream(const TransportContextId& context_id, const StreamId& streamId) override {}
+        void on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) override;
+
+      private:
 
 
+        /**
+         * @brief Client thread to monitor client published messages
+         */
+        void ClientRxThread();
 
-class PeerManager : public SubscriberDelegate, public PublisherDelegate {
-public:
-  using peerQueue = safeQueue<messages::PublishDatagram>;
-
-  PeerManager(const Config& cfg,
-              TransportConfig& transportConfig,
-              safeQueue<messages::PublishDatagram>& peer_queue,
-              Cache& cache,
-              ClientSubscriptions &subscriptions);
-
-  ~PeerManager();
-
-  /*
-   * Delegate functions
-   */
-  void onSubscribeResponse(const Namespace &quicr_namespace,
-                           const SubscribeResult &result) override {}
-
-  void onSubscriptionEnded(
-      const Namespace &quicr_namespace,
-      const SubscribeResult::SubscribeStatus &reason) override {}
-
-  void onSubscribedObject(const Name &quicr_name, uint8_t priority,
-                          uint16_t expiry_age_ms, bool use_reliable_transport,
-                          bytes &&data) override;
-
-  void onPublishIntentResponse(const Namespace &quicr_namespace,
-                               const PublishIntentResult &result) override {}
+        /**
+         * @brief Watch Thread to perform reconnects and cleanup
+         * @details Thread will perform various tasks each interval
+         *
+         * @param interval_ms       Interval in milliseconds to sleep before running check
+         */
+        void watchThread(int interval_ms);
 
 
-private:
-  using nameList = std::vector<Namespace>;
+        /**
+         * @brief Create a peering session/connection
+         *
+         * @param peer_config           Peer/relay configuration parameters
+         * @param sub_ns                List of namespaces to subscribe to initially on connection
+         *
+         */
+        void createPeerSession(const TransportRemote& peer_config, const nameList& sub_ns);
 
-  /**
-   * @brief Client thread to monitor client published messages
-   */
-  void ClientRxThread();
+      private:
+        std::atomic<bool> _stop{ false };
+        const Config& _config;
 
-  /**
-   * @brief Start a peering session/connection using QuicrClient
-   *
-   * @param relayInfo           Relay/peer connect parameters
-   */
-   void StartPeerSession(RelayInfo& peer_params,
-                         const nameList& pub_names,
-                         const nameList& sub_names);
+        peerQueue& _peer_queue;
+        Cache& _cache;
+        ClientSubscriptions& _subscriptions;
 
- private:
+        std::shared_ptr<ITransport> _server_transport;           /// Server Transport for inbound connections
 
-  std::atomic<bool> _stop { false };
-  const Config& _config;
-  TransportConfig& _transport_config;
-  peerQueue& _peer_queue;
-  Cache& _cache;
-  ClientSubscriptions& _subscriptions;
 
-  std::thread _client_rx_msg_thr;                            /// Client receive message thread
+        std::thread _client_rx_msg_thr;                         /// Client receive message thread
+        std::thread _watch_thr;                                 /// Watch/task thread, handles reconnects
 
-  std::vector<std::unique_ptr<QuicRClient>> _peers_sessions; /// Peer sessions
 
-  Logger *logger;
+        /// Peer sessions that are accepted by the server
+        std::unordered_map<TransportContextId , PeerSession> _server_peer_sessions;
 
-};
+
+        std::vector<PeerSession> _client_peer_sessions;          /// Peer sessions that are initiated by the peer manager
+
+
+        /**
+         * Map of namespaces and peer sessions that want to receive messages.
+         *      A pointer is used to avoid a second lookup on peer session.
+         */
+        namespace_map<std::vector<SubscribeContext>> _peer_subscriptions;
+
+        // Log handler to use
+        Logger* logger;
+    };
 
 } // namespace laps
