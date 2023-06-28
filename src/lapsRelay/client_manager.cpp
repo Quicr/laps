@@ -60,7 +60,7 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     quicr::bytes&& /* e2e_token */) {
 
   DEBUG("onPublishIntent namespace: %s",
-        quicr_namespace.to_hex().c_str(), quicr_namespace.length());
+        std::string(quicr_namespace).c_str(), quicr_namespace.length());
 
   // TODO: Add publish intent state and
 
@@ -90,7 +90,7 @@ void ClientManager::onPublisherObject(
   if (not config.disable_dedup &&
       cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
     // duplicate, ignore
-    DEBUG("Duplicate message Name: %s", datagram.header.name.to_hex().c_str());
+    DEBUG("Duplicate message Name: %s", std::string(datagram.header.name).c_str());
     return;
 
   } else {
@@ -128,7 +128,7 @@ void ClientManager::onSubscribe(
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
   DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
-        quicr_namespace.to_hex().c_str(), quicr_namespace.length(),
+        std::string(quicr_namespace).c_str(), quicr_namespace.length(),
         subscriber_id, context_id, stream_id);
 
   ClientSubscriptions::Remote remote = {
@@ -155,7 +155,7 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
                                   const uint64_t &subscriber_id,
                                   const std::string & /* auth_token */) {
 
-  DEBUG("onUnsubscribe namespace: %s", quicr_namespace.to_hex().c_str());
+  DEBUG("onUnsubscribe namespace: %s", std::string(quicr_namespace).c_str());
 
   server->subscriptionEnded(subscriber_id, quicr_namespace,
                             quicr::SubscribeResult::SubscribeStatus::Ok);

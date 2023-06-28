@@ -108,7 +108,7 @@ namespace laps {
             const auto& obj = _peer_queue.block_pop();
 
             if (obj) {
-                LOG_INFO("Received publish message name: %s", obj->pub_obj.header.name.to_hex().c_str());
+                LOG_INFO("Received publish message name: %s", std::string(obj->pub_obj.header.name).c_str());
             }
         }
     }
