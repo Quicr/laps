@@ -8,7 +8,6 @@
 
 #include "config.h"
 #include "version_config.h"
-#include <quicr/quicr_name.h>
 #include <transport/safe_queue.h>
 
 using namespace laps;

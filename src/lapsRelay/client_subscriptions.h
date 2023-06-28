@@ -8,8 +8,8 @@
 #include <functional>
 
 #include <quicr/encode.h>
-#include <quicr/quicr_name.h>
-#include <quicr/quicr_namespace.h>
+#include <quicr/name.h>
+#include <quicr/namespace.h>
 #include <transport/transport.h>
 
 #include "config.h"

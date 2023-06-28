@@ -5,7 +5,7 @@
 #include <memory>
 #include <unordered_set>
 #include <quicr/encode.h>
-#include <quicr/quicr_namespace.h>
+#include <quicr/namespace.h>
 #include <transport/transport.h>
 #include <thread>
 #include <transport/safe_queue.h>

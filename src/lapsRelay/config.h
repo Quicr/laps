@@ -1,8 +1,8 @@
 #pragma once
 
-#include <quicr/quicr_common.h>
-
 #include "logger.h"
+#include <quicr/namespace.h>
+#include <quicr/quicr_common.h>
 
 namespace laps {
     class Config

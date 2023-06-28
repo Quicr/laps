@@ -4,7 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <quicr/encode.h>
-#include <quicr/quicr_namespace.h>
+#include <quicr/namespace.h>
 #include <transport/transport.h>
 #include <thread>
 #include <transport/safe_queue.h>
@@ -41,13 +41,23 @@ namespace laps {
           , _config { other._config }
           , _status{ other._status.load() }
           , _peer_queue { other._peer_queue }
+          , _cache { other._cache }
           , _subscriptions { other._subscriptions }
           , _peer_subscriptions { other._peer_subscriptions }
-          , _cache { other._cache }
         {}
 
         PeerSession() = delete;
-        PeerSession(PeerSession&&) = default;
+        //PeerSession(PeerSession&&) = default;
+        PeerSession(const PeerSession&& other)
+          : peer_config { other.peer_config }
+          , _config { other._config }
+          , _status{ other._status.load() }
+          , _peer_queue { other._peer_queue }
+          , _cache { other._cache }
+          , _subscriptions { other._subscriptions }
+          , _peer_subscriptions { other._peer_subscriptions }
+        {}
+
 
         PeerSession& operator=(const PeerSession&) = default;
         PeerSession& operator=(PeerSession&&) = default;

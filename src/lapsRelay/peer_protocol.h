@@ -1,4 +1,4 @@
-src/lapsRelay/config.cpp #pragma once
+#pragma once
 
 namespace laps {
     /* ------------------------------------------------------------------------

@@ -44,7 +44,7 @@ namespace laps {
         data_queue_size = 500;
         time_queue_ttl_default = 200;
 
-        peer_config.sub_namespaces.emplace_back("0/0");
+        peer_config.sub_namespaces.emplace_back(std::string("0/0"));
     }
 
     void Config::cfg_from_env()
@@ -104,7 +104,7 @@ namespace laps {
         }
 
         else if constexpr (std::is_same_v<Value_t, bool>) {
-            value = envVar == "1" || envVar == "true" ? true : false;
+            value = std::string(envVar) == std::string("1") || std::string(envVar) == std::string("true") ? true : false;
         }
 
         else if constexpr (std::is_same_v<Value_t, std::vector<std::string>>) {
