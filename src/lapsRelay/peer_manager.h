@@ -40,7 +40,7 @@ namespace laps {
         ~PeerManager();
 
         /*
-         * Delegate functions
+         * Delegate functions for Incoming (e.g., server side)
          */
         void on_connection_status(const TransportContextId& context_id, const TransportStatus status) override;
         void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;

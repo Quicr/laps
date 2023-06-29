@@ -142,7 +142,7 @@ namespace laps {
          void unsubscribe(const Namespace& ns);
 
         /*
-         * Delegate functions
+         * Delegate functions mainly for Outgoing but does include incoming
          */
         void on_connection_status(const TransportContextId& context_id, const TransportStatus status) override;
         void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;
