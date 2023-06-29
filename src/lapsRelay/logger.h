@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <iostream>
 #include <sys/types.h>
+#include <inttypes.h>
 
 #define DEBUG(...)                                                             \
   logger->DebugPrint(__FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)

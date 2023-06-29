@@ -18,8 +18,7 @@ public:
       [[maybe_unused]] const quicr::SubscribeResult &result) override {
 
     std::stringstream log_msg;
-    log_msg << "onSubscriptionResponse: name: " << quicr_namespace.to_hex()
-            << "/" << int(quicr_namespace.length())
+    log_msg << "onSubscriptionResponse: name: " << quicr_namespace
             << " status: " << int(static_cast<uint8_t>(result.status));
 
     logger.log(qtransport::LogLevel::info, log_msg.str());
@@ -31,8 +30,7 @@ public:
       override {
 
     std::stringstream log_msg;
-    log_msg << "onSubscriptionEnded: name: " << quicr_namespace.to_hex() << "/"
-            << int(quicr_namespace.length());
+    log_msg << "onSubscriptionEnded: name: " << quicr_namespace;
 
     logger.log(qtransport::LogLevel::info, log_msg.str());
   }
@@ -44,7 +42,7 @@ public:
                           [[maybe_unused]] quicr::bytes &&data) override {
     std::stringstream log_msg;
 
-    log_msg << "recv object: name: " << quicr_name.to_hex()
+    log_msg << "recv object: name: " << quicr_name
             << " data sz: " << data.size();
 
     if (data.size())
@@ -105,7 +103,7 @@ int main(int argc, char *argv[]) {
 
   std::stringstream log_msg;
 
-  log_msg << "Name = " << name.to_hex();
+  log_msg << "Name = " << name;
   logger.log(qtransport::LogLevel::info, log_msg.str());
 
   std::vector<uint8_t> data;
@@ -151,7 +149,7 @@ int main(int argc, char *argv[]) {
     log_msg.str(std::string());
     log_msg.clear();
 
-    log_msg << "Subscribe to " << name.to_hex() << "/" << 96;
+    log_msg << "Subscribe to " << name << "/" << 96;
     logger.log(qtransport::LogLevel::info, log_msg.str());
 
     quicr::SubscribeIntent intent = quicr::SubscribeIntent::immediate;

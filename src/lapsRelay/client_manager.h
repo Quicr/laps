@@ -12,6 +12,7 @@
 
 #include "cache.h"
 #include "client_subscriptions.h"
+#include "peer_manager.h"
 #include "config.h"
 
 namespace laps {
@@ -24,7 +25,8 @@ public:
   ~ClientManager();
 
   ClientManager(const Config& cfg, Cache& cache,
-                ClientSubscriptions &subscriptions);
+                ClientSubscriptions &subscriptions,
+                peerQueue &peer_queue);
 
   void start();
   bool ready();
@@ -70,5 +72,6 @@ private:
   std::unique_ptr<quicr::QuicRServer> server;
   std::shared_ptr<qtransport::ITransport> transport;
   std::set<uint64_t> subscribers = {};
+  peerQueue& _peer_queue;
 };
 } // namespace laps

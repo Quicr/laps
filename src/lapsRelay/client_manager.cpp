@@ -10,21 +10,25 @@
 namespace laps {
 
 ClientManager::ClientManager(const Config& cfg, Cache& cache,
-                             ClientSubscriptions& subscriptions)
+                             ClientSubscriptions& subscriptions,
+                             peerQueue &peer_queue)
     : subscribeList(subscriptions)
       , config(cfg), cache(cache)
-      , client_mgr_id(cfg.client_port) {
+      , client_mgr_id(cfg.client_config.listen_port)
+      , _peer_queue(peer_queue)
+{
 
   logger = cfg.logger;
 
   quicr::RelayInfo relayInfo = {.hostname
-                                = config.client_bind_addr,
-                                .port = config.client_port,
-                                .proto = config.protocol };
+                                = config.client_config.bind_addr,
+                                .port = config.client_config.listen_port,
+                                .proto = config.client_config.protocol };
 
-  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
-                                     .tls_key_filename = config.tls_key_filename,
-                                     .time_queue_init_queue_size = config.data_queue_size };
+  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : config.tls_cert_filename.c_str(),
+                                     .tls_key_filename = config.tls_cert_filename.empty() ? NULL : config.tls_key_filename.c_str(),
+                                     .time_queue_init_queue_size = config.data_queue_size,
+                                     .debug = false };
 
   logger->log(qtransport::LogLevel::info, "Starting client manager id " + std::to_string(client_mgr_id));
 
@@ -55,8 +59,8 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     const std::string& /* auth_token */,
                                     quicr::bytes&& /* e2e_token */) {
 
-  DEBUG("onPublished namespace: %s/%d",
-        quicr_namespace.to_hex().c_str(), quicr_namespace.length());
+  DEBUG("onPublishIntent namespace: %s",
+        std::string(quicr_namespace).c_str(), quicr_namespace.length());
 
   // TODO: Add publish intent state and
 
@@ -83,14 +87,10 @@ void ClientManager::onPublisherObject(
     bool /* use_reliable_transport */,
     quicr::messages::PublishDatagram &&datagram) {
 
-//  DEBUG(
-//      "onPublishedObject Name: %s from context_id: %d stream_id: %d offset: %d",
-//      datagram.header.name.to_hex().c_str(), context_id, stream_id,
-//      datagram.header.offset_and_fin);
-
-  if (cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
+  if (not config.disable_dedup &&
+      cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
     // duplicate, ignore
-    DEBUG("Duplicate message Name: %s", datagram.header.name.to_hex().c_str());
+    DEBUG("Duplicate message Name: %s", std::string(datagram.header.name).c_str());
     return;
 
   } else {
@@ -98,10 +98,12 @@ void ClientManager::onPublisherObject(
               datagram.media_data);
   }
 
+  // Send to peers
+
+  _peer_queue.push({ "_client_", datagram });
+
   std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
       subscribeList.find(datagram.header.name);
-
-  // TODO: Add sending to peers (aka other relays)
 
   for (const auto& cMgr: list) {
     for (const auto& dest : cMgr.second) {
@@ -113,7 +115,6 @@ void ClientManager::onPublisherObject(
       }
 
       dest.second.sendObjFunc(datagram);
-      // server->sendNamedObject(dest.second.subscribe_id, false, datagram);
     }
   }
 }
@@ -126,8 +127,8 @@ void ClientManager::onSubscribe(
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
-  DEBUG("onSubscribe namespace: %s/%d %d (%d/%d)",
-        quicr_namespace.to_hex().c_str(), quicr_namespace.length(),
+  DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
+        std::string(quicr_namespace).c_str(), quicr_namespace.length(),
         subscriber_id, context_id, stream_id);
 
   ClientSubscriptions::Remote remote = {
@@ -136,7 +137,9 @@ void ClientManager::onSubscribe(
       .conn_id = context_id,
       .sendObjFunc = [&, subscriber_id]
                       (const quicr::messages::PublishDatagram& datagram) {
-        server->sendNamedObject(subscriber_id, false, 1, 350, datagram);
+
+        server->sendNamedObject(subscriber_id,false, 1,
+                                config.time_queue_ttl_default, datagram);
       }
   };
   subscribeList.add(quicr_namespace.name(), quicr_namespace.length(),
@@ -152,8 +155,7 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
                                   const uint64_t &subscriber_id,
                                   const std::string & /* auth_token */) {
 
-  DEBUG("onUnsubscribe namespace: %s/%d", quicr_namespace.to_hex().c_str(),
-        quicr_namespace.length());
+  DEBUG("onUnsubscribe namespace: %s", std::string(quicr_namespace).c_str());
 
   server->subscriptionEnded(subscriber_id, quicr_namespace,
                             quicr::SubscribeResult::SubscribeStatus::Ok);
