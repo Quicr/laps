@@ -99,8 +99,7 @@ void ClientManager::onPublisherObject(
   }
 
   // Send to peers
-
-  _peer_queue.push({ "_client_", datagram });
+  _peer_queue.push({ PeerObjectType::PUBLISH, "_client_", datagram });
 
   std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
       subscribeList.find(datagram.header.name);
@@ -145,6 +144,10 @@ void ClientManager::onSubscribe(
   subscribeList.add(quicr_namespace.name(), quicr_namespace.length(),
                      client_mgr_id, remote);
 
+  _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE, .source_peer_id = "_client_",
+                     .sub_namespace = quicr_namespace });
+
+
   // respond with response
   auto result = quicr::SubscribeResult{
       quicr::SubscribeResult::SubscribeStatus::Ok, "", {}, {}};
@@ -162,6 +165,9 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
 
   subscribeList.remove(quicr_namespace.name(), quicr_namespace.length(),
                         client_mgr_id, subscriber_id);
+
+  _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE, .source_peer_id = "_client_",
+                     .sub_namespace = quicr_namespace });
 }
 
 

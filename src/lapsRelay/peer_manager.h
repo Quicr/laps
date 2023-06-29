@@ -5,7 +5,7 @@
 #include <memory>
 #include <unordered_set>
 #include <quicr/encode.h>
-#include <unordered_map>
+#include <map>
 #include <quicr/namespace.h>
 #include <transport/transport.h>
 #include <thread>
@@ -68,10 +68,9 @@ namespace laps {
          * @brief Create a peering session/connection
          *
          * @param peer_config           Peer/relay configuration parameters
-         * @param sub_ns                List of namespaces to subscribe to initially on connection
          *
          */
-        void createPeerSession(const TransportRemote& peer_config, const nameList& sub_ns);
+        void createPeerSession(const TransportRemote& peer_config);
 
       private:
         std::atomic<bool> _stop{ false };
@@ -89,17 +88,10 @@ namespace laps {
 
 
         /// Peer sessions that are accepted by the server
-        std::unordered_map<TransportContextId , PeerSession> _server_peer_sessions;
+        std::map<TransportContextId , PeerSession> _server_peer_sessions;
 
 
         std::vector<PeerSession> _client_peer_sessions;          /// Peer sessions that are initiated by the peer manager
-
-
-        /**
-         * Map of namespaces and peer sessions that want to receive messages.
-         *      A pointer is used to avoid a second lookup on peer session.
-         */
-        namespace_map<std::vector<SubscribeContext>> _peer_subscriptions;
 
         // Log handler to use
         Logger* logger;

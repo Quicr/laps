@@ -47,7 +47,7 @@ namespace laps {
                                     cfg.peer_config.protocol == RelayInfo::Protocol::UDP ? TransportProtocol::UDP
                                                                                          : TransportProtocol::QUIC };
 
-            createPeerSession(remote, cfg.peer_config.sub_namespaces);
+            createPeerSession(remote);
         }
     }
 
@@ -69,6 +69,22 @@ namespace laps {
         // TODO: Might need to gracefully close peer sessions
     }
 
+    void PeerManager::createPeerSession(const TransportRemote& peer_config)
+    {
+        auto &peer_sess = _client_peer_sessions.emplace_back(false, 0,
+                                                             _config,
+                                                             peer_config,
+                                                             _peer_queue,
+                                                             _cache,
+                                                             _subscriptions);
+
+        peer_sess.connect();
+
+        for (const auto& ns: _config.peer_config.sub_namespaces) {
+            peer_sess.subscribe(ns);
+        }
+    }
+
     void PeerManager::watchThread(int interval_ms) {
 
         LOG_INFO("Running peer manager outbound peer connection thread");
@@ -87,19 +103,6 @@ namespace laps {
 
     }
 
-    void PeerManager::createPeerSession(const TransportRemote &peer_config, const nameList& sub_ns)
-    {
-        auto &peer_sess = _client_peer_sessions.emplace_back(false, 0,
-                                                             _config,
-                                                             peer_config,
-                                                             _peer_queue,
-                                                             _cache,
-                                                             _subscriptions,
-                                                             _peer_subscriptions);
-
-        peer_sess.connect();
-    }
-
     void PeerManager::ClientRxThread()
     {
         LOG_INFO("Running peer manager client receive thread");
@@ -108,7 +111,55 @@ namespace laps {
             const auto& obj = _peer_queue.block_pop();
 
             if (obj) {
-                LOG_INFO("Received publish message name: %s", std::string(obj->pub_obj.header.name).c_str());
+                switch (obj.value().type) {
+                    case PeerObjectType::PUBLISH: {
+                        LOG_INFO("Received publish message name: %s", std::string(obj->pub_obj.header.name).c_str());
+
+                        for (auto& sess: _client_peer_sessions) {
+                            if (! obj->source_peer_id.compare(sess.getPeerId()))
+                                sess.publishObject(obj->pub_obj);
+                        }
+
+                        for (auto& [_, sess]: _server_peer_sessions) {
+                            if (! obj->source_peer_id.compare(sess.getPeerId()))
+                                sess.publishObject(obj->pub_obj);
+                        }
+
+                        break;
+                    }
+
+                    case PeerObjectType::SUBSCRIBE: {
+                        LOG_INFO("Received subscribe message name: %s", std::string(obj->sub_namespace).c_str());
+
+                        for (auto& sess: _client_peer_sessions) {
+                            if (! obj->source_peer_id.compare(sess.getPeerId()))
+                                sess.subscribe(obj->sub_namespace);
+                        }
+
+                        for (auto& [_, sess]: _server_peer_sessions) {
+                            if (! obj->source_peer_id.compare(sess.getPeerId()))
+                                sess.subscribe(obj->sub_namespace);
+                        }
+
+                        break;
+                    }
+
+                    case PeerObjectType::UNSUBSCRIBE: {
+                        LOG_INFO("Received unsubscribe message name: %s", std::string(obj->sub_namespace).c_str());
+
+                        for (auto& sess: _client_peer_sessions) {
+                            if (! obj->source_peer_id.compare(sess.getPeerId()))
+                                sess.unsubscribe(obj->sub_namespace);
+                        }
+
+                        for (auto& [_, sess]: _server_peer_sessions) {
+                            if (! obj->source_peer_id.compare(sess.getPeerId()))
+                                sess.unsubscribe(obj->sub_namespace);
+                        }
+
+                        break;
+                    }
+                }
             }
         }
     }
@@ -122,7 +173,7 @@ namespace laps {
 
         switch (status) {
             case TransportStatus::Ready: {
-
+                // nothing to do for incoming connections
                 break;
             }
 
@@ -154,8 +205,7 @@ namespace laps {
                                                                       std::move(peer),
                                                                       _peer_queue,
                                                                       _cache,
-                                                                      _subscriptions,
-                                                                      _peer_subscriptions);
+                                                                      _subscriptions);
 
             peer_iter = iter;
 
@@ -170,7 +220,11 @@ namespace laps {
     }
 
     void PeerManager::on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) {
+        auto peer_iter = _server_peer_sessions.find(context_id);
 
+        if (peer_iter == _server_peer_sessions.end()) {
+            peer_iter->second.on_recv_notify(context_id, streamId);
+        }
     }
 
 

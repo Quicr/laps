@@ -10,27 +10,21 @@ namespace laps {
 
     using nameList = std::vector<Namespace>;
 
+    enum class PeerObjectType : uint8_t {
+        PUBLISH = 0,
+        SUBSCRIBE,
+        UNSUBSCRIBE
+    };
+
     struct PeerObject {
-        std::string source_peer_id;                       /// Peer ID if from peer, otherwise empty
+        PeerObjectType  type;                             /// Object type
+        std::string     source_peer_id;                   /// Peer ID if from peer, otherwise empty
+
         messages::PublishDatagram pub_obj;                /// published object to send
+        Namespace       sub_namespace;                    /// [Un]Subscribe namespace
     };
 
     using peerQueue = safeQueue<PeerObject>;
 
 
-    /**
-     * @brief Subscribe context
-     */
-    struct SubscribeContext {
-        bool                filtered { false };          /// Indicates if the subscription is to be filtered or not
-        std::string         peer_id;                     /// ID of the remote peer (can be used to lookup peer context
-
-        std::shared_ptr<ITransport> transport;           /// Transport associated to the subscription
-        TransportContextId          tctx_id;             /// Transport context ID
-        StreamId                    stream_id;           /// Stream ID for the subscription to use
-    };
-
-    using PeerSubscriptions = namespace_map<std::vector<SubscribeContext>>;
-
-
-} // namespace laps
+ } // namespace laps
