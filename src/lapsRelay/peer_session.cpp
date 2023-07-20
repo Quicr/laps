@@ -91,10 +91,10 @@ namespace laps {
     {
         if (_config.peer_config.use_reliable) {
             auto stream_id = createStream(t_context_id, true);
-            _subscribed.emplace(ns, stream_id);
+            _subscribed.try_emplace(ns, stream_id);
 
         } else {
-            _subscribed.emplace(ns, dgram_stream_id);
+            _subscribed.try_emplace(ns, dgram_stream_id);
         }
     }
 

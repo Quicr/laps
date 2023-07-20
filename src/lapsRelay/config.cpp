@@ -27,7 +27,7 @@ namespace laps {
         disable_splithz = false;
         disable_dedup = false;
 
-        peer_config.listen_port = client_config.listen_port;
+        peer_config.listen_port = client_config.listen_port + 3;
         peer_config.peer_port = peer_config.listen_port + 3;
         peer_config.bind_addr = client_config.bind_addr;
         peer_config.protocol = client_config.protocol;

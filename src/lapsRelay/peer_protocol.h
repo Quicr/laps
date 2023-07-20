@@ -200,6 +200,7 @@ namespace laps {
 
             encoded_data.push_back(ns.length());
 
+            // TODO: Update name to pull out just used bytes for the name based on length
             uint8_t start = 16 - byte_count;
             for (uint8_t i=0; i < byte_count; i++) {
                 encoded_data.push_back(ns.name()[start++]);
