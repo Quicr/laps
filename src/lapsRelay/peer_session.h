@@ -123,23 +123,26 @@ namespace laps {
         void publishObject(const messages::PublishDatagram& obj);
 
         /**
-         * @brief Send subscribe to peers
+         * @brief Send subscribe to peer
          *
          * TODO: Currently this is to all peers, we will likely want to target specific peers
          *
          * @param ns        Namespace to subscribe
          */
-        void subscribe(const Namespace& ns);
+        void sendSubscribe(const Namespace& ns);
 
 
         /**
-         * @brief Send unsubscribe to peers
+         * @brief Send unsubscribe to peer
          *
          * TODO: Currently this is to all peers, we will likely want to target specific peers
          *
          * @param ns        Namespace to subscribe
          */
-         void unsubscribe(const Namespace& ns);
+         void sendUnsubscribe(const Namespace& ns);
+
+         void sendPublishIntent(const Namespace& ns, const std::string& origin_peer_id);
+         void sendPublishIntentDone(const Namespace& ns, const std::string& origin_peer_id);
 
         /*
          * Delegate functions mainly for Outgoing but does include incoming
@@ -148,6 +151,13 @@ namespace laps {
         void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;
         void on_new_stream(const TransportContextId& context_id, const StreamId& streamId) override {}
         void on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) override;
+
+      private:
+        void sendConnect();
+        void sendConnectOk();
+
+        void addSubscription(const Namespace& ns);
+
 
       public:
         TransportRemote peer_config;
@@ -179,13 +189,14 @@ namespace laps {
             .time_queue_rx_ttl = _config.time_queue_ttl_default
         };
 
-        TransportContextId t_context_id;         /// Transport context ID
-        StreamId           dgram_stream_id;      /// Datagram stream ID
-        StreamId           control_stream_id;    /// Control stream ID
+        TransportContextId t_context_id;              /// Transport context ID
+        StreamId           dgram_stream_id;           /// Datagram stream ID
+        StreamId           control_stream_id;         /// Control stream ID
 
-        std::shared_ptr<ITransport> _transport;   /// Transport used for the peering connection
+        std::shared_ptr<ITransport> _transport;       /// Transport used for the peering connection
 
-        namespace_map<StreamId> _subscribed;      /// Subscribed namespace and associated stream id
+        namespace_map<StreamId> _subscribed;          /// Subscribed namespace and associated stream id
+        namespace_map<std::string> _publish_intents;  /// Publish intents sent to the peer
     };
 
 } // namespace laps

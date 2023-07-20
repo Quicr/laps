@@ -39,6 +39,21 @@ namespace laps {
 
         ~PeerManager();
 
+        /**
+         * @brief Subscribe at the peer level to receive published objects for namespace
+         *
+         * @param ns            Namespace to receive objects
+         * @param peer_id       Peer ID for the session that should receive matching published objects
+         */
+        void subscribe(const Namespace& ns, const std::string& peer_id);
+
+        /**
+         * @brief Unsubscribe at the peer level to stop receiving objects for a namespace
+         * @param ns            Namespace to remove
+         * @param peer_id       Peer ID to remove from the list
+         */
+        void unsubscribe(const Namespace &ns, const std::string& peer_id);
+
         /*
          * Delegate functions for Incoming (e.g., server side)
          */
@@ -53,7 +68,7 @@ namespace laps {
         /**
          * @brief Client thread to monitor client published messages
          */
-        void ClientRxThread();
+        void PeerQueueThread();
 
         /**
          * @brief Watch Thread to perform reconnects and cleanup
@@ -72,7 +87,13 @@ namespace laps {
          */
         void createPeerSession(const TransportRemote& peer_config);
 
+        void subscribePeers(const Namespace& ns, const std::string& source_peer_id);
+        void unSubscribePeers(const Namespace& ns, const std::string& source_peer_id);
+        void publishIntentPeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id);
+        void publishIntentDonePeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id);
+
       private:
+        std::mutex _mutex;
         std::atomic<bool> _stop{ false };
         const Config& _config;
 
@@ -92,6 +113,8 @@ namespace laps {
 
 
         std::vector<PeerSession> _client_peer_sessions;          /// Peer sessions that are initiated by the peer manager
+        namespace_map<std::string> _peer_sess_subscribed;        /// Peer sessions that have subscribed to a namespace
+        namespace_map<std::map<std::string, std::list<std::string>>> _pub_intent_namespaces; /// Publish intents received from peers
 
         // Log handler to use
         Logger* logger;

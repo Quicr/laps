@@ -16,6 +16,8 @@
 #include "logger.h"
 
 namespace laps {
+    const std::string CLIENT_PEER_ID = "_client_";
+
 class ClientSubscriptions {
 public:
   struct Remote {

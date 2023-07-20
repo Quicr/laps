@@ -62,10 +62,10 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
   DEBUG("onPublishIntent namespace: %s",
         std::string(quicr_namespace).c_str(), quicr_namespace.length());
 
-  // TODO: Add publish intent state and
+  _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT, .source_peer_id = CLIENT_PEER_ID,
+                     .nspace = quicr_namespace });
 
-  // respond with response
-  /* TODO: Add the below
+  /* TODO: Add the below - Need to direct the response to the correct subscriber
   auto  result = quicr::PublishIntentResult { quicr::messages::Response::Ok,
                                               {}, {} };
 
@@ -75,10 +75,13 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
 
 
   void ClientManager::onPublishIntentEnd(
-    [[maybe_unused]] const quicr::Namespace& quicr_namespace,
+    const quicr::Namespace& quicr_namespace,
     [[maybe_unused]] const std::string& auth_token,
     [[maybe_unused]] quicr::bytes&& e2e_token) {
 
+  _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT_DONE,
+                     .source_peer_id = CLIENT_PEER_ID,
+                     .nspace = quicr_namespace });
   }
 
 void ClientManager::onPublisherObject(
@@ -99,7 +102,7 @@ void ClientManager::onPublisherObject(
   }
 
   // Send to peers
-  _peer_queue.push({ PeerObjectType::PUBLISH, "_client_", datagram });
+  _peer_queue.push({ .type =PeerObjectType::PUBLISH,.source_peer_id = CLIENT_PEER_ID, .pub_obj = datagram });
 
   std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
       subscribeList.find(datagram.header.name);
@@ -144,8 +147,8 @@ void ClientManager::onSubscribe(
   subscribeList.add(quicr_namespace.name(), quicr_namespace.length(),
                      client_mgr_id, remote);
 
-  _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE, .source_peer_id = "_client_",
-                     .sub_namespace = quicr_namespace });
+  _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE, .source_peer_id = CLIENT_PEER_ID,
+                     .nspace = quicr_namespace });
 
 
   // respond with response
@@ -166,8 +169,8 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
   subscribeList.remove(quicr_namespace.name(), quicr_namespace.length(),
                         client_mgr_id, subscriber_id);
 
-  _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE, .source_peer_id = "_client_",
-                     .sub_namespace = quicr_namespace });
+  _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE, .source_peer_id = CLIENT_PEER_ID,
+                     .nspace = quicr_namespace });
 }
 
 

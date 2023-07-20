@@ -35,9 +35,9 @@ namespace laps {
             uint16_t peer_port;             /// Peering destination port to connect to
             quicr::RelayInfo::Protocol protocol;
 
-            std::vector<std::string> peers; /// Default peers to connect to
+            bool use_reliable { true };     /// Indicates if using reliable or not
 
-            std::vector<quicr::Namespace> sub_namespaces;       /// Initial namespaces to subscribe to
+            std::vector<std::string> peers; /// Default peers to connect to
 
             std::string id;                 /// Peering ID of this peering manager
             double longitude;               /// This peer manager longitude

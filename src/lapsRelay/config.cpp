@@ -44,8 +44,6 @@ namespace laps {
         cache_max_buffers = 10;
         data_queue_size = 500;
         time_queue_ttl_default = 200;
-
-        peer_config.sub_namespaces.emplace_back(std::string("0/0"));
     }
 
     void Config::cfg_from_env()
@@ -74,7 +72,7 @@ namespace laps {
         env_value(peer_config.peer_port , "LAPS_PEER_PORT");
         env_value(peer_config.listen_port , "LAPS_PEER_LISTEN_PORT");
         env_value(peer_config.peers, "LAPS_PEERS");
-        env_value(peer_config.sub_namespaces, "LAPS_PEER_NAMESPACES");
+        env_value(peer_config.use_reliable, "LAPS_PEER_RELIABLE");
     }
 
     template<typename Value_t>

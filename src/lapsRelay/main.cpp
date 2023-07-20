@@ -57,4 +57,6 @@ main(int /* argc */, char*[] /* argv[] */)
     while (quic_mgr.ready() && udp_mgr.ready()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
+
+    LOG_INFO("Shutting down LAPS");
 }

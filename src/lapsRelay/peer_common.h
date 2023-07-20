@@ -13,15 +13,18 @@ namespace laps {
     enum class PeerObjectType : uint8_t {
         PUBLISH = 0,
         SUBSCRIBE,
-        UNSUBSCRIBE
+        UNSUBSCRIBE,
+        PUBLISH_INTENT,
+        PUBLISH_INTENT_DONE,
     };
 
     struct PeerObject {
         PeerObjectType  type;                             /// Object type
         std::string     source_peer_id;                   /// Peer ID if from peer, otherwise empty
+        std::string     origin_peer_id;                   /// Origin of a publish intent
 
         messages::PublishDatagram pub_obj;                /// published object to send
-        Namespace       sub_namespace;                    /// [Un]Subscribe namespace
+        Namespace nspace {};                              /// Subscribe or publish intent namespace
     };
 
     using peerQueue = safeQueue<PeerObject>;
