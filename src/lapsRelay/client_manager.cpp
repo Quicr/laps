@@ -129,7 +129,18 @@ void ClientManager::onSubscribe(
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
-  DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
+
+    std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
+            subscribeList.find(quicr_namespace);
+
+    if (!list.empty()) {
+        DEBUG("duplicate onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
+              std::string(quicr_namespace).c_str(), quicr_namespace.length(),
+              subscriber_id, context_id, stream_id);
+        return;
+    }
+
+    DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
         std::string(quicr_namespace).c_str(), quicr_namespace.length(),
         subscriber_id, context_id, stream_id);
 

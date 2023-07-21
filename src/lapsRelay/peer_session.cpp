@@ -405,6 +405,7 @@ namespace laps {
                             messages::PublishDatagram datagram;
                             msg_buffer >> datagram;
 
+
                             if (not _config.disable_dedup &&
                                 _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
                                 // duplicate, ignore
@@ -424,7 +425,6 @@ namespace laps {
 
                             for (const auto& cMgr : list) {
                                 for (const auto& dest : cMgr.second) {
-
                                     dest.second.sendObjFunc(datagram);
                                 }
 
