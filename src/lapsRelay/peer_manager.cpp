@@ -314,7 +314,9 @@ namespace laps {
 
                         publishIntentPeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 
-                        subscribePeers(obj->nspace, obj->source_peer_id);
+                        for (const auto [ns, peer_id]: _peer_sess_subscribed) {
+                            subscribePeers(ns, peer_id);
+                        }
 
                         break;
                     }
@@ -330,9 +332,6 @@ namespace laps {
                               std::string(obj->nspace).c_str(), origin_peer_id.c_str());
 
                         publishIntentDonePeers(obj->nspace, obj->source_peer_id, origin_peer_id);
-
-                        // TODO: Might need to add origin to support unsubscribing only to a specific origin
-                        unSubscribePeers(obj->nspace, obj->source_peer_id);
 
                         break;
                     }
@@ -394,6 +393,11 @@ namespace laps {
             peer_sess.connect();
 
             // TODO: On new connection, send publish intents
+            for (const auto& [ns, origins]: _pub_intent_namespaces) {
+                for (const auto [o, l]: origins) {
+                    peer_sess.sendPublishIntent(ns, o);
+                }
+            }
         }
 
     }

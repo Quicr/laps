@@ -80,7 +80,7 @@ namespace laps {
 
         auto iter = _subscribed.find(obj.header.name);
         if (iter != _subscribed.end()) {
-            DEBUG("Sending published object for name: %s", obj.header.name.to_hex().c_str());
+            //DEBUG("Sending published object for name: %s", obj.header.name.to_hex().c_str());
             messages::MessageBuffer mb;
             mb << obj;
             _transport->enqueue(t_context_id, iter->second, mb.take());
@@ -395,7 +395,7 @@ namespace laps {
                                 }
 
                                 default:
-                                    LOG_WARN("Unknown subtype");
+                                    LOG_WARN("Unknown subtype %d", subtype);
                                     break;
                             }
 
@@ -405,7 +405,6 @@ namespace laps {
                             messages::PublishDatagram datagram;
                             msg_buffer >> datagram;
 
-                            DEBUG("Received publish from peer");
                             if (not _config.disable_dedup &&
                                 _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
                                 // duplicate, ignore
@@ -431,9 +430,11 @@ namespace laps {
 
                                 break;
                             }
+
+                            break;
                         }
                         default:
-                            LOG_INFO("Invalid Message Type");
+                            LOG_INFO("Invalid Message Type %d", msg_type);
                             break;
                     }
                 } catch (const messages::MessageBuffer::ReadException& /* ex */) {
