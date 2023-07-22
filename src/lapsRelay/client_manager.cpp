@@ -129,7 +129,6 @@ void ClientManager::onSubscribe(
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
-
     std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
             subscribeList.find(quicr_namespace);
 
