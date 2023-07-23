@@ -1,6 +1,8 @@
 
 #include "peer_manager.h"
+#include "peer_session.h"
 #include <quicr/quicr_client.h>
+
 #include <sstream>
 
 namespace laps {
@@ -11,18 +13,18 @@ namespace laps {
                              const TransportRemote& peer_remote,
                              safeQueue<PeerObject>& peer_queue,
                              Cache& cache,
-                             ClientSubscriptions& subscriptions,
-                             PeerSubscriptions& peer_subscriptions)
+                             ClientSubscriptions& subscriptions)
       : peer_config(peer_remote)
       , _config(cfg)
       , _peer_queue(peer_queue)
       , _cache(cache)
       , _subscriptions(subscriptions)
-      , _peer_subscriptions(peer_subscriptions)
       , _is_inbound(is_inbound)
       , t_context_id(context_id)
     {
         logger = cfg.logger;
+
+        peer_id = peer_config.host_or_ip;
 
         if (_config.tls_cert_filename.length() == 0) {
             _transport_config.tls_cert_filename = NULL;
@@ -53,6 +55,9 @@ namespace laps {
         if (not _is_inbound) {
             _status = Status::CONNECTING;
 
+            if (_transport)
+                _transport = nullptr;
+
             _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, *logger);
             t_context_id = _transport->start();
 
@@ -71,6 +76,151 @@ namespace laps {
         return _transport->createStream(context_id, use_reliable);
     }
 
+    void PeerSession::publishObject(const messages::PublishDatagram& obj) {
+
+        auto iter = _subscribed.find(obj.header.name);
+        if (iter != _subscribed.end()) {
+            //DEBUG("Sending published object for name: %s", obj.header.name.to_hex().c_str());
+            messages::MessageBuffer mb;
+            mb << obj;
+            _transport->enqueue(t_context_id, iter->second, mb.take());
+        }
+    }
+
+    void PeerSession::addSubscription(const Namespace& ns)
+    {
+        if (_config.peer_config.use_reliable) {
+            auto stream_id = createStream(t_context_id, true);
+            _subscribed.try_emplace(ns, stream_id);
+
+        } else {
+            _subscribed.try_emplace(ns, dgram_stream_id);
+        }
+    }
+
+    void PeerSession::sendSubscribe(const Namespace& ns)
+    {
+        if (_subscribed.count(ns)) // Ignore if ready subscribed
+            return;
+
+        addSubscription(ns);
+
+        DEBUG("Sending subscribe to peer %s for ns: %s", peer_id.c_str(), ns.to_hex().c_str());
+
+        std::vector<uint8_t> ns_array;
+        encodeNamespaces(ns_array, { ns });
+
+        std::vector<uint8_t> buf(sizeof(MsgSubscribe) + ns_array.size());
+
+        MsgSubscribe msg;
+        msg.count_subscribes = 1;
+
+        std::memcpy(buf.data(), &msg, sizeof(msg));
+        std::memcpy(buf.data() + sizeof(msg), ns_array.data(), ns_array.size());
+
+        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+    }
+
+    void PeerSession::sendUnsubscribe(const Namespace& ns)
+    {
+        auto iter = _subscribed.find(ns);
+        if (iter != _subscribed.end()) {
+
+            DEBUG("Sending unsubscribe to peer %s for ns: %s", peer_id.c_str(), ns.to_hex().c_str());
+
+            if (_config.peer_config.use_reliable)
+                _transport->closeStream(t_context_id, iter->second);
+
+            _subscribed.erase(iter);
+
+            std::vector<uint8_t> ns_array;
+            encodeNamespaces(ns_array, { ns });
+
+            std::vector<uint8_t> buf(sizeof(MsgUnsubscribe) + ns_array.size());
+
+            MsgUnsubscribe msg;
+            msg.count_subscribes = 1;
+
+            std::memcpy(buf.data(), &msg, sizeof(msg));
+            std::memcpy(buf.data() + sizeof(msg), ns_array.data(), ns_array.size());
+
+            _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+        }
+    }
+
+    void PeerSession::sendConnect()
+    {
+        std::vector<uint8_t> buf(sizeof(MsgConnect) + peer_id.length());
+        MsgConnect c_msg;
+        c_msg.longitude = _config.peer_config.longitude;
+        c_msg.latitude = _config.peer_config.latitude;
+        c_msg.id_len = _config.peer_config.id.length();
+        std::memcpy(buf.data(), &c_msg, sizeof(c_msg));
+        std::memcpy(buf.data() + sizeof(c_msg), _config.peer_config.id.data(), _config.peer_config.id.length());
+
+        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+    }
+
+    void PeerSession::sendConnectOk()
+    {
+        std::vector<uint8_t> buf(sizeof(MsgConnectOk) + _config.peer_config.id.length());
+        MsgConnectOk cok_msg;
+        cok_msg.longitude = _config.peer_config.longitude;
+        cok_msg.latitude = _config.peer_config.latitude;
+        cok_msg.id_len = _config.peer_config.id.length();
+
+        std::memcpy(buf.data(), &cok_msg, sizeof(cok_msg));
+        std::memcpy(buf.data() + sizeof(cok_msg),
+                    _config.peer_config.id.data(), _config.peer_config.id.length());
+
+        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+    }
+
+    void PeerSession::sendPublishIntent(const Namespace& ns, const std::string& origin_peer_id)
+    {
+        LOG_INFO("Sending publish intent %s", ns.to_hex().c_str());
+
+        _publish_intents.try_emplace(ns, origin_peer_id);
+
+        std::vector<uint8_t> ns_array;
+        encodeNamespaces(ns_array, { ns });
+
+        std::vector<uint8_t> buf(sizeof(MsgPublishIntent) + origin_peer_id.length() + ns_array.size());
+
+        MsgPublishIntent msg;
+        msg.origin_id_len = origin_peer_id.length();
+        msg.count_publish_intents = 1;
+
+        std::memcpy(buf.data(), &msg, sizeof(msg));
+        std::memcpy(buf.data() + sizeof(msg), origin_peer_id.data(), origin_peer_id.length());
+        std::memcpy(buf.data() + sizeof(msg) + msg.origin_id_len,ns_array.data(), ns_array.size());
+
+        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+    }
+
+    void PeerSession::sendPublishIntentDone(const Namespace& ns, const std::string& origin_peer_id)
+    {
+        std::vector<uint8_t> ns_array;
+        encodeNamespaces(ns_array, { ns });
+
+        _publish_intents.erase(ns);
+
+        LOG_INFO("Sending publish intent DONE %s", ns.to_hex().c_str());
+
+        std::vector<uint8_t> buf(sizeof(MsgPublishIntentDone) + origin_peer_id.length() + ns_array.size());
+
+        MsgPublishIntentDone msg;
+        msg.origin_id_len = origin_peer_id.length();
+        msg.count_publish_intents = 1;
+
+        std::memcpy(buf.data(), &msg, sizeof(msg));
+        std::memcpy(buf.data() + sizeof(msg), origin_peer_id.data(), origin_peer_id.length());
+        std::memcpy(buf.data() + sizeof(msg) + msg.origin_id_len,ns_array.data(), ns_array.size());
+
+        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+    }
+
+
     /*
      * Delegate Implementations
      */
@@ -82,27 +232,226 @@ namespace laps {
 
                 LOG_INFO("Peer context_id %" PRIu64 " is ready", context_id);
 
+                sendConnect();
+
+                // Upon connection, send all publish intents
+                for (const auto& [ns, o]: _publish_intents) {
+                    sendPublishIntent(ns, o);
+                }
+
+
+                // Send active subscribes upon connect
+                for (const auto &[ns, sid]: _subscribed) {
+                    sendSubscribe(ns);
+                }
+
                 break;
             }
 
             case TransportStatus::Disconnected: {
                 _status = Status::DISCONNECTED;
 
-                if (not _is_inbound) {
-                    _transport = nullptr;
-                }
-
                 LOG_INFO("Peer context_id %" PRIu64 " is disconnected", context_id);
+
+                // TODO: cleanup intents and subscriptions
             }
         }
     }
 
     void PeerSession::on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) {
-
+        // Not used for outgoing connections. Incoming connections are handled by the server delegate
     }
 
     void PeerSession::on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) {
+        for (int i = 0; i < 100; i++) {
+            auto data = _transport->dequeue(context_id, streamId);
 
+            if (data.has_value()) {
+                try {
+                    auto msg_type = static_cast<messages::MessageType>(data->front());
+                    messages::MessageBuffer msg_buffer{ data.value() };
+
+
+                    switch (msg_type) {
+                        case messages::MessageType::PeerMsg: {
+                            auto data = msg_buffer.take();
+                            auto subtype = static_cast<PeeringSubType>(data[1]);
+
+
+                            switch (subtype) {
+                                case PeeringSubType::CONNECT: {
+                                    MsgConnect c_msg;
+                                    std::memcpy(&c_msg, data.data(), sizeof(c_msg));
+
+                                    char c_peer_id[256] { 0 };
+                                    std::memcpy(c_peer_id, data.data() + sizeof(c_msg), c_msg.id_len);
+                                    peer_id = c_peer_id;
+
+                                    longitude = c_msg.longitude;
+                                    latitude = c_msg.latitude;
+
+                                    LOG_INFO("Received peer connect message from %s, sending ok", peer_id.c_str());
+                                    sendConnectOk();
+
+                                    break;
+                                }
+                                case PeeringSubType::CONNECT_OK: {
+                                    MsgConnectOk cok_msg;
+                                    std::memcpy(&cok_msg, data.data(), sizeof(cok_msg));
+
+                                    char c_peer_id[256] {0};
+                                    std::memcpy(c_peer_id, data.data() + sizeof(cok_msg), cok_msg.id_len);
+                                    peer_id = c_peer_id;
+
+                                    longitude = cok_msg.longitude;
+                                    latitude = cok_msg.latitude;
+
+                                    LOG_INFO("Received peer connect OK message from %s", peer_id.c_str());
+
+                                    break;
+                                }
+
+                                case PeeringSubType::SUBSCRIBE: {
+                                    MsgSubscribe msg;
+                                    std::memcpy(&msg, data.data(), sizeof(msg));
+
+                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg), data.end());
+                                    std::vector<Namespace> ns_list;
+                                    decodeNamespaces(encoded_ns, ns_list);
+
+                                    if (ns_list.size() > 0) {
+                                        addSubscription(ns_list.front());
+                                        _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
+                                                           .source_peer_id = peer_id,
+                                                           .nspace = ns_list.front() });
+                                    }
+                                    break;
+                                }
+
+                                case PeeringSubType::UNSUBSCRIBE: {
+                                    MsgUnsubscribe msg;
+                                    std::memcpy(&msg, data.data(), sizeof(msg));
+
+                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg), data.end());
+                                    std::vector<Namespace> ns_list;
+                                    decodeNamespaces(encoded_ns, ns_list);
+
+                                    if (ns_list.size() > 0) {
+                                        _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE,
+                                                           .source_peer_id = peer_id,
+                                                           .nspace = ns_list.front() });
+                                    }
+                                    break;
+                                }
+
+                                case PeeringSubType::PUBLISH_INTENT: {
+                                    MsgPublishIntent msg;
+                                    std::memcpy(&msg, data.data(), sizeof(msg));
+
+                                    char o_peer_id[256] { 0 };
+                                    std::memcpy(o_peer_id, data.data() + sizeof(msg), msg.origin_id_len);
+
+                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg) + msg.origin_id_len, data.end());
+                                    std::vector<Namespace> ns_list;
+                                    decodeNamespaces(encoded_ns, ns_list);
+
+                                    if (ns_list.size() > 0) {
+                                        LOG_INFO("Received publish intent from %s with namespace: %s",
+                                                 peer_id.c_str(),
+                                                 ns_list.front().to_hex().c_str());
+
+                                        _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT,
+                                                           .source_peer_id = peer_id,
+                                                           .origin_peer_id = o_peer_id,
+                                                           .nspace = ns_list.front() });
+                                    }
+
+                                    break;
+                                }
+
+                                case PeeringSubType::PUBLISH_INTENT_DONE: {
+                                    MsgPublishIntentDone msg;
+                                    std::memcpy(&msg, data.data(), sizeof(msg));
+
+                                    char o_peer_id[256] { 0 };
+                                    std::memcpy(o_peer_id, data.data() + sizeof(msg), msg.origin_id_len);
+
+                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg) + msg.origin_id_len, data.end());
+                                    std::vector<Namespace> ns_list;
+                                    decodeNamespaces(encoded_ns, ns_list);
+
+                                    if (ns_list.size() > 0) {
+                                        LOG_INFO("Received publish intent DONE from %s with namespace: %s",
+                                                 peer_id.c_str(),
+                                                 ns_list.front().to_hex().c_str());
+
+                                        _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT_DONE,
+                                                           .source_peer_id = peer_id,
+                                                           .origin_peer_id = o_peer_id,
+                                                           .nspace = ns_list.front() });
+                                    }
+
+                                    break;
+                                }
+
+                                default:
+                                    LOG_WARN("Unknown subtype %d", subtype);
+                                    break;
+                            }
+
+                            break;
+                        }
+                        case messages::MessageType::Publish: {
+                            messages::PublishDatagram datagram;
+                            msg_buffer >> datagram;
+
+
+                            if (not _config.disable_dedup &&
+                                _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
+                                // duplicate, ignore
+                                DEBUG("Duplicate message Name: %s", std::string(datagram.header.name).c_str());
+                                return;
+
+                            } else {
+                                _cache.put(datagram.header.name, datagram.header.offset_and_fin, datagram.media_data);
+                            }
+
+                            // Send to peers
+                            _peer_queue.push(
+                              { .type = PeerObjectType::PUBLISH, .source_peer_id = peer_id, .pub_obj = datagram });
+
+                            std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
+                              _subscriptions.find(datagram.header.name);
+
+                            for (const auto& cMgr : list) {
+                                for (const auto& dest : cMgr.second) {
+                                    dest.second.sendObjFunc(datagram);
+                                }
+
+                                break;
+                            }
+
+                            break;
+                        }
+                        default:
+                            LOG_INFO("Invalid Message Type %d", msg_type);
+                            break;
+                    }
+                } catch (const messages::MessageBuffer::ReadException& /* ex */) {
+                    LOG_ERR("Received read exception error while reading from message buffer.");
+                    continue;
+                } catch (const std::exception& /* ex */) {
+                    LOG_ERR("Received standard exception error while reading from message buffer.");
+                    continue;
+                } catch (...) {
+                    LOG_ERR("Received unknown error while reading from message buffer.");
+                    continue;
+                }
+
+            } else {
+                break;
+            }
+        }
     }
 
 

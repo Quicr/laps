@@ -5,7 +5,7 @@
 #include <memory>
 #include <unordered_set>
 #include <quicr/encode.h>
-#include <unordered_map>
+#include <map>
 #include <quicr/namespace.h>
 #include <transport/transport.h>
 #include <thread>
@@ -39,8 +39,23 @@ namespace laps {
 
         ~PeerManager();
 
+        /**
+         * @brief Subscribe at the peer level to receive published objects for namespace
+         *
+         * @param ns            Namespace to receive objects
+         * @param peer_id       Peer ID for the session that should receive matching published objects
+         */
+        void subscribe(const Namespace& ns, const std::string& peer_id);
+
+        /**
+         * @brief Unsubscribe at the peer level to stop receiving objects for a namespace
+         * @param ns            Namespace to remove
+         * @param peer_id       Peer ID to remove from the list
+         */
+        void unsubscribe(const Namespace &ns, const std::string& peer_id);
+
         /*
-         * Delegate functions
+         * Delegate functions for Incoming (e.g., server side)
          */
         void on_connection_status(const TransportContextId& context_id, const TransportStatus status) override;
         void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;
@@ -53,7 +68,7 @@ namespace laps {
         /**
          * @brief Client thread to monitor client published messages
          */
-        void ClientRxThread();
+        void PeerQueueThread();
 
         /**
          * @brief Watch Thread to perform reconnects and cleanup
@@ -68,12 +83,17 @@ namespace laps {
          * @brief Create a peering session/connection
          *
          * @param peer_config           Peer/relay configuration parameters
-         * @param sub_ns                List of namespaces to subscribe to initially on connection
          *
          */
-        void createPeerSession(const TransportRemote& peer_config, const nameList& sub_ns);
+        void createPeerSession(const TransportRemote& peer_config);
+
+        void subscribePeers(const Namespace& ns, const std::string& source_peer_id);
+        void unSubscribePeers(const Namespace& ns, const std::string& source_peer_id);
+        void publishIntentPeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id);
+        void publishIntentDonePeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id);
 
       private:
+        std::mutex _mutex;
         std::atomic<bool> _stop{ false };
         const Config& _config;
 
@@ -89,17 +109,12 @@ namespace laps {
 
 
         /// Peer sessions that are accepted by the server
-        std::unordered_map<TransportContextId , PeerSession> _server_peer_sessions;
+        std::map<TransportContextId , PeerSession> _server_peer_sessions;
 
 
         std::vector<PeerSession> _client_peer_sessions;          /// Peer sessions that are initiated by the peer manager
-
-
-        /**
-         * Map of namespaces and peer sessions that want to receive messages.
-         *      A pointer is used to avoid a second lookup on peer session.
-         */
-        namespace_map<std::vector<SubscribeContext>> _peer_subscriptions;
+        namespace_map<std::string> _peer_sess_subscribed;        /// Peer sessions that have subscribed to a namespace
+        namespace_map<std::map<std::string, std::list<std::string>>> _pub_intent_namespaces; /// Publish intents received from peers
 
         // Log handler to use
         Logger* logger;

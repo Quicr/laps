@@ -5,6 +5,7 @@
 #include <memory>
 #include <quicr/encode.h>
 #include <quicr/namespace.h>
+#include <quicr/message_buffer.h>
 #include <transport/transport.h>
 #include <thread>
 #include <transport/safe_queue.h>
@@ -43,7 +44,7 @@ namespace laps {
           , _peer_queue { other._peer_queue }
           , _cache { other._cache }
           , _subscriptions { other._subscriptions }
-          , _peer_subscriptions { other._peer_subscriptions }
+
         {}
 
         PeerSession() = delete;
@@ -55,7 +56,6 @@ namespace laps {
           , _peer_queue { other._peer_queue }
           , _cache { other._cache }
           , _subscriptions { other._subscriptions }
-          , _peer_subscriptions { other._peer_subscriptions }
         {}
 
         /**
@@ -68,7 +68,6 @@ namespace laps {
          * @param peer_queue                Shared peer queue used by all peers
          * @param cache                     Shared cache used by all peers and clients
          * @param subscriptions             Client/edge subscriptions
-         * @param peer_subscriptions        Peer subscriptions
          */
         PeerSession(const bool is_inbound,
                     const TransportContextId context_id,
@@ -76,8 +75,7 @@ namespace laps {
                     const TransportRemote& peer_remote,
                     safeQueue<PeerObject>& peer_queue,
                     Cache& cache,
-                    ClientSubscriptions& subscriptions,
-                    PeerSubscriptions &peer_subscriptions);
+                    ClientSubscriptions& subscriptions);
 
         ~PeerSession();
 
@@ -90,6 +88,13 @@ namespace laps {
          * @brief Get the status of the peer session
          */
          Status status();
+
+         /**
+          * @brief Get the peer ID of session
+          */
+          const std::string& getPeerId() {
+              return peer_id;
+          }
 
          /**
           * @brief Set the transport
@@ -110,16 +115,52 @@ namespace laps {
          */
         StreamId createStream(TransportContextId context_id, bool use_reliable);
 
+        /**
+         * @brief Send/publish object to peers
+         *
+         * @param obj          Published Object to send
+         */
+        void publishObject(const messages::PublishDatagram& obj);
+
+        /**
+         * @brief Send subscribe to peer
+         *
+         * TODO: Currently this is to all peers, we will likely want to target specific peers
+         *
+         * @param ns        Namespace to subscribe
+         */
+        void sendSubscribe(const Namespace& ns);
+
+
+        /**
+         * @brief Send unsubscribe to peer
+         *
+         * TODO: Currently this is to all peers, we will likely want to target specific peers
+         *
+         * @param ns        Namespace to subscribe
+         */
+         void sendUnsubscribe(const Namespace& ns);
+
+         void sendPublishIntent(const Namespace& ns, const std::string& origin_peer_id);
+         void sendPublishIntentDone(const Namespace& ns, const std::string& origin_peer_id);
+
         /*
-         * Delegate functions
+         * Delegate functions mainly for Outgoing but does include incoming
          */
         void on_connection_status(const TransportContextId& context_id, const TransportStatus status) override;
         void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;
         void on_new_stream(const TransportContextId& context_id, const StreamId& streamId) override {}
         void on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) override;
 
+      private:
+        void sendConnect();
+        void sendConnectOk();
+
+        void addSubscription(const Namespace& ns);
+
+
       public:
-        const TransportRemote& peer_config;
+        TransportRemote peer_config;
 
       private:
         const Config& _config;
@@ -128,7 +169,6 @@ namespace laps {
         peerQueue& _peer_queue;
         Cache& _cache;
         ClientSubscriptions& _subscriptions;
-        PeerSubscriptions& _peer_subscriptions;
         Logger* logger;
 
         bool _is_inbound { false };               /// Indicates if the peer is server accepted (inbound) or client (outbound)
@@ -140,9 +180,6 @@ namespace laps {
         double  longitude { 0 };                  /// 8 byte longitude value detailing the location of the local relay
         double  latitude { 0 };                   /// 8 byte latitude value detailing the location of the local relay
 
-        /// Initial list of namespaces to subscribe to on connection established
-        nameList subscribe_namespaces;
-
         TransportConfig _transport_config {
             .tls_cert_filename = _config.tls_cert_filename.c_str(),
             .tls_key_filename = _config.tls_key_filename.c_str(),
@@ -152,12 +189,14 @@ namespace laps {
             .time_queue_rx_ttl = _config.time_queue_ttl_default
         };
 
-        TransportContextId t_context_id;         /// Transport context ID
-        StreamId           dgram_stream_id;      /// Datagram stream ID
-        StreamId           control_stream_id;    /// Control stream ID
+        TransportContextId t_context_id;              /// Transport context ID
+        StreamId           dgram_stream_id;           /// Datagram stream ID
+        StreamId           control_stream_id;         /// Control stream ID
 
-        std::shared_ptr<ITransport> _transport;   /// Transport used for the peering connection
+        std::shared_ptr<ITransport> _transport;       /// Transport used for the peering connection
 
+        namespace_map<StreamId> _subscribed;          /// Subscribed namespace and associated stream id
+        namespace_map<std::string> _publish_intents;  /// Publish intents sent to the peer
     };
 
 } // namespace laps

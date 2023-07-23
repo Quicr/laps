@@ -16,6 +16,8 @@ namespace laps {
         CONNECT_OK = 1,
         SUBSCRIBE = 2,
         UNSUBSCRIBE = 3,
+        PUBLISH_INTENT = 4,
+        PUBLISH_INTENT_DONE = 5,
     };
 
     /**
@@ -112,5 +114,99 @@ namespace laps {
          */
         /// variable array of <bit len><bytes>
     };
+
+    /**
+     * @brief Publish Intent Message
+     * @details Publish intent messages are sent to indicate peer publishers
+     */
+    struct MsgPublishIntent : PeerCommonHeader
+    {
+        MsgPublishIntent() { subtype = PeeringSubType::PUBLISH_INTENT; }
+
+        uint8_t origin_id_len; /// Length of the origin ID string in bytes
+        uint8_t count_publish_intents; /// Number of publish intent namespace
+
+        /// variable origin id follows using the size of origin_id_len
+
+        /* use a 128 bit namespace with an encoding of <uint8_t bit_len><uint8_t*>. The number of bytes
+         *       for the name is calculated using `len / 8 = byte_len + (len % 8 > 0 ? 1 : 0)`. In other
+         *       words, the length in bits defines the number of bytes to follow/encoded to represent the name.
+         *
+         *       For example, length of 96 is an even 12 bytes, so only 12 bytes follow the length byte. In the case
+         *       of 98 bits, there are extra bits left over, therefore the number of bytes needed are 13.
+         *       The extra bits in the last byte are zeroed.
+         */
+        /// variable array of <bit len><bytes>
+    };
+
+    /**
+     * @brief Publish Intent Done Message
+     * @details Publish intent done messages are sent to indicate peer publishers are done
+     */
+    struct MsgPublishIntentDone : PeerCommonHeader
+    {
+        MsgPublishIntentDone() { subtype = PeeringSubType::PUBLISH_INTENT_DONE; }
+
+        uint8_t origin_id_len; /// Length of the origin ID string in bytes
+        uint8_t count_publish_intents; /// Number of publish intent namespace
+
+        /// variable origin id follows using the size of origin_id_len
+
+        /* use a 128 bit namespace with an encoding of <uint8_t bit_len><uint8_t*>. The number of bytes
+         *       for the name is calculated using `len / 8 = byte_len + (len % 8 > 0 ? 1 : 0)`. In other
+         *       words, the length in bits defines the number of bytes to follow/encoded to represent the name.
+         *
+         *       For example, length of 96 is an even 12 bytes, so only 12 bytes follow the length byte. In the case
+         *       of 98 bits, there are extra bits left over, therefore the number of bytes needed are 13.
+         *       The extra bits in the last byte are zeroed.
+         */
+        /// variable array of <bit len><bytes>
+    };
+
+    /**
+     * @brief Decode the namespaces from message
+     *
+     * @param [in]  encoded_data    Vector array of the encoded data to parse
+     * @param[out]  ns_list         Vector of namespaces, will be updated from decode
+     */
+    void inline decodeNamespaces(const std::vector<uint8_t> &encoded_data, std::vector<Namespace> &ns_list) {
+        for (size_t i=0; i < encoded_data.size(); i++) {
+            uint8_t byte_count = encoded_data[i] / 8;
+            byte_count += encoded_data[i] % 8 > 0 ? 1 : 0;
+
+            // Make name from bytes encoded
+            Name n(encoded_data.data() + (i+1), byte_count);
+
+            // namespace currently puts the bytes in the lower bytes of the name. Need to shift them over
+            n <<= 128 - encoded_data[i];
+
+            ns_list.emplace_back(n, encoded_data[i]);
+
+            i += byte_count;
+        }
+    }
+
+    /**
+     * @brief Encode namespaces to message encoding
+     *
+     * @param[out] encoded_data     Vector that will be updated with the encoded namespaces
+     * @param[in]  ns_list          Vector of namespaces, will be updated from decode
+     */
+    void inline encodeNamespaces(std::vector<uint8_t> &encoded_data, const std::vector<Namespace> &ns_list) {
+
+        for (const auto &ns: ns_list) {
+            uint8_t byte_count = ns.length() / 8;
+            byte_count += ns.length() % 8 > 0 ? 1 : 0;
+
+            encoded_data.push_back(ns.length());
+
+            // TODO: Update name to pull out just used bytes for the name based on length
+            uint8_t start = 16 - byte_count;
+            for (uint8_t i=0; i < byte_count; i++) {
+                encoded_data.push_back(ns.name()[start++]);
+            }
+        }
+    }
+
 
 } // namespace laps

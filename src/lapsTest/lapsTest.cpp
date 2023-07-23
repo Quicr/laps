@@ -158,8 +158,8 @@ int main(int argc, char *argv[]) {
                      std::move(empty));
 
     logger.log(qtransport::LogLevel::info,
-               "Sleeping for 20 seconds before unsubscribing");
-    std::this_thread::sleep_for(std::chrono::seconds(20));
+               "Sleeping for 40 seconds before unsubscribing");
+    std::this_thread::sleep_for(std::chrono::seconds(40));
 
     logger.log(qtransport::LogLevel::info, "Now unsubscribing");
     client.unsubscribe(nspace, {}, {});
@@ -169,6 +169,6 @@ int main(int argc, char *argv[]) {
     std::this_thread::sleep_for(std::chrono::seconds(15));
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  std::this_thread::sleep_for(std::chrono::seconds(100));
   return 0;
 }

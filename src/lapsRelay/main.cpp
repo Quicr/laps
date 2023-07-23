@@ -34,12 +34,12 @@ main(int /* argc */, char*[] /* argv[] */)
     Cache cache(cfg);
     peerQueue peer_queue;
 
-    cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
-    PeerManager peer_mgr(cfg, peer_queue, cache, subscriptions);
-
     // Start UDP client manager
     ClientManager udp_mgr(cfg, cache, subscriptions, peer_queue);
     udp_mgr.start();
+
+    cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
+    PeerManager peer_mgr(cfg, peer_queue, cache, subscriptions);
 
     // Start QUIC client manager using the UDP port plus one
     cfg.client_config.listen_port++;
@@ -57,4 +57,6 @@ main(int /* argc */, char*[] /* argv[] */)
     while (quic_mgr.ready() && udp_mgr.ready()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
+
+    LOG_INFO("Shutting down LAPS");
 }
