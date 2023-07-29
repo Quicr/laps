@@ -7,7 +7,7 @@ ClientSubscriptions::ClientSubscriptions(const Config &cfg) : config(cfg) {
 }
 
 void ClientSubscriptions::add(const quicr::Name& name, const int len,
-                              const uint16_t& client_mgr_id,
+                              const uint16_t client_mgr_id,
                               const Remote& remote) {
 
   quicr::Namespace prefix(name, len);
@@ -31,15 +31,15 @@ void ClientSubscriptions::add(const quicr::Name& name, const int len,
 }
 
 void ClientSubscriptions::remove(const quicr::Name& name, const int len,
-                                 const uint16_t& client_mgr_id,
+                                 const uint16_t client_mgr_id,
                                  const Remote& remote) {
 
   remove(name, len, client_mgr_id, remote.subscribe_id);
 }
 
 void ClientSubscriptions::remove(const quicr::Name& name, const int len,
-                                 const uint16_t& client_mgr_id,
-                                 const uint64_t& subscriber_id) {
+                                 const uint16_t client_mgr_id,
+                                 const uint64_t subscriber_id) {
   quicr::Namespace prefix(name, len);
 
   std::lock_guard<std::mutex> lock(mutex);
@@ -68,6 +68,37 @@ void ClientSubscriptions::remove(const quicr::Name& name, const int len,
       }
     }
   }
+}
+
+const ClientSubscriptions::Remote ClientSubscriptions::getSubscribeRemote(const quicr::Namespace& ns,
+                                                                          const uint16_t client_mgr_id,
+                                                                          const uint64_t subscriber_id)
+{
+  const Remote empty_remote { .client_mgr_id = 0, .subscribe_id = 0, .conn_id = 0 };
+
+  std::lock_guard<std::mutex> lock(mutex);
+
+  if (subscriptions[ns.length()].empty()) {
+    return empty_remote;
+  }
+
+  auto sublist_it = subscriptions[ns.length()].find(ns.name());
+  if (sublist_it != subscriptions[ns.length()].end()) {
+
+    const auto cmgr_it = sublist_it->second.find(client_mgr_id);
+    if (cmgr_it == sublist_it->second.end()) {
+      // Not found
+      return empty_remote;
+    }
+
+    const auto sub_it = cmgr_it->second.find(subscriber_id);
+    if (sub_it != cmgr_it->second.end()) {
+      // Found subscriber
+      return sub_it->second;
+    }
+  }
+
+  return empty_remote;
 }
 
 std::map<uint16_t, std::map<uint64_t,ClientSubscriptions::Remote>>

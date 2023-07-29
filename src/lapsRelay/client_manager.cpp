@@ -129,19 +129,19 @@ void ClientManager::onSubscribe(
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
-    /* TODO: Come back to deduplicate, apparently it's causing an issue
-    std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
-            subscribeList.find(quicr_namespace);
+  const auto& existing_remote =
+    subscribeList.getSubscribeRemote(quicr_namespace, client_mgr_id, subscriber_id);
 
-    if (!list.empty()) {
-        DEBUG("duplicate onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
-              std::string(quicr_namespace).c_str(), quicr_namespace.length(),
-              subscriber_id, context_id, stream_id);
-        return;
-    }
-    */
+  if (existing_remote.client_mgr_id != 0) {
+    DEBUG("duplicate onSubscribe namespace: %s %d (%" PRIu64 ")",
+          std::string(quicr_namespace).c_str(),
+          subscriber_id,
+          context_id,
+          stream_id);
+    return;
+  }
 
-    DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
+  DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
         std::string(quicr_namespace).c_str(), quicr_namespace.length(),
         subscriber_id, context_id, stream_id);
 
