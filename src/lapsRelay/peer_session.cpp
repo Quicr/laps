@@ -176,7 +176,7 @@ namespace laps {
         _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
     }
 
-    void PeerSession::sendPublishIntent(const Namespace& ns, const std::string& origin_peer_id)
+    void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
         LOG_INFO("Sending publish intent %s", ns.to_hex().c_str());
 
@@ -198,7 +198,7 @@ namespace laps {
         _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
     }
 
-    void PeerSession::sendPublishIntentDone(const Namespace& ns, const std::string& origin_peer_id)
+    void PeerSession::sendPublishIntentDone(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -319,6 +319,7 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
+                                    DEBUG("Recv subscribe %s", std::to_string(ns_list.size()).c_str() );
                                     if (ns_list.size() > 0) {
                                         addSubscription(ns_list.front());
                                         _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,

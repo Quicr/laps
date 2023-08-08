@@ -9,6 +9,7 @@ namespace laps {
     using namespace quicr;
 
     using nameList = std::vector<Namespace>;
+    using peer_id_t = std::string;
 
     enum class PeerObjectType : uint8_t {
         PUBLISH = 0,
@@ -20,8 +21,8 @@ namespace laps {
 
     struct PeerObject {
         PeerObjectType  type;                             /// Object type
-        std::string     source_peer_id;                   /// Peer ID if from peer, otherwise empty
-        std::string     origin_peer_id;                   /// Origin of a publish intent
+        peer_id_t       source_peer_id;                   /// Peer ID if from peer, otherwise empty
+        peer_id_t       origin_peer_id;                   /// Origin of a publish intent
 
         messages::PublishDatagram pub_obj;                /// published object to send
         Namespace nspace {};                              /// Subscribe or publish intent namespace

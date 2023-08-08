@@ -132,13 +132,12 @@ public:
                   const char *msg, ...);
 
 private:
-  bool logFile_REALFILE; ///< Indicates if the log file is using a real file or
-  ///< not
-  bool debugFile_REALFILE; ///< Indicates if the debug log file is using a real
+  bool logFile_REALFILE;          /// Indicates if the log file is using a real file or not
+  bool debugFile_REALFILE;        /// Indicates if the debug log file is using a real
   ///< file or not
-  FILE *debugFile;   ///< Debug log file
-  FILE *logFile;     ///< Log file
-  bool debugEnabled; ///< Enable Debug
+  FILE *debugFile;                /// Debug log file
+  FILE *logFile;                  /// Log file
+  bool debugEnabled {false};      /// Enable Debug
 
   u_char
       width_function; ///< Defines the width of the function field when printed

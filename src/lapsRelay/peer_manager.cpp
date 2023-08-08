@@ -15,8 +15,8 @@ namespace laps {
       , _cache(cache)
       , _subscriptions(subscriptions)
     {
-        logger = cfg.logger;
 
+        logger = cfg.logger;
         _client_rx_msg_thr = std::thread(&PeerManager::PeerQueueThread, this);
 
         // TODO: Add config variable for interval_ms
@@ -116,69 +116,145 @@ namespace laps {
         }
     }
 
-    void PeerManager::subscribePeers(const Namespace& ns, const std::string& source_peer_id)
-    {
-        _peer_sess_subscribed.try_emplace(ns, source_peer_id);
+    void PeerManager::addSubscribedPeer(const Namespace& ns, const peer_id_t& peer_id) {
+        auto peer_subs_it = _peer_sess_subscribe_sent.find(ns);
+        if (peer_subs_it != _peer_sess_subscribe_sent.end()) {
+            peer_subs_it->second.insert(peer_id);
+        } else {
+            std::set<peer_id_t> source_peers { peer_id };
+            _peer_sess_subscribe_sent.try_emplace(ns, std::move(source_peers));
+        };
+    }
 
-        const auto& iter = _pub_intent_namespaces.find(ns);
-        std::vector<std::string> peers;
+    PeerSession* PeerManager::getPeerSession(const peer_id_t& peer_id) {
+
+        for (auto& sess : _client_peer_sessions) {
+            if (!peer_id.compare(sess.getPeerId())) {
+                return &sess;
+            }
+        }
+
+        for (auto& [_, sess] : _server_peer_sessions) {
+            if (!peer_id.compare(sess.getPeerId())) {
+                return &sess;
+            }
+        }
+
+        return nullptr;
+    }
+
+
+    void PeerManager::subscribePeers(const Namespace& ns)
+    {
+        bool have_subscribers {false};
+
+        DEBUG("Subscribe to peers for %s", std::string(ns.to_hex()).c_str());
+
+        auto it = _peer_sess_subscribe_recv.find(ns);
+        if (it == _peer_sess_subscribe_recv.end() || it->second.empty()) {
+
+            // No peers subscribed, check client edge subscription
+            std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list = _subscriptions.find(ns);
+
+            if (list.empty()) {
+                DEBUG("No subscribers, not sending subscription to peer(s) for %s", std::string(ns.to_hex()).c_str());
+                // No subscribers, do not send subscription
+                return;
+            }
+        }
+
+        // Add namespace with empty list if it doesn't exist
+        auto peer_subs_it = _peer_sess_subscribe_sent.find(ns);
+        if (peer_subs_it == _peer_sess_subscribe_sent.end()) {
+            std::set<peer_id_t> peers;
+            auto [it, _] = _peer_sess_subscribe_sent.try_emplace(ns, std::move(peers));
+            peer_subs_it = it;
+        }
+
+        /*
+         * When building the list of peers to send subscribe, only add first/front peer for given origin (best peer)
+         * TODO: Update this to be more dynamic and adaptive
+         */
+        const auto iter = _pub_intent_namespaces.find(ns);
+        std::vector<peer_id_t> peers;
         if (iter != _pub_intent_namespaces.end()) {
-            for (const auto& p : iter->second) {
-                peers.push_back(p.second.front());
+            for (const auto& [origin_peer, source_peers] : iter->second) {
+                peers.push_back(source_peers.front());
             }
         }
 
-        for (auto& sess : _client_peer_sessions) {
-            for (const auto &p : peers) {
-                if (!p.compare(sess.getPeerId())) {
-                    sess.sendSubscribe(ns);
-                }
-            }
-        }
+        /*
+         * Send subscribe towards best publish intent peers (that can reach origin)
+         */
+        for (const auto& peer_id : peers) {
 
-        for (auto& [_, sess] : _server_peer_sessions) {
-            for (const auto &p : peers) {
-                if (!p.compare(sess.getPeerId())) {
-                    sess.sendSubscribe(ns);
+            // Only send subscribe if subscribe wasn't already sent to this peer
+            if (!peer_subs_it->second.contains(peer_id)) {
+                peer_subs_it->second.insert(peer_id);
+
+                auto sess = getPeerSession(peer_id);
+                if (sess) {
+                    sess->sendSubscribe(ns);
+                    addSubscribedPeer(ns, peer_id);
                 }
             }
         }
     }
 
-    void PeerManager::unSubscribePeers(const Namespace& ns, [[maybe_unused]] const std::string& source_peer_id)
+    void PeerManager::subscribePeer(const Namespace& ns, const peer_id_t& peer_id)
     {
-        auto iter = _peer_sess_subscribed.find(ns);
-        if (iter != _peer_sess_subscribed.end()) {
-            _peer_sess_subscribed.erase(iter);
+        auto peer_subs_it = _peer_sess_subscribe_sent.find(ns);
+
+        bool do_sub { false };
+
+        if (peer_subs_it != _peer_sess_subscribe_sent.end()) {
+            if (!peer_subs_it->second.contains(peer_id)) {
+                peer_subs_it->second.insert(peer_id);
+                do_sub = true;
+            }
+        } else {
+            std::set<peer_id_t> peers { peer_id };
+            _peer_sess_subscribe_sent.try_emplace(ns, std::move(peers));
+            do_sub = true;
         }
 
-        const auto it = _pub_intent_namespaces.find(ns);
-        std::vector<std::string> peers;
-        if (it != _pub_intent_namespaces.end()) {
-            for (const auto& p : it->second) {
-                peers.push_back(p.second.front());
+        if (do_sub) {
+            auto sess = getPeerSession(peer_id);
+            if (sess) {
+                sess->sendSubscribe(ns);
             }
         }
-
-        for (auto& sess : _client_peer_sessions) {
-            for (const auto &p : peers) {
-                if (!p.compare(sess.getPeerId())) {
-                    sess.sendUnsubscribe(ns);
-                }
-            }
-        }
-
-        for (auto& [_, sess] : _server_peer_sessions) {
-            for (const auto &p : peers) {
-                if (!p.compare(sess.getPeerId())) {
-                    sess.sendUnsubscribe(ns);
-                }
-            }
-        }
-
     }
 
-    void PeerManager::publishIntentPeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id)
+    void PeerManager::unSubscribePeer(const Namespace& ns, const peer_id_t& peer_id)
+    {
+        auto sess = getPeerSession(peer_id);
+        if (sess) {
+            sess->sendUnsubscribe(ns);
+        }
+
+        for (auto& [ns, peers] : _peer_sess_subscribe_sent) {
+            peers.erase(peer_id);
+        }
+    }
+
+    void PeerManager::unSubscribePeers(const Namespace& ns)
+    {
+        for (const auto& [ns, peers] : _peer_sess_subscribe_sent) {
+
+            for (auto& peer_id : peers) {
+                auto sess = getPeerSession(peer_id);
+                if (sess) {
+                    sess->sendUnsubscribe(ns);
+                }
+            }
+        }
+
+        _peer_sess_subscribe_sent.erase(ns);
+    }
+
+    void PeerManager::publishIntentPeers(const Namespace& ns, const peer_id_t& source_peer_id,
+                                         const peer_id_t& origin_peer_id)
     {
         bool update_peers { false };
 
@@ -187,8 +263,8 @@ namespace laps {
             DEBUG("New published intent message origin %s", origin_peer_id.c_str());
             update_peers = true;
 
-            std::map<std::string, std::list<std::string>> intent_map;
-            intent_map.try_emplace(origin_peer_id, std::initializer_list<std::string>{ source_peer_id});
+            std::map<peer_id_t, std::list<peer_id_t>> intent_map;
+            intent_map.try_emplace(origin_peer_id, std::initializer_list<peer_id_t>{ source_peer_id });
             _pub_intent_namespaces.try_emplace(ns, intent_map);
 
         } else {
@@ -198,7 +274,7 @@ namespace laps {
                 update_peers = true;
 
                 iter->second.try_emplace(origin_peer_id,
-                                         std::initializer_list<std::string>{ source_peer_id });
+                                         std::initializer_list<peer_id_t>{ source_peer_id });
             } else {
                 bool found{ false };
                 for (const auto& peer_id : it->second) {
@@ -230,7 +306,8 @@ namespace laps {
         }
     }
 
-    void PeerManager::publishIntentDonePeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id)
+    void PeerManager::publishIntentDonePeers(const Namespace& ns, const peer_id_t& source_peer_id,
+                                             const peer_id_t& origin_peer_id)
     {
         const auto iter = _pub_intent_namespaces.find(ns);
         if (iter != _pub_intent_namespaces.end()) {
@@ -290,7 +367,13 @@ namespace laps {
                     case PeerObjectType::SUBSCRIBE: {
                         DEBUG("Received subscribe message name: %s", std::string(obj->nspace).c_str());
 
-                        subscribePeers(obj->nspace, obj->source_peer_id);
+                        // Send subscribe to all peers toward the best publish intent peer(s)
+                        subscribePeers(obj->nspace);
+
+                        if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
+                            std::set<peer_id_t> peers { obj->source_peer_id };
+                            _peer_sess_subscribe_recv.try_emplace(obj->nspace, std::move(peers));
+                        }
 
                         break;
                     }
@@ -298,12 +381,45 @@ namespace laps {
                     case PeerObjectType::UNSUBSCRIBE: {
                         DEBUG("Received unsubscribe message name: %s", std::string(obj->nspace).c_str());
 
-                        unSubscribePeers(obj->nspace, obj->source_peer_id);
+                        bool un_sub_all { false };
+
+                        if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
+                            // Indicate unsubscribe all peers if there are no clients/edge subs left
+
+                            std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
+                              _subscriptions.find(obj->nspace);
+
+                            if (list.empty()) {
+                                un_sub_all = true;
+                            }
+
+                        } else {
+                            // Only unsubscribe all peers if there are no other peers subscribed
+                            auto it = _peer_sess_subscribe_recv.find(obj->nspace);
+                            if (it != _peer_sess_subscribe_recv.end()) {
+
+                                it->second.erase(obj->source_peer_id);
+
+                                if (it->second.empty()) {
+                                    un_sub_all = true;
+                                } else {
+                                    un_sub_all = false;
+                                }
+
+                            } else {
+                                un_sub_all = true;
+                            }
+                        }
+
+                        if (un_sub_all) {
+                            unSubscribePeers(obj->nspace);
+                        }
+
                         break;
                     }
 
                     case PeerObjectType::PUBLISH_INTENT: {
-                        std::string origin_peer_id = obj->origin_peer_id;
+                        peer_id_t origin_peer_id = obj->origin_peer_id;
 
                         if (! obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             origin_peer_id = _config.peer_config.id;
@@ -314,15 +430,12 @@ namespace laps {
 
                         publishIntentPeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 
-                        for (const auto [ns, peer_id]: _peer_sess_subscribed) {
-                            subscribePeers(ns, peer_id);
-                        }
-
+                        subscribePeers(obj->nspace);
                         break;
                     }
 
                     case PeerObjectType::PUBLISH_INTENT_DONE: {
-                        std::string origin_peer_id = obj->origin_peer_id;
+                        peer_id_t origin_peer_id = obj->origin_peer_id;
 
                         if (! obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             origin_peer_id = _config.peer_config.id;
