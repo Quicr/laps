@@ -42,6 +42,10 @@ namespace laps {
     {
         MsgConnect() { subtype = PeeringSubType::CONNECT; }
 
+        // Flags
+        uint8_t     flag_reliable : 1;            /// Instructs peer to use reliable for published objects
+        uint8_t     flag_reserved : 7;            /// Reserved/unused flags
+
         double longitude{ 0 }; /// 8 byte longitude value detailing the location of the local relay
         double latitude{ 0 };  /// 8 byte latitude value detailing the location of the local relay
 

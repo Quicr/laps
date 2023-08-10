@@ -25,6 +25,7 @@ namespace laps {
         logger = cfg.logger;
 
         peer_id = peer_config.host_or_ip;
+        _use_reliable = _config.peer_config.use_reliable;
 
         if (_config.tls_cert_filename.length() == 0) {
             _transport_config.tls_cert_filename = NULL;
@@ -89,8 +90,9 @@ namespace laps {
 
     void PeerSession::addSubscription(const Namespace& ns)
     {
-        if (_config.peer_config.use_reliable) {
+        if (_use_reliable) {
             auto stream_id = createStream(t_context_id, true);
+
             _subscribed.try_emplace(ns, stream_id);
 
         } else {
@@ -152,6 +154,8 @@ namespace laps {
     {
         std::vector<uint8_t> buf(sizeof(MsgConnect) + peer_id.length());
         MsgConnect c_msg;
+        c_msg.flag_reliable = _config.peer_config.use_reliable ? 1 : 0;
+        c_msg.flag_reserved = 0;
         c_msg.longitude = _config.peer_config.longitude;
         c_msg.latitude = _config.peer_config.latitude;
         c_msg.id_len = _config.peer_config.id.length();
@@ -287,10 +291,12 @@ namespace laps {
                                     std::memcpy(c_peer_id, data.data() + sizeof(c_msg), c_msg.id_len);
                                     peer_id = c_peer_id;
 
+                                    _use_reliable = c_msg.flag_reliable;
                                     longitude = c_msg.longitude;
                                     latitude = c_msg.latitude;
 
-                                    LOG_INFO("Received peer connect message from %s, sending ok", peer_id.c_str());
+                                    LOG_INFO("Received peer connect message from %s reliable: %d, sending ok",
+                                             peer_id.c_str(), _use_reliable);
                                     sendConnectOk();
 
                                     break;
@@ -319,7 +325,7 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
-                                    DEBUG("Recv subscribe %s", std::to_string(ns_list.size()).c_str() );
+                                    LOG_INFO("Recv subscribe %s", ns_list.front().to_hex().c_str() );
                                     if (ns_list.size() > 0) {
                                         addSubscription(ns_list.front());
                                         _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
@@ -336,6 +342,8 @@ namespace laps {
                                     std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg), data.end());
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
+
+                                    LOG_INFO("Recv unsubscribe %s", ns_list.front().to_hex().c_str() );
 
                                     if (ns_list.size() > 0) {
                                         _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE,

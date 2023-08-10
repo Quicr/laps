@@ -181,6 +181,7 @@ namespace laps {
         Logger* logger;
 
         bool _is_inbound { false };               /// Indicates if the peer is server accepted (inbound) or client (outbound)
+        bool _use_reliable { true };              /// Indicates if to use reliable/streams or datagram when publishing objects
 
         /*
          * Information about peer
@@ -205,7 +206,7 @@ namespace laps {
         std::shared_ptr<ITransport> _transport;       /// Transport used for the peering connection
 
         namespace_map<StreamId> _subscribed;          /// Subscribed namespace and associated stream id
-        namespace_map<peer_id_t> _publish_intents;  /// Publish intents sent to the peer
+        namespace_map<peer_id_t> _publish_intents;    /// Publish intents sent to the peer
     };
 
 } // namespace laps

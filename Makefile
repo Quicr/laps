@@ -61,15 +61,27 @@ image-amd64: docker-prep
 			--output type=docker --platform linux/amd64 \
 			-f Dockerfile -t quicr/laps-relay:${DOCKER_TAG}-amd64 .
 
-## image-pi: Create ARM/v7 PI binary in build-pi/
-image-pi: docker-prep
+## image-pi-v7: Create ARM/v7 PI binary in build-pi/
+image-pi-32: docker-prep
 	@rm -rf build-pi
 	@mkdir build-pi
 	@docker buildx build --progress=plain \
 			--output type=docker --platform linux/arm/v7 \
-			-f debian.Dockerfile -t quicr/laps-relay:pi-arm7 .
+			-f debian.Dockerfile -t quicr/laps-relay:pi-armv7 .
 	@docker rm -f laps-relay-pi
-	@docker create --name laps-relay-pi quicr/laps-relay:pi-arm7
+	@docker create --name laps-relay-pi quicr/laps-relay:pi-armv7
+	@docker cp laps-relay-pi:/usr/local/bin/lapsRelay ./build-pi/lapsRelay
+	@docker rm -f laps-relay-pi
+
+## image-pi-32: Create ARM/v7 PI binary in build-pi/
+image-pi-64: docker-prep
+	@rm -rf build-pi
+	@mkdir build-pi
+	@docker buildx build --progress=plain \
+			--output type=docker --platform linux/arm64 \
+			-f debian.Dockerfile -t quicr/laps-relay:pi-arm64 .
+	@docker rm -f laps-relay-pi
+	@docker create --name laps-relay-pi quicr/laps-relay:pi-arm64
 	@docker cp laps-relay-pi:/usr/local/bin/lapsRelay ./build-pi/lapsRelay
 	@docker rm -f laps-relay-pi
 

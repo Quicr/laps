@@ -146,8 +146,6 @@ namespace laps {
 
     void PeerManager::subscribePeers(const Namespace& ns)
     {
-        bool have_subscribers {false};
-
         DEBUG("Subscribe to peers for %s", std::string(ns.to_hex()).c_str());
 
         auto it = _peer_sess_subscribe_recv.find(ns);
