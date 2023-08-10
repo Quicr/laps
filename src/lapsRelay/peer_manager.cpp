@@ -484,7 +484,7 @@ namespace laps {
         if (peer_iter == _server_peer_sessions.end()) {
             LOG_INFO("New server accepted peer, context_id: %" PRIu64, context_id);
 
-            TransportRemote peer; // Server doesn't define remotes
+            TransportRemote peer = remote;
             auto [iter, inserted] = _server_peer_sessions.try_emplace(context_id,
                                                                       true,
                                                                       context_id,
