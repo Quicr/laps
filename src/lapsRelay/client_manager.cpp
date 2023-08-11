@@ -122,9 +122,9 @@ void ClientManager::onPublisherObject(
 }
 
 void ClientManager::onSubscribe(
-    const quicr::Namespace &quicr_namespace, const uint64_t &subscriber_id,
+    const quicr::Namespace &quicr_namespace, const uint64_t subscriber_id,
     const qtransport::TransportContextId &context_id,
-    const qtransport::StreamId &stream_id,
+    const qtransport::StreamId stream_id,
     const quicr::SubscribeIntent /* subscribe_intent */,
     const std::string & /* origin_url */, bool /* use_reliable_transport */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
@@ -133,16 +133,14 @@ void ClientManager::onSubscribe(
     subscribeList.getSubscribeRemote(quicr_namespace, client_mgr_id, subscriber_id);
 
   if (existing_remote.client_mgr_id != 0) {
-    DEBUG("duplicate onSubscribe namespace: %s %d (%" PRIu64 ")",
-          std::string(quicr_namespace).c_str(),
-          subscriber_id,
-          context_id,
-          stream_id);
+    LOG_INFO("duplicate onSubscribe namespace: %s subscriber_id: %" PRIu64 " context_id%" PRIu64 " stream_id: %" PRIu64,
+             std::string(quicr_namespace).c_str(),
+             subscriber_id, context_id, stream_id);
     return;
   }
 
-  DEBUG("onSubscribe namespace: %s %d (%" PRIu64 "/%" PRIu64 ")",
-        std::string(quicr_namespace).c_str(), quicr_namespace.length(),
+  LOG_INFO("onSubscribe namespace: %s subscriber_id: %" PRIu64 " context_id%" PRIu64 " stream_id: %" PRIu64,
+        std::string(quicr_namespace).c_str(),
         subscriber_id, context_id, stream_id);
 
   ClientSubscriptions::Remote remote = {
@@ -173,7 +171,8 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
                                   const uint64_t &subscriber_id,
                                   const std::string & /* auth_token */) {
 
-  DEBUG("onUnsubscribe namespace: %s", std::string(quicr_namespace).c_str());
+  LOG_INFO("onSubscribe namespace: %s subscriber_id: %" PRIu64,
+           std::string(quicr_namespace).c_str(), subscriber_id);
 
   server->subscriptionEnded(subscriber_id, quicr_namespace,
                             quicr::SubscribeResult::SubscribeStatus::Ok);

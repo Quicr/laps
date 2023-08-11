@@ -50,9 +50,9 @@ public:
                          quicr::messages::PublishDatagram &&datagram) override;
 
   void onSubscribe(const quicr::Namespace &quicr_namespace,
-                   const uint64_t &subscriber_id,
+                   const uint64_t subscriber_id,
                    const qtransport::TransportContextId &context_id,
-                   const qtransport::StreamId &stream_id,
+                   const qtransport::StreamId stream_id,
                    const quicr::SubscribeIntent subscribe_intent,
                    const std::string &origin_url, bool use_reliable_transport,
                    const std::string &auth_token, quicr::bytes &&data) override;
