@@ -122,11 +122,28 @@ int main(int argc, char *argv[]) {
                          .proto = quicr::RelayInfo::Protocol::QUIC};
 
   qtransport::TransportConfig tcfg { .tls_cert_filename = NULL, .tls_key_filename = NULL};
+  tcfg.debug = true;
   quicr::QuicRClient client(relay, std::move(tcfg), logger);
 
-  // TODO: Update to use status to check when ready - For now sleep to give it
-  // some time
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  client.connect();
+  
+  while (client.status() == quicr::ClientStatus::CONNECTING) {
+    logger.log(qtransport::LogLevel::info, "... waiting to connect");
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
+
+  switch (client.status()) {
+    case quicr::ClientStatus::READY:
+        logger.log(qtransport::LogLevel::info, "... connected");
+        break;
+    case quicr::ClientStatus::TERMINATED:
+        logger.log(qtransport::LogLevel::info, "... terminated");
+        exit(10);
+    default:
+        logger.log(qtransport::LogLevel::info, "... connected status: " + std::to_string(static_cast<uint8_t>(client.status())));
+        exit(11);
+  }
+
 
   if (data.size() > 0) {
     auto pd = std::make_shared<pubDelegate>();
