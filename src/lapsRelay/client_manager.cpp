@@ -59,18 +59,16 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     const std::string& /* auth_token */,
                                     quicr::bytes&& /* e2e_token */) {
 
-  DEBUG("onPublishIntent namespace: %s",
+  LOG_INFO("onPublishIntent namespace: %s",
         std::string(quicr_namespace).c_str(), quicr_namespace.length());
 
   _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT, .source_peer_id = CLIENT_PEER_ID,
                      .nspace = quicr_namespace });
 
-  /* TODO: Add the below - Need to direct the response to the correct subscriber
   auto  result = quicr::PublishIntentResult { quicr::messages::Response::Ok,
                                               {}, {} };
 
-  server->publishIntentResponse(subscriber_id, quicr_namespace, result);
- */
+  server->publishIntentResponse(quicr_namespace, result);
 }
 
 
@@ -89,6 +87,16 @@ void ClientManager::onPublisherObject(
     [[maybe_unused]] const qtransport::StreamId &stream_id,
     bool /* use_reliable_transport */,
     quicr::messages::PublishDatagram &&datagram) {
+
+  auto now = std::chrono::duration_cast<std::chrono::microseconds>(
+    std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+  uint64_t sent_time = 0UL;
+  std::memcpy(&sent_time, datagram.media_data.data(), sizeof(uint64_t));
+  uint64_t delta_us = now - sent_time;
+  logger->log(LogLevel::info, "Object %s"
+                                + datagram.header.name.to_hex()
+                                + " OWT: " + std::to_string(delta_us));
 
   if (not config.disable_dedup &&
       cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
