@@ -48,13 +48,13 @@ public:
   ClientSubscriptions(const Config &cfg);
 
   void add(const quicr::Name& name, const int len,
-           const uint16_t client_mgr_id, const Remote& remote);
+           uint16_t client_mgr_id, const Remote& remote);
 
   void remove(const quicr::Name& name, const int len,
-              const uint16_t client_mgr_id, const Remote& remote);
+              uint16_t client_mgr_id, const Remote& remote);
 
   void remove(const quicr::Name& name, const int len,
-              const uint16_t client_mgr_id, const uint64_t subscriber_id);
+              uint16_t client_mgr_id, const uint64_t subscriber_id);
 
   /**
    * @brief Get the subscribe remote information

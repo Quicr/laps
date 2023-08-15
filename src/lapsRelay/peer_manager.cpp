@@ -15,7 +15,6 @@ namespace laps {
       , _cache(cache)
       , _subscriptions(subscriptions)
     {
-
         logger = cfg.logger;
         _client_rx_msg_thr = std::thread(&PeerManager::PeerQueueThread, this);
 
@@ -146,7 +145,7 @@ namespace laps {
 
     void PeerManager::subscribePeers(const Namespace& ns)
     {
-        DEBUG("Subscribe to peers for %s", std::string(ns.to_hex()).c_str());
+        DEBUG("Subscribe to peers for %s", std::string(ns).c_str());
 
         auto it = _peer_sess_subscribe_recv.find(ns);
         if (it == _peer_sess_subscribe_recv.end() || it->second.empty()) {
@@ -155,7 +154,7 @@ namespace laps {
             std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list = _subscriptions.find(ns);
 
             if (list.empty()) {
-                DEBUG("No subscribers, not sending subscription to peer(s) for %s", std::string(ns.to_hex()).c_str());
+                DEBUG("No subscribers, not sending subscription to peer(s) for %s", std::string(ns).c_str());
                 // No subscribers, do not send subscription
                 return;
             }
@@ -310,7 +309,7 @@ namespace laps {
         const auto iter = _pub_intent_namespaces.find(ns);
         if (iter != _pub_intent_namespaces.end()) {
             DEBUG("Removing publish intent ns: %s origin %s",
-                  ns.to_hex().c_str(),
+                  std::string(ns).c_str(),
                   origin_peer_id.c_str());
             const auto it = iter->second.find(origin_peer_id);
             if (it != iter->second.end()) {

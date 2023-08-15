@@ -81,7 +81,7 @@ namespace laps {
 
         auto iter = _subscribed.find(obj.header.name);
         if (iter != _subscribed.end()) {
-            //DEBUG("Sending published object for name: %s", obj.header.name.to_hex().c_str());
+            //DEBUG("Sending published object for name: %s", std::string(obj.header.name).c_str());
             messages::MessageBuffer mb;
             mb << obj;
             _transport->enqueue(t_context_id, iter->second, mb.take());
@@ -107,7 +107,7 @@ namespace laps {
 
         addSubscription(ns);
 
-        DEBUG("Sending subscribe to peer %s for ns: %s", peer_id.c_str(), ns.to_hex().c_str());
+        DEBUG("Sending subscribe to peer %s for ns: %s", peer_id.c_str(), std::string(ns).c_str());
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -128,7 +128,7 @@ namespace laps {
         auto iter = _subscribed.find(ns);
         if (iter != _subscribed.end()) {
 
-            DEBUG("Sending unsubscribe to peer %s for ns: %s", peer_id.c_str(), ns.to_hex().c_str());
+            DEBUG("Sending unsubscribe to peer %s for ns: %s", peer_id.c_str(), std::string(ns).c_str());
 
             if (_config.peer_config.use_reliable)
                 _transport->closeStream(t_context_id, iter->second);
@@ -182,7 +182,7 @@ namespace laps {
 
     void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
-        LOG_INFO("Sending publish intent %s", ns.to_hex().c_str());
+        LOG_INFO("Sending publish intent %s", std::string(ns).c_str());
 
         _publish_intents.try_emplace(ns, origin_peer_id);
 
@@ -209,7 +209,7 @@ namespace laps {
 
         _publish_intents.erase(ns);
 
-        LOG_INFO("Sending publish intent DONE %s", ns.to_hex().c_str());
+        LOG_INFO("Sending publish intent DONE %s", std::string(ns).c_str());
 
         std::vector<uint8_t> buf(sizeof(MsgPublishIntentDone) + origin_peer_id.length() + ns_array.size());
 
@@ -325,7 +325,7 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
-                                    LOG_INFO("Recv subscribe %s", ns_list.front().to_hex().c_str() );
+                                    LOG_INFO("Recv subscribe %s", std::string(ns_list.front()).c_str() );
                                     if (ns_list.size() > 0) {
                                         addSubscription(ns_list.front());
                                         _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
@@ -343,7 +343,7 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
-                                    LOG_INFO("Recv unsubscribe %s", ns_list.front().to_hex().c_str() );
+                                    LOG_INFO("Recv unsubscribe %s", std::string(ns_list.front()).c_str() );
 
                                     if (ns_list.size() > 0) {
                                         _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE,
@@ -367,7 +367,7 @@ namespace laps {
                                     if (ns_list.size() > 0) {
                                         LOG_INFO("Received publish intent from %s with namespace: %s",
                                                  peer_id.c_str(),
-                                                 ns_list.front().to_hex().c_str());
+                                                 std::string(ns_list.front()).c_str());
 
                                         _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT,
                                                            .source_peer_id = peer_id,
@@ -392,7 +392,7 @@ namespace laps {
                                     if (ns_list.size() > 0) {
                                         LOG_INFO("Received publish intent DONE from %s with namespace: %s",
                                                  peer_id.c_str(),
-                                                 ns_list.front().to_hex().c_str());
+                                                 std::string(ns_list.front()).c_str());
 
                                         _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT_DONE,
                                                            .source_peer_id = peer_id,

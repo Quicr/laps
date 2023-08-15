@@ -7,7 +7,7 @@ ClientSubscriptions::ClientSubscriptions(const Config &cfg) : config(cfg) {
 }
 
 void ClientSubscriptions::add(const quicr::Name& name, const int len,
-                              const uint16_t client_mgr_id,
+                              uint16_t client_mgr_id,
                               const Remote& remote) {
 
   quicr::Namespace prefix(name, len);
@@ -31,14 +31,14 @@ void ClientSubscriptions::add(const quicr::Name& name, const int len,
 }
 
 void ClientSubscriptions::remove(const quicr::Name& name, const int len,
-                                 const uint16_t client_mgr_id,
+                                 uint16_t client_mgr_id,
                                  const Remote& remote) {
 
   remove(name, len, client_mgr_id, remote.subscribe_id);
 }
 
 void ClientSubscriptions::remove(const quicr::Name& name, const int len,
-                                 const uint16_t client_mgr_id,
+                                 uint16_t client_mgr_id,
                                  const uint64_t subscriber_id) {
   quicr::Namespace prefix(name, len);
 
