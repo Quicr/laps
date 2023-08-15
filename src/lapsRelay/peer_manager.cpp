@@ -504,7 +504,7 @@ namespace laps {
 
             // TODO: On new connection, send publish intents
             for (const auto& [ns, origins]: _pub_intent_namespaces) {
-                for (const auto [o, l]: origins) {
+                for (const auto& [o, l]: origins) {
                     peer_sess.sendPublishIntent(ns, o);
                 }
             }

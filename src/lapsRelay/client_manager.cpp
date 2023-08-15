@@ -95,7 +95,7 @@ void ClientManager::onPublisherObject(
   std::memcpy(&sent_time, datagram.media_data.data(), sizeof(uint64_t));
   uint64_t delta_us = now - sent_time;
   logger->log(LogLevel::info, "Object %s"
-                                + datagram.header.name.to_hex()
+                                + std::string(datagram.header.name)
                                 + " OWT: " + std::to_string(delta_us));
 
   if (not config.disable_dedup &&
