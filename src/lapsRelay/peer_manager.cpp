@@ -120,9 +120,8 @@ namespace laps {
         if (peer_subs_it != _peer_sess_subscribe_sent.end()) {
             peer_subs_it->second.insert(peer_id);
         } else {
-            std::set<peer_id_t> source_peers { peer_id };
-            _peer_sess_subscribe_sent.try_emplace(ns, std::move(source_peers));
-        };
+            _peer_sess_subscribe_sent.emplace(ns, std::initializer_list<peer_id_t>({ peer_id }));
+        }
     }
 
     PeerSession* PeerManager::getPeerSession(const peer_id_t& peer_id) {
@@ -163,8 +162,7 @@ namespace laps {
         // Add namespace with empty list if it doesn't exist
         auto peer_subs_it = _peer_sess_subscribe_sent.find(ns);
         if (peer_subs_it == _peer_sess_subscribe_sent.end()) {
-            std::set<peer_id_t> peers;
-            auto [it, _] = _peer_sess_subscribe_sent.try_emplace(ns, std::move(peers));
+            auto [it, _] = _peer_sess_subscribe_sent.emplace(ns, std::initializer_list<peer_id_t>({ }));
             peer_subs_it = it;
         }
 
@@ -210,8 +208,7 @@ namespace laps {
                 do_sub = true;
             }
         } else {
-            std::set<peer_id_t> peers { peer_id };
-            _peer_sess_subscribe_sent.try_emplace(ns, std::move(peers));
+            _peer_sess_subscribe_sent.emplace(ns, std::initializer_list<peer_id_t>({ peer_id }));
             do_sub = true;
         }
 
@@ -261,7 +258,7 @@ namespace laps {
             update_peers = true;
 
             std::map<peer_id_t, std::list<peer_id_t>> intent_map;
-            intent_map.try_emplace(origin_peer_id, std::initializer_list<peer_id_t>{ source_peer_id });
+            intent_map.emplace(origin_peer_id, std::initializer_list<peer_id_t>{ source_peer_id });
             _pub_intent_namespaces.try_emplace(ns, intent_map);
 
         } else {
@@ -270,7 +267,7 @@ namespace laps {
                 DEBUG("New published intent origin %s", origin_peer_id.c_str());
                 update_peers = true;
 
-                iter->second.try_emplace(origin_peer_id,
+                iter->second.emplace(origin_peer_id,
                                          std::initializer_list<peer_id_t>{ source_peer_id });
             } else {
                 bool found{ false };
@@ -368,8 +365,7 @@ namespace laps {
                         subscribePeers(obj->nspace);
 
                         if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
-                            std::set<peer_id_t> peers { obj->source_peer_id };
-                            _peer_sess_subscribe_recv.try_emplace(obj->nspace, std::move(peers));
+                            _peer_sess_subscribe_recv.emplace(obj->nspace, std::initializer_list<peer_id_t>({obj->source_peer_id}));
                         }
 
                         break;

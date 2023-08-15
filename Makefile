@@ -73,8 +73,8 @@ image-pi-32: docker-prep
 	@docker cp laps-relay-pi:/usr/local/bin/lapsRelay ./build-pi/lapsRelay
 	@docker rm -f laps-relay-pi
 
-## image-pi-32: Create ARM/v7 PI binary in build-pi/
-image-pi-64: docker-prep
+## image-pi: Create PI 64bit binary in build-pi/
+image-pi: docker-prep
 	@rm -rf build-pi
 	@mkdir build-pi
 	@docker buildx build --progress=plain \

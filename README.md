@@ -111,3 +111,66 @@ export AWS_SECRET_ACCESS_KEY=<your secret key>
 
 make publish-image
 ```
+
+---
+## Build Raspberry PI Image
+The code currently requires a modern C++ (gcc/clang) compiler.  RaspberryPI base image is debian bullseye. 
+
+```important
+Must upgrade to debian **bookworm**  
+```
+
+### (1) Install 64bit OS Lite Debian Bullseye image 
+Follow the PI imager instructions at https://www.raspberrypi.com/software/ to install base iamge. 
+
+### (2) Upgrade bullseye to bookworm
+
+Follow the below steps:
+
+```
+# Step 1
+sudo apt update && sudo apt upgrade -y
+
+# Step 2
+sudo apt --purge autoremove
+
+# Step 3
+sudo sed -i -r 's/bullseye/bookworm/' /etc/apt/sources.list 
+
+# Step 4
+sudo apt update
+
+# Step 5
+sudo apt upgrade --without-new-pkgs -y 
+
+# Step 6
+sudo apt full-upgrade -y
+ 
+# Step 7
+sudo reboot
+```
+
+Verify after reboot:
+
+```
+lsb_release -d
+cat /etc/debian_version
+```
+
+### (3) Create binary
+
+You will need docker installed to run the below. 
+
+```
+make image-pi
+```
+
+### (4) Copy the binary to Pi
+
+The binary will be created as `./build-pi/lapsRelay`
+
+Copy the image:
+
+```
+scp ./build-pi/lapsRelay <user>@<pi ip>:
+```
