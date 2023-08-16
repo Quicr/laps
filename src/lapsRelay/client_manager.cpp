@@ -88,16 +88,6 @@ void ClientManager::onPublisherObject(
     bool /* use_reliable_transport */,
     quicr::messages::PublishDatagram &&datagram) {
 
-  auto now = std::chrono::duration_cast<std::chrono::microseconds>(
-    std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-
-  uint64_t sent_time = 0UL;
-  std::memcpy(&sent_time, datagram.media_data.data(), sizeof(uint64_t));
-  uint64_t delta_us = now - sent_time;
-  logger->log(LogLevel::info, "Object %s"
-                                + std::string(datagram.header.name)
-                                + " OWT: " + std::to_string(delta_us));
-
   if (not config.disable_dedup &&
       cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
     // duplicate, ignore
