@@ -1,174 +1,272 @@
 
 #include "testLogger.h"
+#include "transport/transport.h"
 #include <chrono>
+#include <cstring>
 #include <iostream>
 #include <quicr/quicr_client.h>
 #include <quicr/quicr_common.h>
 #include <sstream>
-#include <cstring>
 #include <thread>
 
-class subDelegate : public quicr::SubscriberDelegate {
-public:
-  subDelegate(testLogger &logger) : logger(logger) {}
-  ~subDelegate() override = default;
+uint64_t
+now_us()
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
 
-  void onSubscribeResponse(
-      [[maybe_unused]] const quicr::Namespace &quicr_namespace,
-      [[maybe_unused]] const quicr::SubscribeResult &result) override {
+class subDelegate : public quicr::SubscriberDelegate
+{
+  private:
+    uint64_t prev_recv_time {0};
 
-    std::stringstream log_msg;
-    log_msg << "onSubscriptionResponse: name: " << quicr_namespace
-            << " status: " << int(static_cast<uint8_t>(result.status));
+  public:
+    subDelegate(testLogger& logger)
+      : logger(logger)
+    {
+    }
+    ~subDelegate() override = default;
 
-    logger.log(qtransport::LogLevel::info, log_msg.str());
-  }
+    void onSubscribeResponse([[maybe_unused]] const quicr::Namespace& quicr_namespace,
+                             [[maybe_unused]] const quicr::SubscribeResult& result) override
+    {
 
-  void onSubscriptionEnded(
-      [[maybe_unused]] const quicr::Namespace &quicr_namespace,
-      [[maybe_unused]] const quicr::SubscribeResult::SubscribeStatus &reason)
-      override {
+        std::stringstream log_msg;
+        log_msg << "onSubscriptionResponse: name: " << quicr_namespace
+                << " status: " << int(static_cast<uint8_t>(result.status));
 
-    std::stringstream log_msg;
-    log_msg << "onSubscriptionEnded: name: " << quicr_namespace;
+        logger.log(qtransport::LogLevel::info, log_msg.str());
+    }
 
-    logger.log(qtransport::LogLevel::info, log_msg.str());
-  }
+    void onSubscriptionEnded([[maybe_unused]] const quicr::Namespace& quicr_namespace,
+                             [[maybe_unused]] const quicr::SubscribeResult::SubscribeStatus& reason) override
+    {
 
-  void onSubscribedObject([[maybe_unused]] const quicr::Name &quicr_name,
-                          [[maybe_unused]] uint8_t priority,
-                          [[maybe_unused]] uint16_t expiry_age_ms,
-                          [[maybe_unused]] bool use_reliable_transport,
-                          [[maybe_unused]] quicr::bytes &&data) override {
-    std::stringstream log_msg;
+        std::stringstream log_msg;
+        log_msg << "onSubscriptionEnded: name: " << quicr_namespace;
 
-    log_msg << "recv object: name: " << quicr_name
-            << " data sz: " << data.size();
+        logger.log(qtransport::LogLevel::info, log_msg.str());
+    }
 
-    if (data.size())
-      log_msg << " data: " << data.data();
+    void onSubscribedObject([[maybe_unused]] const quicr::Name& quicr_name,
+                            [[maybe_unused]] uint8_t priority,
+                            [[maybe_unused]] uint16_t expiry_age_ms,
+                            [[maybe_unused]] bool use_reliable_transport,
+                            [[maybe_unused]] quicr::bytes&& data) override
+    {
+        static uint64_t prev_sent_time = 0UL;
 
-    logger.log(qtransport::LogLevel::info, log_msg.str());
-  }
+        std::stringstream log_msg;
 
-  void
-  onSubscribedObjectFragment([[maybe_unused]] const quicr::Name &quicr_name,
-                             [[maybe_unused]] uint8_t priority,
-                             [[maybe_unused]] uint16_t expiry_age_ms,
-                             [[maybe_unused]] bool use_reliable_transport,
-                             [[maybe_unused]] const uint64_t &offset,
-                             [[maybe_unused]] bool is_last_fragment,
-                             [[maybe_unused]] quicr::bytes &&data) override {}
+        auto now = now_us();
 
-private:
-  testLogger &logger;
+        log_msg << "recv object: name: " << quicr_name << " data sz: " << data.size();
+
+        uint64_t sent_time{ 0 };
+        std::memcpy(&sent_time, data.data(), sizeof(uint64_t));
+        data.erase(data.begin(), data.begin() + sizeof(uint64_t));
+
+
+        if (prev_sent_time) {
+            uint64_t pub_jitter = sent_time - prev_sent_time;;
+            uint64_t sub_jitter = now - prev_recv_time;
+            uint64_t e2e_latency = now - sent_time;
+
+            log_msg << " pub_jitter: " << pub_jitter
+                    << " sub_jitter: " << sub_jitter
+                    << " e2e_latency: " << e2e_latency;
+        }
+
+        prev_sent_time = sent_time;
+        prev_recv_time = now;
+
+        if (data.size())
+            log_msg << " data: " << data.data();
+
+        logger.log(qtransport::LogLevel::info, log_msg.str());
+    }
+
+    void onSubscribedObjectFragment([[maybe_unused]] const quicr::Name& quicr_name,
+                                    [[maybe_unused]] uint8_t priority,
+                                    [[maybe_unused]] uint16_t expiry_age_ms,
+                                    [[maybe_unused]] bool use_reliable_transport,
+                                    [[maybe_unused]] const uint64_t& offset,
+                                    [[maybe_unused]] bool is_last_fragment,
+                                    [[maybe_unused]] quicr::bytes&& data) override
+    {
+    }
+
+  private:
+    testLogger& logger;
 };
 
-class pubDelegate : public quicr::PublisherDelegate {
-public:
-  ~pubDelegate() override = default;
+class pubDelegate : public quicr::PublisherDelegate
+{
+  public:
+    std::atomic<bool> got_intent_response{ false };
 
-  void onPublishIntentResponse(
-      [[maybe_unused]] const quicr::Namespace &quicr_namespace,
-      [[maybe_unused]] const quicr::PublishIntentResult &result) override {}
+    ~pubDelegate() override = default;
+
+    void onPublishIntentResponse([[maybe_unused]] const quicr::Namespace& quicr_namespace,
+                                 [[maybe_unused]] const quicr::PublishIntentResult& result) override
+    {
+        got_intent_response = true;
+    }
 };
 
-int main(int argc, char *argv[]) {
-  if ((argc != 2) && (argc != 3)) {
-    std::cerr << "Relay address and port set in LAPS_RELAY and LAPS_PORT env "
-                 "variables."
-              << std::endl;
-    std::cerr << std::endl;
-    std::cerr << "Usage PUB: lapsTest FF0001 pubData" << std::endl;
-    std::cerr << "Usage SUB: lapsTest FF0000" << std::endl;
-    exit(-1);
-  }
+int
+main(int argc, char* argv[])
+{
+    if ((argc != 2) && (argc != 3)) {
+        std::cerr << "Relay address and port set in LAPS_RELAY and LAPS_PORT env "
+                     "variables."
+                  << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "Usage PUB: lapsTest FF0001 pubData" << std::endl;
+        std::cerr << "Usage SUB: lapsTest FF0000" << std::endl;
+        exit(-1);
+    }
 
-  testLogger logger;
+    testLogger logger;
 
-  char *relayName = getenv("LAPS_RELAY");
-  if (!relayName) {
-    static char defaultRelay[] = "127.0.0.1";
-    relayName = defaultRelay;
-  }
+    char* relayName = getenv("LAPS_RELAY");
+    if (!relayName) {
+        static char defaultRelay[] = "127.0.0.1";
+        relayName = defaultRelay;
+    }
 
-  int port = 33435;
-  char *portVar = getenv("LAPS_PORT");
-  if (portVar) {
-    port = atoi(portVar);
-  }
+    int port = 33435;
+    char* portVar = getenv("LAPS_PORT");
+    if (portVar) {
+        port = atoi(portVar);
+    }
 
-  auto name = quicr::Name(std::string(argv[1]));
-  int len = 0;
+    int obj_count = 10;
+    char* objCountVar = getenv("LAPS_OBJ_COUNT");
+    if (objCountVar) {
+        obj_count = atoi(objCountVar);
+    }
 
-  std::stringstream log_msg;
+    char* protoVar = getenv("LAPS_PROTO");
+    quicr::RelayInfo::Protocol protocol = quicr::RelayInfo::Protocol::QUIC;
+    if (protoVar) {
+        auto proto_str = std::string(protoVar);
+        if (proto_str.compare("UDP") == 0 || proto_str.compare("udp") == 0) {
+            protocol = quicr::RelayInfo::Protocol::UDP;
+        }
+    }
 
-  log_msg << "Name = " << name;
-  logger.log(qtransport::LogLevel::info, log_msg.str());
+    auto name = quicr::Name(std::string(argv[1]));
+    int len = 0;
 
-  std::vector<uint8_t> data;
-  if (argc == 3) {
-    data.insert(data.end(), (uint8_t *)(argv[2]),
-                ((uint8_t *)(argv[2])) + std::strlen(argv[2]));
-  }
+    std::stringstream log_msg;
 
-  log_msg.str("");
-  log_msg << "Connecting to " << relayName << ":" << port;
-  logger.log(qtransport::LogLevel::info, log_msg.str());
-
-  quicr::RelayInfo relay{.hostname = relayName,
-                         .port = uint16_t(port),
-                         .proto = quicr::RelayInfo::Protocol::QUIC};
-
-  qtransport::TransportConfig tcfg { .tls_cert_filename = NULL, .tls_key_filename = NULL};
-  quicr::QuicRClient client(relay, std::move(tcfg), logger);
-
-  // TODO: Update to use status to check when ready - For now sleep to give it
-  // some time
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-  if (data.size() > 0) {
-    auto pd = std::make_shared<pubDelegate>();
-    auto nspace = quicr::Namespace(name, 96);
-
-    logger.log(qtransport::LogLevel::info, "PublishIntent");
-
-    client.publishIntent(pd, nspace, {}, {}, {});
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    // do publish
-    logger.log(qtransport::LogLevel::info, "Publish");
-    client.publishNamedObject(name, 0, 10000, false, std::move(data));
-
-  } else {
-    // do subscribe
-    logger.log(qtransport::LogLevel::info, "Subscribe");
-    auto sd = std::make_shared<subDelegate>(logger);
-    auto nspace = quicr::Namespace(name, 96);
-
-    log_msg.str(std::string());
-    log_msg.clear();
-
-    log_msg << "Subscribe to " << name << "/" << 96;
+    log_msg << "Name = " << name;
     logger.log(qtransport::LogLevel::info, log_msg.str());
 
-    quicr::SubscribeIntent intent = quicr::SubscribeIntent::immediate;
-    quicr::bytes empty;
-    client.subscribe(sd, nspace, intent, "origin_url", false, "auth_token",
-                     std::move(empty));
+    std::vector<uint8_t> data;
 
-    logger.log(qtransport::LogLevel::info,
-               "Sleeping for 40 seconds before unsubscribing");
-    std::this_thread::sleep_for(std::chrono::seconds(40));
+    if (argc == 3) {
+        data.insert(data.begin(), sizeof(uint64_t), 0); // Space for time
+        data.insert(data.end(), (uint8_t*)(argv[2]), ((uint8_t*)(argv[2])) + std::strlen(argv[2]));
+    }
 
-    logger.log(qtransport::LogLevel::info, "Now unsubscribing");
-    client.unsubscribe(nspace, {}, {});
+    log_msg.str("");
+    log_msg << "Connecting to " << relayName << ":" << port;
+    logger.log(qtransport::LogLevel::info, log_msg.str());
 
-    logger.log(qtransport::LogLevel::info,
-               "Sleeping for 15 seconds before exiting");
-    std::this_thread::sleep_for(std::chrono::seconds(15));
-  }
+    quicr::RelayInfo relay{ .hostname = relayName, .port = uint16_t(port), .proto = protocol };
 
-  std::this_thread::sleep_for(std::chrono::seconds(100));
-  return 0;
+    qtransport::TransportConfig tcfg{ .tls_cert_filename = NULL, .tls_key_filename = NULL };
+    quicr::QuicRClient client(relay, std::move(tcfg), logger);
+
+    client.connect();
+
+    switch (client.status()) {
+        case quicr::ClientStatus::READY:
+            logger.log(qtransport::LogLevel::info, "... connected");
+            break;
+        case quicr::ClientStatus::TERMINATED:
+            logger.log(qtransport::LogLevel::info, "... terminated");
+            exit(10);
+        default:
+            logger.log(qtransport::LogLevel::info,
+                       "... connected status: " + std::to_string(static_cast<uint8_t>(client.status())));
+            exit(11);
+    }
+
+    if (data.size() > 0) {
+        auto pd = std::make_shared<pubDelegate>();
+        auto nspace = quicr::Namespace(name, 96);
+
+        logger.log(qtransport::LogLevel::info, "PublishIntent");
+
+        client.publishIntent(pd, nspace, {}, {}, {});
+
+        logger.log(qtransport::LogLevel::info, "... waiting for publish intent response");
+        while (!pd->got_intent_response) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        logger.log(qtransport::LogLevel::info, "... got publish intent response");
+
+        logger.log(qtransport::LogLevel::info,
+                   (std::ostringstream() << "Publish starting: " << name << " Time us: " << now_us).str());
+
+        // do publish
+        for (int count = 0; count < obj_count; count++) {
+            // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            uint64_t now = now_us();
+
+            auto copy = data;
+            std::memcpy(copy.data(), &now, sizeof(uint64_t));
+            logger.log(qtransport::LogLevel::info,
+                       (std::ostringstream() << "Publish " << name << " Time us: " << now).str());
+
+            client.publishNamedObject(name, 0, 10000, false, std::move(copy));
+            name += 1;
+        }
+
+        logger.log(qtransport::LogLevel::info,
+                   (std::ostringstream() << "Publish done: " << name << " Time us: " << now_us).str());
+
+
+        logger.log(qtransport::LogLevel::info, "===> Press ENTER to exit <=== ");
+
+        std::string line;
+        std::getline(std::cin, line);
+
+        client.publishIntentEnd(nspace, {});
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    } else {
+        // do subscribe
+        logger.log(qtransport::LogLevel::info, "Subscribe");
+        auto sd = std::make_shared<subDelegate>(logger);
+        auto nspace = quicr::Namespace(name, 96);
+
+        log_msg.str(std::string());
+        log_msg.clear();
+
+        log_msg << "Subscribe to " << name << "/" << 96;
+        logger.log(qtransport::LogLevel::info, log_msg.str());
+
+        quicr::SubscribeIntent intent = quicr::SubscribeIntent::immediate;
+        quicr::bytes empty;
+        client.subscribe(sd, nspace, intent, "origin_url", false, "auth_token", std::move(empty));
+
+        logger.log(qtransport::LogLevel::info, "===> RUNNING, Press ENTER to unsubscribe <===");
+        std::string line;
+        std::getline(std::cin, line);
+
+        logger.log(qtransport::LogLevel::info, "Now unsubscribing");
+        client.unsubscribe(nspace, {}, {});
+
+        logger.log(qtransport::LogLevel::info, "===> Press ENTER to exit <=== ");
+
+        std::getline(std::cin, line);
+    }
+
+    return 0;
 }

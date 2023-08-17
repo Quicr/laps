@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <quicr/encode.h>
 #include <map>
+#include <set>
 #include <quicr/namespace.h>
 #include <transport/transport.h>
 #include <thread>
@@ -45,14 +46,14 @@ namespace laps {
          * @param ns            Namespace to receive objects
          * @param peer_id       Peer ID for the session that should receive matching published objects
          */
-        void subscribe(const Namespace& ns, const std::string& peer_id);
+        void subscribe(const Namespace& ns, const peer_id_t& peer_id);
 
         /**
          * @brief Unsubscribe at the peer level to stop receiving objects for a namespace
          * @param ns            Namespace to remove
          * @param peer_id       Peer ID to remove from the list
          */
-        void unsubscribe(const Namespace &ns, const std::string& peer_id);
+        void unsubscribe(const Namespace &ns, const peer_id_t& peer_id);
 
         /*
          * Delegate functions for Incoming (e.g., server side)
@@ -87,10 +88,73 @@ namespace laps {
          */
         void createPeerSession(const TransportRemote& peer_config);
 
-        void subscribePeers(const Namespace& ns, const std::string& source_peer_id);
-        void unSubscribePeers(const Namespace& ns, const std::string& source_peer_id);
-        void publishIntentPeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id);
-        void publishIntentDonePeers(const Namespace& ns, const std::string& source_peer_id, const std::string& origin_peer_id);
+        /**
+         * @brief Send subscribe to first/best publish intent peers
+         *
+         * @details There is a single best (first in list) publish intent peer to send matching
+         *      subscribes to for a given origin. This method will iterate over each matching
+         *      publish intent best origin peer and send a subscribe.
+         *
+         * @param ns                    Namespace to subscribe
+         */
+        void subscribePeers(const Namespace& ns);
+
+        /**
+         * @brief Send subscribe to specific peer
+         *
+         * @param ns                    Namespace to subscribe peers to
+         * @param peer_id               Peer ID to send to
+         */
+        void subscribePeer(const Namespace& ns, const peer_id_t& peer_id);
+
+
+        /**
+         * @brief Send unsubscribe to peers that had previous subscribes for given namespace
+         *
+         * @param ns                    Namespace to unsubscribe peers to
+         */
+        void unSubscribePeers(const Namespace& ns);
+
+        /**
+         * @brief Send unsubscribe to specific peer
+         *
+         * @param ns                    Namespace to unsubscribe peers to
+         * @param peer_id               Peer ID to send to
+         */
+         void unSubscribePeer(const Namespace& ns, const peer_id_t& peer_id);
+
+        /**
+         * @brief Send publish intent to all peers
+         *
+         * @details Currently publish intents are flooded to all peers
+         *
+         * @param ns                   Namespace for publish intent
+         * @param source_peer_id       Source peer that sent (or client manager) the intent
+         * @param origin_peer_id       Origin peer/relay that has the publisher directly connected
+         */
+        void publishIntentPeers(const Namespace& ns, const peer_id_t& source_peer_id, const peer_id_t& origin_peer_id);
+
+        /**
+         * @brief Send publish intent done
+         *
+         * @brief Currently publish intents are flooded to all peers, so the done needs to be flooded as well
+         *
+         * @param ns                    Namespace for publish intent done
+         * @param source_peer_id        Source peer that sent (or client manager) the intent
+         * @param origin_peer_id        Origin peer/relay that has the publisher directly connected
+         */
+        void publishIntentDonePeers(const Namespace& ns, const peer_id_t& source_peer_id, const peer_id_t& origin_peer_id);
+
+        /**
+         * @brief Get the pointer to the session by peer_id
+         *
+         * @param peer_id               Peer ID to get session
+         *
+         * @return Returns nullptr or peer session if found
+         */
+        PeerSession*  getPeerSession(const peer_id_t& peer_id);
+
+        void addSubscribedPeer(const Namespace& ns, const peer_id_t& peer_id);
 
       private:
         std::mutex _mutex;
@@ -113,8 +177,11 @@ namespace laps {
 
 
         std::vector<PeerSession> _client_peer_sessions;          /// Peer sessions that are initiated by the peer manager
-        namespace_map<std::string> _peer_sess_subscribed;        /// Peer sessions that have subscribed to a namespace
-        namespace_map<std::map<std::string, std::list<std::string>>> _pub_intent_namespaces; /// Publish intents received from peers
+
+        // TODO: Fix to use list for peer sessions subscribed
+        namespace_map<std::set<peer_id_t>> _peer_sess_subscribe_sent;  /// Peers that subscribes have been sent
+        namespace_map<std::set<peer_id_t>> _peer_sess_subscribe_recv;  /// Peers that subscribes have been received
+        namespace_map<std::map<peer_id_t, std::list<peer_id_t>>> _pub_intent_namespaces; /// Publish intents received from peers
 
         // Log handler to use
         Logger* logger;

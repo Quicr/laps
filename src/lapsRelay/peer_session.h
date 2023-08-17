@@ -45,9 +45,14 @@ namespace laps {
           , _cache { other._cache }
           , _subscriptions { other._subscriptions }
 
-        {}
+        {
+            _transport = std::move(other._transport);
+            logger = _config.logger;
+            peer_id = peer_config.host_or_ip;
+        }
 
         PeerSession() = delete;
+
         //PeerSession(PeerSession&&) = default;
         PeerSession(const PeerSession&& other)
           : peer_config { other.peer_config }
@@ -56,7 +61,11 @@ namespace laps {
           , _peer_queue { other._peer_queue }
           , _cache { other._cache }
           , _subscriptions { other._subscriptions }
-        {}
+        {
+            _transport = std::move(other._transport);
+            logger = _config.logger;
+            peer_id = peer_config.host_or_ip;
+        }
 
         /**
          * @brief Constructor to create a new peer session
@@ -92,7 +101,7 @@ namespace laps {
          /**
           * @brief Get the peer ID of session
           */
-          const std::string& getPeerId() {
+          const peer_id_t & getPeerId() {
               return peer_id;
           }
 
@@ -141,8 +150,8 @@ namespace laps {
          */
          void sendUnsubscribe(const Namespace& ns);
 
-         void sendPublishIntent(const Namespace& ns, const std::string& origin_peer_id);
-         void sendPublishIntentDone(const Namespace& ns, const std::string& origin_peer_id);
+         void sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id);
+         void sendPublishIntentDone(const Namespace& ns, const peer_id_t& origin_peer_id);
 
         /*
          * Delegate functions mainly for Outgoing but does include incoming
@@ -172,11 +181,12 @@ namespace laps {
         Logger* logger;
 
         bool _is_inbound { false };               /// Indicates if the peer is server accepted (inbound) or client (outbound)
+        bool _use_reliable { true };              /// Indicates if to use reliable/streams or datagram when publishing objects
 
         /*
          * Information about peer
          */
-        std::string peer_id;                      /// ID/Name of the peer
+        peer_id_t peer_id;                        /// ID/Name of the peer
         double  longitude { 0 };                  /// 8 byte longitude value detailing the location of the local relay
         double  latitude { 0 };                   /// 8 byte latitude value detailing the location of the local relay
 
@@ -196,7 +206,7 @@ namespace laps {
         std::shared_ptr<ITransport> _transport;       /// Transport used for the peering connection
 
         namespace_map<StreamId> _subscribed;          /// Subscribed namespace and associated stream id
-        namespace_map<std::string> _publish_intents;  /// Publish intents sent to the peer
+        namespace_map<peer_id_t> _publish_intents;    /// Publish intents sent to the peer
     };
 
 } // namespace laps

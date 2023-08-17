@@ -48,13 +48,27 @@ public:
   ClientSubscriptions(const Config &cfg);
 
   void add(const quicr::Name& name, const int len,
-           const uint16_t& client_mgr_id, const Remote& remote);
+           uint16_t client_mgr_id, const Remote& remote);
 
   void remove(const quicr::Name& name, const int len,
-              const uint16_t& client_mgr_id, const Remote& remote);
+              uint16_t client_mgr_id, const Remote& remote);
 
   void remove(const quicr::Name& name, const int len,
-              const uint16_t& client_mgr_id, const uint64_t& subscriber_id);
+              uint16_t client_mgr_id, const uint64_t subscriber_id);
+
+  /**
+   * @brief Get the subscribe remote information
+   *
+   * @param ns                Subscription namespace to find
+   * @param client_mgr_id     Client manager for the subscription
+   * @param subscriber_id     Subscriber ID to lookup
+   *
+   * @returns The remote matching the subscription, otherwise empty remote which
+   *        has a client_mgr_id of zero.  A client manager ID of zero indicates empty/invalid.
+   */
+  const Remote getSubscribeRemote(const quicr::Namespace& ns,
+                                  const uint16_t client_mgr_id,
+                                  const uint64_t subscriber_id);
 
   std::map<uint16_t, std::map<uint64_t, Remote>> find(const quicr::Name &name);
 
