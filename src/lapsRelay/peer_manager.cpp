@@ -361,12 +361,12 @@ namespace laps {
                     case PeerObjectType::SUBSCRIBE: {
                         DEBUG("Received subscribe message name: %s", std::string(obj->nspace).c_str());
 
-                        // Send subscribe to all peers toward the best publish intent peer(s)
-                        subscribePeers(obj->nspace);
-
-                        if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
+                        if (obj->source_peer_id.compare(CLIENT_PEER_ID)) { // if from peer
                             _peer_sess_subscribe_recv.emplace(obj->nspace, std::initializer_list<peer_id_t>({obj->source_peer_id}));
                         }
+
+                        // Send subscribe to all peers toward the best publish intent peer(s)
+                        subscribePeers(obj->nspace);
 
                         break;
                     }
@@ -498,10 +498,10 @@ namespace laps {
             peer_sess.setTransport(_server_transport);
             peer_sess.connect();
 
-            // TODO: On new connection, send publish intents
             for (const auto& [ns, origins]: _pub_intent_namespaces) {
                 for (const auto& [o, l]: origins) {
-                    peer_sess.sendPublishIntent(ns, o);
+                    if (peer_sess.getPeerId().compare(o))
+                        peer_sess.sendPublishIntent(ns, o);
                 }
             }
         }

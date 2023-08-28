@@ -114,10 +114,11 @@ ClientSubscriptions::find(const quicr::Name &name) {
     auto mapIter = subscriptions[len].find(prefix.name());
     if (mapIter != subscriptions[len].end()) {
 
-      for (const auto &cMgr: mapIter->second) {
-        for (const auto &subs : cMgr.second) {
+      for (const auto & [cmgr_id, subscribers]: mapIter->second) {
+        for (const auto &[sub_id, remote] : subscribers) {
+
           // TODO: When actions are added, delete remote if filtered
-          ret[subs.second.client_mgr_id].emplace(subs.first, subs.second);
+          ret[cmgr_id].emplace(sub_id, remote);
         }
       }
     }

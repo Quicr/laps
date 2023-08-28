@@ -147,7 +147,7 @@ namespace laps {
 
     void PeerSession::sendConnect()
     {
-        std::vector<uint8_t> buf(sizeof(MsgConnect) + peer_id.length());
+        std::vector<uint8_t> buf(sizeof(MsgConnect) + _config.peer_config.id.length());
         MsgConnect c_msg;
         c_msg.flag_reliable = _config.peer_config.use_reliable ? 1 : 0;
         c_msg.flag_reserved = 0;
@@ -183,7 +183,7 @@ namespace laps {
         if (_status != Status::CONNECTED)
             return;
 
-        LOG_INFO("Sending publish intent %s", std::string(ns).c_str());
+        LOG_INFO("Sending publish intent %s origin: %s", std::string(ns).c_str(), origin_peer_id.c_str());
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -234,7 +234,7 @@ namespace laps {
             case TransportStatus::Ready: {
                 _status = Status::CONNECTED;
 
-                LOG_INFO("Peer context_id %" PRIu64 " is ready", context_id);
+                LOG_INFO("Peer context_id %" PRIu64 " is ready, sending connect message", context_id);
 
                 sendConnect();
 
@@ -290,7 +290,8 @@ namespace laps {
                                     _status = Status::CONNECTED;
 
                                     for (const auto& [ns, o]: _publish_intents) {
-                                        sendPublishIntent(ns, o);
+                                        if (o.compare(peer_id)) // Send intents not from this peer
+                                            sendPublishIntent(ns, o);
                                     }
 
                                     break;
@@ -311,12 +312,8 @@ namespace laps {
 
                                     // Upon connection, send all publish intents
                                     for (const auto& [ns, o]: _publish_intents) {
-                                        sendPublishIntent(ns, o);
-                                    }
-
-                                    // Send active subscribes upon connect
-                                    for (const auto &[ns, sid]: _subscribed) {
-                                        sendSubscribe(ns);
+                                        if (o.compare(peer_id))
+                                            sendPublishIntent(ns, o);
                                     }
 
                                     break;
