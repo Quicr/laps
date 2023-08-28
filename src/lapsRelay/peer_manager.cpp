@@ -35,7 +35,7 @@ namespace laps {
             .time_queue_init_queue_size = _config.data_queue_size,
             .time_queue_max_duration = 1000,
             .time_queue_bucket_interval = 2,
-            .time_queue_rx_ttl = _config.time_queue_ttl_default
+            .time_queue_size_rx = _config.rx_queue_size
         };
 
         _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, *logger);

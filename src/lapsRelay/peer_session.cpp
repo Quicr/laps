@@ -52,20 +52,15 @@ namespace laps {
     }
 
     void PeerSession::connect() {
+        _status = Status::CONNECTING;
 
         if (not _is_inbound) {
-            _status = Status::CONNECTING;
-
             if (_transport)
                 _transport = nullptr;
 
             _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, *logger);
             t_context_id = _transport->start();
 
-        } else {
-
-            // Inbound is already connected
-            _status = Status::CONNECTED;
         }
 
         // Create the datagram and control streams
@@ -182,12 +177,17 @@ namespace laps {
 
     void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
-        LOG_INFO("Sending publish intent %s", std::string(ns).c_str());
-
         _publish_intents.try_emplace(ns, origin_peer_id);
+
+        // Only send the intents if connected
+        if (_status != Status::CONNECTED)
+            return;
+
+        LOG_INFO("Sending publish intent %s", std::string(ns).c_str());
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
+
 
         std::vector<uint8_t> buf(sizeof(MsgPublishIntent) + origin_peer_id.length() + ns_array.size());
 
@@ -238,17 +238,6 @@ namespace laps {
 
                 sendConnect();
 
-                // Upon connection, send all publish intents
-                for (const auto& [ns, o]: _publish_intents) {
-                    sendPublishIntent(ns, o);
-                }
-
-
-                // Send active subscribes upon connect
-                for (const auto &[ns, sid]: _subscribed) {
-                    sendSubscribe(ns);
-                }
-
                 break;
             }
 
@@ -298,6 +287,11 @@ namespace laps {
                                     LOG_INFO("Received peer connect message from %s reliable: %d, sending ok",
                                              peer_id.c_str(), _use_reliable);
                                     sendConnectOk();
+                                    _status = Status::CONNECTED;
+
+                                    for (const auto& [ns, o]: _publish_intents) {
+                                        sendPublishIntent(ns, o);
+                                    }
 
                                     break;
                                 }
@@ -312,7 +306,18 @@ namespace laps {
                                     longitude = cok_msg.longitude;
                                     latitude = cok_msg.latitude;
 
+                                    _status = Status::CONNECTED;
                                     LOG_INFO("Received peer connect OK message from %s", peer_id.c_str());
+
+                                    // Upon connection, send all publish intents
+                                    for (const auto& [ns, o]: _publish_intents) {
+                                        sendPublishIntent(ns, o);
+                                    }
+
+                                    // Send active subscribes upon connect
+                                    for (const auto &[ns, sid]: _subscribed) {
+                                        sendSubscribe(ns);
+                                    }
 
                                     break;
                                 }

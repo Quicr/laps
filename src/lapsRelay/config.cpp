@@ -44,6 +44,7 @@ namespace laps {
         cache_max_buffers = 10;
         data_queue_size = 500;
         time_queue_ttl_default = 200;
+        rx_queue_size = 1000;
     }
 
     void Config::cfg_from_env()
