@@ -82,7 +82,7 @@ namespace laps {
                     const TransportContextId context_id,
                     const Config& cfg,
                     const TransportRemote& peer_remote,
-                    safeQueue<PeerObject>& peer_queue,
+                    safe_queue<PeerObject>& peer_queue,
                     Cache& cache,
                     ClientSubscriptions& subscriptions);
 

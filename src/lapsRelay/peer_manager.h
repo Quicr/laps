@@ -34,7 +34,7 @@ namespace laps {
       public:
 
         PeerManager(const Config& cfg,
-                    safeQueue<PeerObject>& peer_queue,
+                    safe_queue<PeerObject>& peer_queue,
                     Cache& cache,
                     ClientSubscriptions& subscriptions);
 

@@ -28,7 +28,7 @@ namespace laps {
         Namespace nspace {};                              /// Subscribe or publish intent namespace
     };
 
-    using peerQueue = safeQueue<PeerObject>;
+    using peerQueue = safe_queue<PeerObject>;
 
 
  } // namespace laps
