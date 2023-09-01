@@ -1,7 +1,9 @@
 
 #include <cstring>
 #include <iostream>
+#include <memory>
 
+#include "logger.h"
 #include "cache.h"
 #include "config.h"
 
@@ -9,7 +11,7 @@ namespace laps {
 Cache::Cache(const Config &cfg) : config(cfg) {
 
   stop = false;
-  logger = cfg.logger;
+  logger = std::make_shared<cantina::Logger>("CACHE", cfg.logger);
   CacheMaxBuffers = cfg.cache_max_buffers;
   CacheMapCapacity = cfg.cache_map_capacity;
 
@@ -25,7 +27,7 @@ Cache::Cache(const Config &cfg) : config(cfg) {
 }
 
 void Cache::monitor_thread() {
-  LOG_INFO("Running cache monitor thread");
+  logger->Log("Running cache monitor thread");
 
   std::unique_lock<std::mutex> lock(w_mutex);
   lock.unlock();
@@ -44,15 +46,15 @@ void Cache::monitor_thread() {
         std::memcpy(&ms, entry.second.at(CACHE_INFO_NAME).at(0).data(), 8);
 
         if (now_ms - ms > MAX_CACHE_MS_AGE) {
-          DEBUG("cache i: %d time: %llu is over max age %llu > %llu, purging "
-                "cache",
-                entry.first, ms, now_ms - ms, MAX_CACHE_MS_AGE);
+            FLOG_DEBUG("cache i: " << entry.first << " time: " << ms
+                       << " is over max age " << (now_ms - ms) << " > "
+                       << MAX_CACHE_MS_AGE << ", purging cache");
 
-          lock.lock();
+            lock.lock();
 
-          cacheBuffer[cacheBufferPos].clear();
+            cacheBuffer[cacheBufferPos].clear();
 
-          lock.unlock();
+            lock.unlock();
         }
       }
     }
@@ -65,18 +67,18 @@ void Cache::put(const quicr::Name &name, unsigned int offset,
 
   // Move to next buffer if current buffer is at capacity
   if (cacheBuffer[cacheBufferPos].size() >= CacheMapCapacity) {
-    DEBUG("Current buffer %d full, moving to next buffer", cacheBufferPos);
+    FLOG_DEBUG("Current buffer " << cacheBufferPos << " full, moving to next buffer");
     cacheBufferPos++;
 
     // Wrap the buffer position if at the end
     if (cacheBufferPos >= CacheMaxBuffers) {
-      DEBUG("Buffer wrapped");
+      FLOG_DEBUG("Buffer wrapped");
       cacheBufferPos = 0;
     }
 
     // Clear the moved-to buffer cache if it is not empty
     if (cacheBuffer[cacheBufferPos].size() > 0) {
-      DEBUG("Clearing oldest buffer");
+      FLOG_DEBUG("Clearing oldest buffer");
       cacheBuffer[cacheBufferPos].clear();
     }
   }
@@ -87,7 +89,7 @@ void Cache::put(const quicr::Name &name, unsigned int offset,
                       std::chrono::system_clock::now().time_since_epoch())
                       .count();
 
-    DEBUG("New cache buffer %d, time is %llu", cacheBufferPos, ms);
+    FLOG_DEBUG("New cache buffer " << cacheBufferPos << " time is " << ms);
     std::vector<uint8_t> time;
     time.resize(8);
     std::memcpy(time.data(), &ms, 8);

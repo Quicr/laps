@@ -9,7 +9,7 @@
 namespace laps {
 
     Config::Config()
-      : logger(NULL)
+      : logger(std::make_shared<cantina::Logger>("lapsRelay"))
     {
 
         init_logger();
@@ -127,26 +127,15 @@ namespace laps {
         }
     }
 
-    bool Config::init_logger()
+    void Config::init_logger()
     {
-        try {
-            if (logger != NULL)
-                delete logger;
-
-            logger = new Logger(NULL, NULL);
-
-        } catch (char const* str) {
-            std::cout << "Failed to open log file for read/write : " << str << std::endl;
-            return true;
-        }
-
-        // Set up defaults for logging
-        logger->setWidthFilename(15);
-        logger->setWidthFunction(18);
-
         if (std::getenv("LAPS_DEBUG"))
-            logger->enableDebug();
-
-        return false;
+        {
+            logger->SetLogLevel(cantina::LogLevel::Debug);
+        }
+        else
+        {
+            logger->SetLogLevel(cantina::LogLevel::Info);
+        }
     }
 } // namespace laps

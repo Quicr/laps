@@ -1,6 +1,6 @@
 #pragma once
 
-#include "logger.h"
+#include <cantina/logger.h>
 #include <quicr/namespace.h>
 #include <quicr/quicr_common.h>
 
@@ -8,7 +8,7 @@ namespace laps {
     class Config
     {
       public:
-        Logger* logger;                        /// Local source logger reference
+        cantina::LoggerPointer logger;        /// Local source logger reference
 
         // Client Manager
         struct clientConfig {
@@ -56,9 +56,9 @@ namespace laps {
         /**
          * @brief Initialize thread safe logger
          *
-         * @return True on error, false if no error
+         * @return Nothing
          */
-        bool init_logger();
+        void init_logger();
 
         template<typename Value_t>
         void env_value(Value_t& vtype, std::string&& var);
