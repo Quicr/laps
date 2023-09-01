@@ -14,14 +14,14 @@ namespace laps {
       , _peer_queue(peer_queue)
       , _cache(cache)
       , _subscriptions(subscriptions)
+      , logger(std::make_shared<cantina::Logger>("PMGR", cfg.logger))
     {
-        logger = cfg.logger;
         _client_rx_msg_thr = std::thread(&PeerManager::PeerQueueThread, this);
 
         // TODO: Add config variable for interval_ms
         _watch_thr = std::thread(&PeerManager::watchThread, this, 30000);
 
-        LOG_INFO("Peering manager ID: %s", _config.peer_config.id.c_str());
+        FLOG_INFO("Peering manager ID: " << _config.peer_config.id.c_str());
 
         TransportRemote server {
             .host_or_ip = cfg.peer_config.bind_addr,
@@ -38,7 +38,7 @@ namespace laps {
             .time_queue_size_rx = _config.rx_queue_size
         };
 
-        _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, *logger);
+        _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, logger);
         _server_transport->start();
 
         for (const auto& peer : cfg.peer_config.peers) {
@@ -56,7 +56,7 @@ namespace laps {
         // Stop threads
         _stop = true;
 
-        LOG_INFO("Closing peer manager threads");
+        FLOG_INFO("Closing peer manager threads");
 
         _client_peer_sessions.clear();
         _server_peer_sessions.clear();
@@ -70,7 +70,7 @@ namespace laps {
         if (_watch_thr.joinable())
             _watch_thr.join();
 
-        LOG_INFO("Closed peer manager stopped");
+        FLOG_INFO("Closed peer manager stopped");
     }
 
     void PeerManager::createPeerSession(const TransportRemote& peer_config)
@@ -87,7 +87,7 @@ namespace laps {
 
     void PeerManager::watchThread(int interval_ms)
     {
-        LOG_INFO("Running peer manager outbound peer connection thread");
+        FLOG_INFO("Running peer manager outbound peer connection thread");
 
         if (interval_ms < 2000)
             interval_ms = 2000;
@@ -103,7 +103,8 @@ namespace laps {
 
                 for (auto& sess : _client_peer_sessions) {
                     if (sess.status() == PeerSession::Status::DISCONNECTED) {
-                        LOG_INFO("Peer session to %s disconnected, reconnecting", sess.peer_config.host_or_ip.c_str());
+                        FLOG_INFO("Peer session to " << sess.peer_config.host_or_ip.c_str()
+                                                     << " disconnected, reconnecting");
 
                         sess.connect();
                     }
@@ -144,7 +145,7 @@ namespace laps {
 
     void PeerManager::subscribePeers(const Namespace& ns)
     {
-        DEBUG("Subscribe to peers for %s", std::string(ns).c_str());
+        FLOG_DEBUG("Subscribe to peers for " << ns);
 
         auto it = _peer_sess_subscribe_recv.find(ns);
         if (it == _peer_sess_subscribe_recv.end() || it->second.empty()) {
@@ -153,7 +154,7 @@ namespace laps {
             std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list = _subscriptions.find(ns);
 
             if (list.empty()) {
-                DEBUG("No subscribers, not sending subscription to peer(s) for %s", std::string(ns).c_str());
+                FLOG_DEBUG("No subscribers, not sending subscription to peer(s) for " << ns);
                 // No subscribers, do not send subscription
                 return;
             }
@@ -254,7 +255,7 @@ namespace laps {
 
         const auto iter = _pub_intent_namespaces.find(ns);
         if (iter == _pub_intent_namespaces.end()) {
-            DEBUG("New published intent message origin %s", origin_peer_id.c_str());
+            FLOG_DEBUG("New published intent message origin " << origin_peer_id);
             update_peers = true;
 
             std::map<peer_id_t, std::list<peer_id_t>> intent_map;
@@ -264,7 +265,7 @@ namespace laps {
         } else {
             const auto it = iter->second.find(origin_peer_id);
             if (it == iter->second.end()) {
-                DEBUG("New published intent origin %s", origin_peer_id.c_str());
+                FLOG_DEBUG("New published intent origin " << origin_peer_id);
                 update_peers = true;
 
                 iter->second.emplace(origin_peer_id,
@@ -305,9 +306,7 @@ namespace laps {
     {
         const auto iter = _pub_intent_namespaces.find(ns);
         if (iter != _pub_intent_namespaces.end()) {
-            DEBUG("Removing publish intent ns: %s origin %s",
-                  std::string(ns).c_str(),
-                  origin_peer_id.c_str());
+            FLOG_DEBUG("Removing publish intent ns: " << ns << " origin " << origin_peer_id);
             const auto it = iter->second.find(origin_peer_id);
             if (it != iter->second.end()) {
                 it->second.remove(source_peer_id);
@@ -336,7 +335,7 @@ namespace laps {
 
     void PeerManager::PeerQueueThread()
     {
-        LOG_INFO("Running peer manager queue receive thread");
+        FLOG_INFO("Running peer manager queue receive thread");
 
         while (not _stop) {
             const auto& obj = _peer_queue.block_pop();
@@ -359,7 +358,7 @@ namespace laps {
                     }
 
                     case PeerObjectType::SUBSCRIBE: {
-                        DEBUG("Received subscribe message name: %s", std::string(obj->nspace).c_str());
+                        FLOG_DEBUG("Received subscribe message name: " << obj->nspace);
 
                         if (obj->source_peer_id.compare(CLIENT_PEER_ID)) { // if from peer
                             _peer_sess_subscribe_recv.emplace(obj->nspace, std::initializer_list<peer_id_t>({obj->source_peer_id}));
@@ -372,7 +371,7 @@ namespace laps {
                     }
 
                     case PeerObjectType::UNSUBSCRIBE: {
-                        DEBUG("Received unsubscribe message name: %s", std::string(obj->nspace).c_str());
+                        FLOG_DEBUG("Received unsubscribe message name: " << obj->nspace);
 
                         bool un_sub_all { false };
 
@@ -418,8 +417,8 @@ namespace laps {
                             origin_peer_id = _config.peer_config.id;
                         }
 
-                        DEBUG("Received publish intent message name: %s origin: %s",
-                              std::string(obj->nspace).c_str(), origin_peer_id.c_str());
+                        FLOG_DEBUG("Received publish intent message name: " << obj->nspace
+                                                                            << " origin: " << origin_peer_id);
 
                         publishIntentPeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 
@@ -434,8 +433,8 @@ namespace laps {
                             origin_peer_id = _config.peer_config.id;
                         }
 
-                        DEBUG("Received publish intent done message name: %s origin: %s",
-                              std::string(obj->nspace).c_str(), origin_peer_id.c_str());
+                        FLOG_DEBUG("Received publish intent done message name: " << obj->nspace
+                                                                                 << " origin: " << origin_peer_id);
 
                         publishIntentDonePeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 
@@ -463,7 +462,7 @@ namespace laps {
                 if (peer_iter == _server_peer_sessions.end())
                     break;
 
-                LOG_INFO("Peer context_id: %" PRIu64 " is disconnected, closing peer connection", context_id);
+                FLOG_INFO("Peer context_id: " << context_id << " is disconnected, closing peer connection");
 
                 _server_peer_sessions.erase(peer_iter);
             }
@@ -477,7 +476,7 @@ namespace laps {
         auto peer_iter = _server_peer_sessions.find(context_id);
 
         if (peer_iter == _server_peer_sessions.end()) {
-            LOG_INFO("New server accepted peer, context_id: %" PRIu64, context_id);
+            FLOG_INFO("New server accepted peer, context_id: " << context_id);
 
             TransportRemote peer = remote;
             auto [iter, inserted] = _server_peer_sessions.try_emplace(context_id,
@@ -493,7 +492,7 @@ namespace laps {
 
             auto& peer_sess = peer_iter->second;
 
-            LOG_INFO("Peer context_id: %" PRIu64 " is ready, creating datagram and control streams", context_id);
+            FLOG_INFO("Peer context_id: " << context_id << " is ready, creating datagram and control streams");
 
             peer_sess.setTransport(_server_transport);
             peer_sess.connect();

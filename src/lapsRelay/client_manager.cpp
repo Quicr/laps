@@ -12,14 +12,12 @@ namespace laps {
 ClientManager::ClientManager(const Config& cfg, Cache& cache,
                              ClientSubscriptions& subscriptions,
                              peerQueue &peer_queue)
-    : subscribeList(subscriptions)
+    : logger(std::make_shared<cantina::Logger>("CMGR", cfg.logger))
+      , subscribeList(subscriptions)
       , config(cfg), cache(cache)
       , client_mgr_id(cfg.client_config.listen_port)
       , _peer_queue(peer_queue)
 {
-
-  logger = cfg.logger;
-
   quicr::RelayInfo relayInfo = {.hostname
                                 = config.client_config.bind_addr,
                                 .port = config.client_config.listen_port,
@@ -30,10 +28,10 @@ ClientManager::ClientManager(const Config& cfg, Cache& cache,
                                      .time_queue_init_queue_size = config.data_queue_size,
                                      .debug = false };
 
-  logger->log(qtransport::LogLevel::info, "Starting client manager id " + std::to_string(client_mgr_id));
+  logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
 
   server =
-      std::make_unique<quicr::QuicRServer>(relayInfo, std::move(tcfg), *this, *config.logger);
+      std::make_unique<quicr::QuicRServer>(relayInfo, std::move(tcfg), *this, logger);
 }
 
 ClientManager::~ClientManager() {
@@ -59,8 +57,7 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     const std::string& /* auth_token */,
                                     quicr::bytes&& /* e2e_token */) {
 
-  LOG_INFO("onPublishIntent namespace: %s",
-        std::string(quicr_namespace).c_str(), quicr_namespace.length());
+  FLOG_INFO("onPublishIntent namespace: " << quicr_namespace);
 
   _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT, .source_peer_id = CLIENT_PEER_ID,
                      .nspace = quicr_namespace });
@@ -91,7 +88,7 @@ void ClientManager::onPublisherObject(
   if (not config.disable_dedup &&
       cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
     // duplicate, ignore
-    DEBUG("Duplicate message Name: %s", std::string(datagram.header.name).c_str());
+    FLOG_DEBUG("Duplicate message Name: " << datagram.header.name);
     return;
 
   } else {
@@ -131,15 +128,13 @@ void ClientManager::onSubscribe(
     subscribeList.getSubscribeRemote(quicr_namespace, client_mgr_id, subscriber_id);
 
   if (existing_remote.client_mgr_id != 0) {
-    DEBUG("duplicate onSubscribe namespace: %s subscriber_id: %" PRIu64 " context_id%" PRIu64 " stream_id: %" PRIu64,
-             std::string(quicr_namespace).c_str(),
-             subscriber_id, context_id, stream_id);
+    FLOG_DEBUG("duplicate onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id"
+                                              << context_id << " stream_id: " << stream_id);
     return;
   }
 
-  LOG_INFO("onSubscribe namespace: %s subscriber_id: %" PRIu64 " context_id%" PRIu64 " stream_id: %" PRIu64,
-        std::string(quicr_namespace).c_str(),
-        subscriber_id, context_id, stream_id);
+  FLOG_INFO("onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id "
+                                      << context_id << " stream_id: " << stream_id);
 
   ClientSubscriptions::Remote remote = {
       .client_mgr_id = client_mgr_id,
@@ -169,8 +164,7 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
                                   const uint64_t &subscriber_id,
                                   const std::string & /* auth_token */) {
 
-  LOG_INFO("onUnsubscribe namespace: %s subscriber_id: %" PRIu64,
-           std::string(quicr_namespace).c_str(), subscriber_id);
+  FLOG_INFO("onUnsubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id);
 
   server->subscriptionEnded(subscriber_id, quicr_namespace,
                             quicr::SubscribeResult::SubscribeStatus::Ok);
@@ -182,6 +176,5 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
   _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE, .source_peer_id = CLIENT_PEER_ID,
                      .nspace = quicr_namespace });
 }
-
 
 } // namespace laps

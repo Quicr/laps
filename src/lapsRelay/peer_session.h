@@ -10,6 +10,8 @@
 #include <thread>
 #include <transport/safe_queue.h>
 
+#include <cantina/logger.h>
+
 #include "peer_common.h"
 #include "peer_protocol.h"
 #include "cache.h"
@@ -44,10 +46,10 @@ namespace laps {
           , _peer_queue { other._peer_queue }
           , _cache { other._cache }
           , _subscriptions { other._subscriptions }
+          , logger { other.logger }
 
         {
             _transport = std::move(other._transport);
-            logger = _config.logger;
             peer_id = peer_config.host_or_ip;
         }
 
@@ -61,9 +63,9 @@ namespace laps {
           , _peer_queue { other._peer_queue }
           , _cache { other._cache }
           , _subscriptions { other._subscriptions }
+          , logger { other.logger }
         {
             _transport = std::move(other._transport);
-            logger = _config.logger;
             peer_id = peer_config.host_or_ip;
         }
 
@@ -178,7 +180,7 @@ namespace laps {
         peerQueue& _peer_queue;
         Cache& _cache;
         ClientSubscriptions& _subscriptions;
-        Logger* logger;
+        cantina::LoggerPointer logger;
 
         bool _is_inbound { false };               /// Indicates if the peer is server accepted (inbound) or client (outbound)
         bool _use_reliable { true };              /// Indicates if to use reliable/streams or datagram when publishing objects

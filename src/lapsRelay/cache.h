@@ -9,6 +9,7 @@
 #include <atomic>
 
 #include <quicr/quicr_common.h>
+#include <cantina/logger.h>
 
 #include "config.h"
 
@@ -46,7 +47,7 @@ private:
   std::thread cache_mon_thr;
 
   const Config &config;
-  Logger *logger;
+  cantina::LoggerPointer logger;
 
   uint CacheMaxBuffers;  // Max number of cache buffers
   uint CacheMapCapacity; // Max capacity for cache map

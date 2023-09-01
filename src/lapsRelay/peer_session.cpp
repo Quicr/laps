@@ -1,6 +1,7 @@
 
 #include "peer_manager.h"
 #include "peer_session.h"
+#include "logger.h"
 #include <quicr/quicr_client.h>
 
 #include <sstream>
@@ -19,11 +20,10 @@ namespace laps {
       , _peer_queue(peer_queue)
       , _cache(cache)
       , _subscriptions(subscriptions)
+      , logger(std::make_shared<cantina::Logger>("PEER", cfg.logger))
       , _is_inbound(is_inbound)
       , t_context_id(context_id)
     {
-        logger = cfg.logger;
-
         peer_id = peer_config.host_or_ip;
         _use_reliable = _config.peer_config.use_reliable;
 
@@ -32,7 +32,7 @@ namespace laps {
             _transport_config.tls_key_filename = NULL;
         }
 
-        LOG_INFO("Starting peer session");
+        FLOG_INFO("Starting peer session");
 
     }
 
@@ -42,9 +42,8 @@ namespace laps {
             _transport = nullptr;
         }
 
-        LOG_INFO("Removing peer session with %s:%d, id: %s ", peer_config.host_or_ip.c_str(),
-                 peer_config.port, peer_id.c_str());
-
+        FLOG_INFO("Removing peer session with " << peer_config.host_or_ip.c_str() << ":" << peer_config.port
+                                                << " id: " << peer_id.c_str());
     }
 
     PeerSession::Status PeerSession::status() {
@@ -58,7 +57,7 @@ namespace laps {
             if (_transport)
                 _transport = nullptr;
 
-            _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, *logger);
+            _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, logger);
             t_context_id = _transport->start();
 
         }
@@ -76,7 +75,7 @@ namespace laps {
 
         auto iter = _subscribed.find(obj.header.name);
         if (iter != _subscribed.end()) {
-            //DEBUG("Sending published object for name: %s", std::string(obj.header.name).c_str());
+            //FLOG_DEBUG("Sending published object for name: " << obj.header.name);
             messages::MessageBuffer mb;
             mb << obj;
             _transport->enqueue(t_context_id, iter->second, mb.take());
@@ -102,7 +101,7 @@ namespace laps {
 
         addSubscription(ns);
 
-        DEBUG("Sending subscribe to peer %s for ns: %s", peer_id.c_str(), std::string(ns).c_str());
+        FLOG_DEBUG("Sending subscribe to peer " << peer_id << " for ns: " <<  ns);
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -123,7 +122,7 @@ namespace laps {
         auto iter = _subscribed.find(ns);
         if (iter != _subscribed.end()) {
 
-            DEBUG("Sending unsubscribe to peer %s for ns: %s", peer_id.c_str(), std::string(ns).c_str());
+            FLOG_DEBUG("Sending unsubscribe to peer " << peer_id << " for ns: " << ns);
 
             if (_config.peer_config.use_reliable)
                 _transport->closeStream(t_context_id, iter->second);
@@ -177,13 +176,15 @@ namespace laps {
 
     void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
+        FLOG_INFO("Sending publish intent " << ns);
+
         _publish_intents.try_emplace(ns, origin_peer_id);
 
         // Only send the intents if connected
         if (_status != Status::CONNECTED)
             return;
 
-        LOG_INFO("Sending publish intent %s origin: %s", std::string(ns).c_str(), origin_peer_id.c_str());
+        FLOG_INFO("Sending publish intent " << ns << " origin: " << origin_peer_id);
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -209,7 +210,7 @@ namespace laps {
 
         _publish_intents.erase(ns);
 
-        LOG_INFO("Sending publish intent DONE %s", std::string(ns).c_str());
+        FLOG_INFO("Sending publish intent DONE " << ns);
 
         std::vector<uint8_t> buf(sizeof(MsgPublishIntentDone) + origin_peer_id.length() + ns_array.size());
 
@@ -234,7 +235,7 @@ namespace laps {
             case TransportStatus::Ready: {
                 _status = Status::CONNECTED;
 
-                LOG_INFO("Peer context_id %" PRIu64 " is ready, sending connect message", context_id);
+                FLOG_INFO("Peer context_id " << context_id << " is ready, sending connect message");
 
                 sendConnect();
 
@@ -244,7 +245,7 @@ namespace laps {
             case TransportStatus::Disconnected: {
                 _status = Status::DISCONNECTED;
 
-                LOG_INFO("Peer context_id %" PRIu64 " is disconnected", context_id);
+                FLOG_INFO("Peer context_id " << context_id << " is disconnected");
 
                 // TODO: cleanup intents and subscriptions
             }
@@ -284,8 +285,8 @@ namespace laps {
                                     longitude = c_msg.longitude;
                                     latitude = c_msg.latitude;
 
-                                    LOG_INFO("Received peer connect message from %s reliable: %d, sending ok",
-                                             peer_id.c_str(), _use_reliable);
+                                    FLOG_INFO("Received peer connect message from "
+                                              << peer_id << " reliable: " << _use_reliable << ", sending ok");
                                     sendConnectOk();
                                     _status = Status::CONNECTED;
 
@@ -308,7 +309,7 @@ namespace laps {
                                     latitude = cok_msg.latitude;
 
                                     _status = Status::CONNECTED;
-                                    LOG_INFO("Received peer connect OK message from %s", peer_id.c_str());
+                                    FLOG_INFO("Received peer connect OK message from " << peer_id);
 
                                     // Upon connection, send all publish intents
                                     for (const auto& [ns, o]: _publish_intents) {
@@ -327,7 +328,7 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
-                                    LOG_INFO("Recv subscribe %s", std::string(ns_list.front()).c_str() );
+                                    FLOG_INFO("Recv subscribe " << ns_list.front());
                                     if (ns_list.size() > 0) {
                                         addSubscription(ns_list.front());
                                         _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
@@ -345,7 +346,7 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
-                                    LOG_INFO("Recv unsubscribe %s", std::string(ns_list.front()).c_str() );
+                                    FLOG_INFO("Recv unsubscribe " << ns_list.front());
 
                                     if (ns_list.size() > 0) {
                                         _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE,
@@ -367,9 +368,8 @@ namespace laps {
                                     decodeNamespaces(encoded_ns, ns_list);
 
                                     if (ns_list.size() > 0) {
-                                        LOG_INFO("Received publish intent from %s with namespace: %s",
-                                                 peer_id.c_str(),
-                                                 std::string(ns_list.front()).c_str());
+                                        FLOG_INFO("Received publish intent from "
+                                                  << peer_id << " with namespace: " << ns_list.front());
 
                                         _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT,
                                                            .source_peer_id = peer_id,
@@ -392,9 +392,8 @@ namespace laps {
                                     decodeNamespaces(encoded_ns, ns_list);
 
                                     if (ns_list.size() > 0) {
-                                        LOG_INFO("Received publish intent DONE from %s with namespace: %s",
-                                                 peer_id.c_str(),
-                                                 std::string(ns_list.front()).c_str());
+                                        FLOG_INFO("Received publish intent DONE from "
+                                                  << peer_id << " with namespace: " << ns_list.front());
 
                                         _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT_DONE,
                                                            .source_peer_id = peer_id,
@@ -406,7 +405,7 @@ namespace laps {
                                 }
 
                                 default:
-                                    LOG_WARN("Unknown subtype %d", subtype);
+                                    FLOG_WARN("Unknown subtype " << static_cast<unsigned>(subtype));
                                     break;
                             }
 
@@ -420,7 +419,7 @@ namespace laps {
                             if (not _config.disable_dedup &&
                                 _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
                                 // duplicate, ignore
-                                DEBUG("Duplicate message Name: %s", std::string(datagram.header.name).c_str());
+                                FLOG_DEBUG("Duplicate message Name: " << datagram.header.name);
                                 return;
 
                             } else {
@@ -445,17 +444,17 @@ namespace laps {
                             break;
                         }
                         default:
-                            LOG_INFO("Invalid Message Type %d", msg_type);
+                            FLOG_INFO("Invalid Message Type " << static_cast<unsigned>(msg_type));
                             break;
                     }
                 } catch (const messages::MessageBuffer::ReadException& /* ex */) {
-                    LOG_ERR("Received read exception error while reading from message buffer.");
+                    FLOG_ERR("Received read exception error while reading from message buffer.");
                     continue;
                 } catch (const std::exception& /* ex */) {
-                    LOG_ERR("Received standard exception error while reading from message buffer.");
+                    FLOG_ERR("Received standard exception error while reading from message buffer.");
                     continue;
                 } catch (...) {
-                    LOG_ERR("Received unknown error while reading from message buffer.");
+                    FLOG_ERR("Received unknown error while reading from message buffer.");
                     continue;
                 }
 
@@ -464,7 +463,4 @@ namespace laps {
             }
         }
     }
-
-
-
 } // namespace laps

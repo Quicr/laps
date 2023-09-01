@@ -9,12 +9,14 @@
 #include "config.h"
 #include "version_config.h"
 #include <transport/safe_queue.h>
+#include <cantina/logger.h>
+#include "logger.h"
 
 using namespace laps;
 using namespace qtransport;
 using namespace quicr;
 
-static Logger* logger;
+static cantina::LoggerPointer logger;
 
 std::string
 lapsVersion()
@@ -26,9 +28,9 @@ int
 main(int /* argc */, char*[] /* argv[] */)
 {
     Config cfg;
-    logger = cfg.logger;
+    logger = std::make_shared<cantina::Logger>("MAIN", cfg.logger);
 
-    LOG_INFO("Starting LAPS Relay (version %s)", lapsVersion().c_str());
+    FLOG_INFO("Starting LAPS Relay (version " << lapsVersion() << ")");
 
     ClientSubscriptions subscriptions(cfg);
     Cache cache(cfg);
@@ -58,5 +60,5 @@ main(int /* argc */, char*[] /* argv[] */)
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
-    LOG_INFO("Shutting down LAPS");
+    FLOG_INFO("Shutting down LAPS");
 }

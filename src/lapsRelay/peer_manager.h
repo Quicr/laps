@@ -184,7 +184,7 @@ namespace laps {
         namespace_map<std::map<peer_id_t, std::list<peer_id_t>>> _pub_intent_namespaces; /// Publish intents received from peers
 
         // Log handler to use
-        Logger* logger;
+        cantina::LoggerPointer logger;
     };
 
 } // namespace laps

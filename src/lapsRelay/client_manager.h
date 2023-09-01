@@ -62,11 +62,11 @@ public:
                      const std::string &auth_token) override;
 
 private:
+  cantina::LoggerPointer logger;
   ClientSubscriptions &subscribeList;
   const Config &config;
   Cache &cache;
   const uint16_t client_mgr_id;             /// This client mgr ID, uses listening port
-  Logger *logger;
   bool running {false};
 
   std::unique_ptr<quicr::QuicRServer> server;
