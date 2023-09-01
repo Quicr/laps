@@ -82,7 +82,7 @@ namespace laps {
                     const TransportContextId context_id,
                     const Config& cfg,
                     const TransportRemote& peer_remote,
-                    safeQueue<PeerObject>& peer_queue,
+                    safe_queue<PeerObject>& peer_queue,
                     Cache& cache,
                     ClientSubscriptions& subscriptions);
 
@@ -196,7 +196,7 @@ namespace laps {
             .time_queue_init_queue_size = _config.data_queue_size,
             .time_queue_max_duration = 1000,
             .time_queue_bucket_interval = 2,
-            .time_queue_rx_ttl = _config.time_queue_ttl_default
+            .time_queue_size_rx = _config.rx_queue_size
         };
 
         TransportContextId t_context_id;              /// Transport context ID

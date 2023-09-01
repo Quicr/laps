@@ -11,7 +11,7 @@ namespace laps {
                              const TransportContextId context_id,
                              const Config& cfg,
                              const TransportRemote& peer_remote,
-                             safeQueue<PeerObject>& peer_queue,
+                             safe_queue<PeerObject>& peer_queue,
                              Cache& cache,
                              ClientSubscriptions& subscriptions)
       : peer_config(peer_remote)
@@ -52,20 +52,15 @@ namespace laps {
     }
 
     void PeerSession::connect() {
+        _status = Status::CONNECTING;
 
         if (not _is_inbound) {
-            _status = Status::CONNECTING;
-
             if (_transport)
                 _transport = nullptr;
 
             _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, *logger);
             t_context_id = _transport->start();
 
-        } else {
-
-            // Inbound is already connected
-            _status = Status::CONNECTED;
         }
 
         // Create the datagram and control streams
@@ -152,7 +147,7 @@ namespace laps {
 
     void PeerSession::sendConnect()
     {
-        std::vector<uint8_t> buf(sizeof(MsgConnect) + peer_id.length());
+        std::vector<uint8_t> buf(sizeof(MsgConnect) + _config.peer_config.id.length());
         MsgConnect c_msg;
         c_msg.flag_reliable = _config.peer_config.use_reliable ? 1 : 0;
         c_msg.flag_reserved = 0;
@@ -182,12 +177,17 @@ namespace laps {
 
     void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
-        LOG_INFO("Sending publish intent %s", std::string(ns).c_str());
-
         _publish_intents.try_emplace(ns, origin_peer_id);
+
+        // Only send the intents if connected
+        if (_status != Status::CONNECTED)
+            return;
+
+        LOG_INFO("Sending publish intent %s origin: %s", std::string(ns).c_str(), origin_peer_id.c_str());
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
+
 
         std::vector<uint8_t> buf(sizeof(MsgPublishIntent) + origin_peer_id.length() + ns_array.size());
 
@@ -234,20 +234,9 @@ namespace laps {
             case TransportStatus::Ready: {
                 _status = Status::CONNECTED;
 
-                LOG_INFO("Peer context_id %" PRIu64 " is ready", context_id);
+                LOG_INFO("Peer context_id %" PRIu64 " is ready, sending connect message", context_id);
 
                 sendConnect();
-
-                // Upon connection, send all publish intents
-                for (const auto& [ns, o]: _publish_intents) {
-                    sendPublishIntent(ns, o);
-                }
-
-
-                // Send active subscribes upon connect
-                for (const auto &[ns, sid]: _subscribed) {
-                    sendSubscribe(ns);
-                }
 
                 break;
             }
@@ -298,6 +287,12 @@ namespace laps {
                                     LOG_INFO("Received peer connect message from %s reliable: %d, sending ok",
                                              peer_id.c_str(), _use_reliable);
                                     sendConnectOk();
+                                    _status = Status::CONNECTED;
+
+                                    for (const auto& [ns, o]: _publish_intents) {
+                                        if (o.compare(peer_id)) // Send intents not from this peer
+                                            sendPublishIntent(ns, o);
+                                    }
 
                                     break;
                                 }
@@ -312,7 +307,14 @@ namespace laps {
                                     longitude = cok_msg.longitude;
                                     latitude = cok_msg.latitude;
 
+                                    _status = Status::CONNECTED;
                                     LOG_INFO("Received peer connect OK message from %s", peer_id.c_str());
+
+                                    // Upon connection, send all publish intents
+                                    for (const auto& [ns, o]: _publish_intents) {
+                                        if (o.compare(peer_id))
+                                            sendPublishIntent(ns, o);
+                                    }
 
                                     break;
                                 }

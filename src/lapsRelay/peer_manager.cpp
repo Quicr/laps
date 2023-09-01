@@ -7,7 +7,7 @@
 namespace laps {
 
     PeerManager::PeerManager(const Config& cfg,
-                             safeQueue<PeerObject>& peer_queue,
+                             safe_queue<PeerObject>& peer_queue,
                              Cache& cache,
                              ClientSubscriptions& subscriptions)
       : _config(cfg)
@@ -35,7 +35,7 @@ namespace laps {
             .time_queue_init_queue_size = _config.data_queue_size,
             .time_queue_max_duration = 1000,
             .time_queue_bucket_interval = 2,
-            .time_queue_rx_ttl = _config.time_queue_ttl_default
+            .time_queue_size_rx = _config.rx_queue_size
         };
 
         _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, *logger);
@@ -62,7 +62,7 @@ namespace laps {
         _server_peer_sessions.clear();
 
         // Clear threads from the queue
-        _peer_queue.stopWaiting();
+        _peer_queue.stop_waiting();
 
         if (_client_rx_msg_thr.joinable())
             _client_rx_msg_thr.join();
@@ -361,12 +361,12 @@ namespace laps {
                     case PeerObjectType::SUBSCRIBE: {
                         DEBUG("Received subscribe message name: %s", std::string(obj->nspace).c_str());
 
-                        // Send subscribe to all peers toward the best publish intent peer(s)
-                        subscribePeers(obj->nspace);
-
-                        if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
+                        if (obj->source_peer_id.compare(CLIENT_PEER_ID)) { // if from peer
                             _peer_sess_subscribe_recv.emplace(obj->nspace, std::initializer_list<peer_id_t>({obj->source_peer_id}));
                         }
+
+                        // Send subscribe to all peers toward the best publish intent peer(s)
+                        subscribePeers(obj->nspace);
 
                         break;
                     }
@@ -498,10 +498,10 @@ namespace laps {
             peer_sess.setTransport(_server_transport);
             peer_sess.connect();
 
-            // TODO: On new connection, send publish intents
             for (const auto& [ns, origins]: _pub_intent_namespaces) {
                 for (const auto& [o, l]: origins) {
-                    peer_sess.sendPublishIntent(ns, o);
+                    if (peer_sess.getPeerId().compare(o))
+                        peer_sess.sendPublishIntent(ns, o);
                 }
             }
         }
