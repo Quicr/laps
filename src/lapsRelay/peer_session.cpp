@@ -176,7 +176,7 @@ namespace laps {
 
     void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
-        FLOG_INFO("Sending publish intent " << ns);
+        FLOG_INFO("Adding to state publish intent " << ns);
 
         _publish_intents.try_emplace(ns, origin_peer_id);
 
@@ -258,9 +258,7 @@ namespace laps {
 
     void PeerSession::on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) {
         for (int i = 0; i < 100; i++) {
-            auto data = _transport->dequeue(context_id, streamId);
-
-            if (data.has_value()) {
+            if (auto data = _transport->dequeue(context_id, streamId)) {
                 try {
                     auto msg_type = static_cast<messages::MessageType>(data->front());
                     messages::MessageBuffer msg_buffer{ data.value() };
@@ -270,8 +268,7 @@ namespace laps {
                         case messages::MessageType::PeerMsg: {
                             auto data = msg_buffer.take();
                             auto subtype = static_cast<PeeringSubType>(data[1]);
-
-
+                            
                             switch (subtype) {
                                 case PeeringSubType::CONNECT: {
                                     MsgConnect c_msg;
@@ -420,7 +417,7 @@ namespace laps {
                                 _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
                                 // duplicate, ignore
                                 FLOG_DEBUG("Duplicate message Name: " << datagram.header.name);
-                                return;
+                                break;
 
                             } else {
                                 _cache.put(datagram.header.name, datagram.header.offset_and_fin, datagram.media_data);
