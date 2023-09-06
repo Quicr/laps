@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include <atomic>
+#include <sys/types.h>
 
 #include <quicr/quicr_common.h>
 #include <cantina/logger.h>
