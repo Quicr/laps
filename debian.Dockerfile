@@ -3,7 +3,7 @@
 #---------------------------------------------------------------------
 
 # Build layer
-FROM debian:12-slim as builder
+FROM debian:11-slim as builder
 
 RUN apt-get update
 RUN apt-get install -y cmake openssl golang perl
@@ -20,7 +20,7 @@ COPY ./dependencies ./dependencies
 COPY ./src ./src
 
 ENV CFLAGS="-Wno-error=stringop-overflow"
-ENV CXXFLAGS="-Wno-error=stringop-overflow"
+ENV CXXFLAGS="-Wno-error=stringop-overflow -fpermissive"
 RUN make all
 
 RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
@@ -32,14 +32,14 @@ RUN openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
     -keyout server-key.pem -out server-cert.pem
 
 # Run layer
-FROM debian:12-slim
+FROM debian:11-slim
 RUN apt-get install -y libstdc++ bash
 
 COPY --from=builder /usr/local/bin/lapsRelay /usr/local/bin/.
 COPY --from=builder /usr/local/bin/lapsTest /usr/local/bin/.
 
 RUN addgroup laps
-RUN adduser --quiet --disabled-password --comment "Laps User" --ingroup laps laps
+RUN adduser --quiet --disabled-password --gecos "Laps User" --ingroup laps laps
 USER laps
 WORKDIR /home/laps
 
