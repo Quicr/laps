@@ -32,6 +32,14 @@ main(int /* argc */, char*[] /* argv[] */)
 
     FLOG_INFO("Starting LAPS Relay (version " << lapsVersion() << ")");
 
+    if (cfg.disable_dedup) {
+        logger->info << "Disable dedup of objects" << std::flush;
+    }
+
+    if (cfg.disable_splithz) {
+        logger->info << "Disable split horizon" << std::flush;
+    }
+
     ClientSubscriptions subscriptions(cfg);
     Cache cache(cfg);
     peerQueue peer_queue;
