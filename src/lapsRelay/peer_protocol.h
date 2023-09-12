@@ -208,9 +208,6 @@ namespace laps {
                 encoded_data.push_back(ns.name()[i]);
             }
         }
-
-        if (ns_list.size() > 100)
-            return;
     }
 
 
