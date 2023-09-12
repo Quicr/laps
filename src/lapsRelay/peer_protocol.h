@@ -174,15 +174,14 @@ namespace laps {
      * @param[out]  ns_list         Vector of namespaces, will be updated from decode
      */
     void inline decodeNamespaces(const std::vector<uint8_t> &encoded_data, std::vector<Namespace> &ns_list) {
+
         for (size_t i=0; i < encoded_data.size(); i++) {
             uint8_t byte_count = encoded_data[i] / 8;
             byte_count += encoded_data[i] % 8 > 0 ? 1 : 0;
 
             // Make name from bytes encoded
             Name n(encoded_data.data() + (i+1), byte_count);
-
-            // namespace currently puts the bytes in the lower bytes of the name. Need to shift them over
-            n <<= 128 - encoded_data[i];
+            n = messages::swap_bytes(n);
 
             ns_list.emplace_back(n, encoded_data[i]);
 
@@ -205,9 +204,8 @@ namespace laps {
             encoded_data.push_back(ns.length());
 
             // TODO: Update name to pull out just used bytes for the name based on length
-            uint8_t start = 16 - byte_count;
-            for (uint8_t i=0; i < byte_count; i++) {
-                encoded_data.push_back(ns.name()[start++]);
+            for (uint8_t i=sizeof(Name)-1; i >= sizeof(Name) - byte_count; i--) {
+                encoded_data.push_back(ns.name()[i]);
             }
         }
     }
