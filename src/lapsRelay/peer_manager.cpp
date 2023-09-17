@@ -143,9 +143,9 @@ namespace laps {
     }
 
 
-    void PeerManager::subscribePeers(const Namespace& ns)
+    void PeerManager::subscribePeers(const Namespace& ns, const peer_id_t& source_peer_id)
     {
-        FLOG_DEBUG("Subscribe to peers for " << ns);
+        FLOG_DEBUG("Subscribe from " << source_peer_id << " to peers for ns: " << ns);
 
         auto it = _peer_sess_subscribe_recv.find(ns);
         if (it == _peer_sess_subscribe_recv.end() || it->second.empty()) {
@@ -183,6 +183,10 @@ namespace laps {
          * Send subscribe towards best publish intent peers (that can reach origin)
          */
         for (const auto& peer_id : peers) {
+
+            // Don't send back to same peer that sent it
+            if (source_peer_id.compare(peer_id) == 0)
+                continue;
 
             // Only send subscribe if subscribe wasn't already sent to this peer
             if (!peer_subs_it->second.contains(peer_id)) {
@@ -228,16 +232,27 @@ namespace laps {
             sess->sendUnsubscribe(ns);
         }
 
-        for (auto& [ns, peers] : _peer_sess_subscribe_sent) {
+        for (auto& [sub_ns, peers] : _peer_sess_subscribe_sent) {
+            if (sub_ns != ns) {
+                continue;
+            }
             peers.erase(peer_id);
         }
     }
 
-    void PeerManager::unSubscribePeers(const Namespace& ns)
+    void PeerManager::unSubscribePeers(const Namespace& ns, const peer_id_t& source_peer_id)
     {
-        for (const auto& [ns, peers] : _peer_sess_subscribe_sent) {
+        for (const auto& [sub_ns, peers] : _peer_sess_subscribe_sent) {
+
+            if (sub_ns != ns) {
+                continue;
+            }
 
             for (auto& peer_id : peers) {
+                // Don't send back to same peer that sent it
+                if (source_peer_id.compare(peer_id) == 0)
+                    continue;
+
                 auto sess = getPeerSession(peer_id);
                 if (sess) {
                     sess->sendUnsubscribe(ns);
@@ -365,7 +380,7 @@ namespace laps {
                         }
 
                         // Send subscribe to all peers toward the best publish intent peer(s)
-                        subscribePeers(obj->nspace);
+                        subscribePeers(obj->nspace, obj->source_peer_id);
 
                         break;
                     }
@@ -404,7 +419,7 @@ namespace laps {
                         }
 
                         if (un_sub_all) {
-                            unSubscribePeers(obj->nspace);
+                            unSubscribePeers(obj->nspace, obj->source_peer_id);
                         }
 
                         break;
@@ -422,7 +437,7 @@ namespace laps {
 
                         publishIntentPeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 
-                        subscribePeers(obj->nspace);
+                        subscribePeers(obj->nspace, ""); // do not send src for intent based subscribes
                         break;
                     }
 

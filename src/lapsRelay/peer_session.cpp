@@ -121,7 +121,6 @@ namespace laps {
     {
         auto iter = _subscribed.find(ns);
         if (iter != _subscribed.end()) {
-
             FLOG_DEBUG("Sending unsubscribe to peer " << peer_id << " for ns: " << ns);
 
             if (_config.peer_config.use_reliable && iter->second)
