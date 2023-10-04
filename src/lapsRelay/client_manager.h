@@ -22,17 +22,29 @@ namespace laps {
  * @brief Thread-safe cache of named object data
  */
 class ClientManager : public quicr::ServerDelegate, public std::enable_shared_from_this<ClientManager> {
-public:
+  private:
+    ClientManager() = default;
+
+    ClientManager(const Config& cfg, Cache& cache,
+                  ClientSubscriptions &subscriptions,
+                  peerQueue &peer_queue);
+
+  public:
   std::shared_ptr<ClientManager> get_shared_ptr()
   {
       return shared_from_this();
   }
 
+  [[nodiscard]] static std::shared_ptr<ClientManager> create(const Config& cfg, Cache& cache,
+                                                             ClientSubscriptions &subscriptions,
+                                                             peerQueue &peer_queue)
+  {
+      // Not using std::make_shared<Best> because the c'tor is private.
+      return std::shared_ptr<ClientManager>(new ClientManager(cfg, cache, subscriptions,peer_queue));
+  }
+
   ~ClientManager();
 
-  ClientManager(const Config& cfg, Cache& cache,
-                ClientSubscriptions &subscriptions,
-                peerQueue &peer_queue);
 
   void start();
   void stop();
@@ -80,5 +92,6 @@ private:
   std::shared_ptr<qtransport::ITransport> transport;
   std::set<uint64_t> subscribers = {};
   peerQueue& _peer_queue;
+
 };
 } // namespace laps

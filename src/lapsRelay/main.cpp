@@ -46,7 +46,8 @@ main(int /* argc */, char*[] /* argv[] */)
     {
         // Start UDP client manager
         Config cfg_udp = cfg;
-        auto udp_mgr = std::make_shared<ClientManager>(cfg_udp, cache, subscriptions, peer_queue);
+
+        auto udp_mgr = ClientManager::create(cfg_udp, cache, subscriptions, peer_queue);
         udp_mgr->start();
 
         cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
@@ -63,15 +64,15 @@ main(int /* argc */, char*[] /* argv[] */)
         cfg.client_config.protocol = RelayInfo::Protocol::QUIC;
 
         Config cfg_quic = cfg;
-        //auto quic_mgr = std::make_shared<ClientManager>(cfg_quic, cache, subscriptions, peer_queue);
-        //quic_mgr->start();
+        auto quic_mgr = ClientManager::create(cfg_quic, cache, subscriptions, peer_queue);
+        quic_mgr->start();
 
-        while (/*quic_mgr->ready() &&*/ udp_mgr->ready()) {
+        while (quic_mgr->ready() && udp_mgr->ready()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         }
 
         udp_mgr->stop();
-        //quic_mgr->stop();
+        quic_mgr->stop();
     }
 
     FLOG_INFO("LAPS stopped");
