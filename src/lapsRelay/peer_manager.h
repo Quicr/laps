@@ -96,8 +96,9 @@ namespace laps {
          *      publish intent best origin peer and send a subscribe.
          *
          * @param ns                    Namespace to subscribe
+         * @param source_peer_id        Source peer that sent (or client manager) the intent
          */
-        void subscribePeers(const Namespace& ns);
+        void subscribePeers(const Namespace& ns, const peer_id_t& source_peer_id);
 
         /**
          * @brief Send subscribe to specific peer
@@ -112,8 +113,9 @@ namespace laps {
          * @brief Send unsubscribe to peers that had previous subscribes for given namespace
          *
          * @param ns                    Namespace to unsubscribe peers to
+         * @param source_peer_id        Source peer that sent (or client manager) the intent
          */
-        void unSubscribePeers(const Namespace& ns);
+        void unSubscribePeers(const Namespace& ns, const peer_id_t& source_peer_id);
 
         /**
          * @brief Send unsubscribe to specific peer

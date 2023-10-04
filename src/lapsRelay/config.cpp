@@ -1,6 +1,5 @@
 
 #include "config.h"
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -68,6 +67,8 @@ namespace laps {
 
         env_value(disable_dedup, "LAPS_DISABLE_DEDUP");
         env_value(disable_splithz, "LAPS_DISABLE_SPLITHZ");
+
+        env_value(cwin_min_kb, "LAPS_CWIN_MIN_KB");
 
         env_value(peer_config.id, "LAPS_PEER_ID");
         env_value(peer_config.peer_port , "LAPS_PEER_PORT");

@@ -16,26 +16,11 @@ ClientManager::ClientManager(const Config& cfg, Cache& cache,
       , subscribeList(subscriptions)
       , config(cfg), cache(cache)
       , client_mgr_id(cfg.client_config.listen_port)
-      , _peer_queue(peer_queue)
-{
-  quicr::RelayInfo relayInfo = {.hostname
-                                = config.client_config.bind_addr,
-                                .port = config.client_config.listen_port,
-                                .proto = config.client_config.protocol };
-
-  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : config.tls_cert_filename.c_str(),
-                                     .tls_key_filename = config.tls_cert_filename.empty() ? NULL : config.tls_key_filename.c_str(),
-                                     .time_queue_init_queue_size = config.data_queue_size,
-                                     .debug = false };
-
-  logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
-
-  server =
-      std::make_unique<quicr::QuicRServer>(relayInfo, std::move(tcfg), *this, logger);
-}
+      , _peer_queue(peer_queue) {}
 
 ClientManager::~ClientManager() {
-  server.reset();
+    logger->info << "Client manager " << client_mgr_id << " ended" << std::flush;
+    running = false;
 }
 
 bool ClientManager::ready() {
@@ -45,7 +30,27 @@ bool ClientManager::ready() {
     return true;
 }
 
+void ClientManager::stop() {
+    server.reset();
+    running = false;
+}
+
 void ClientManager::start() {
+  quicr::RelayInfo relayInfo = {.hostname
+                                 = config.client_config.bind_addr,
+                                 .port = config.client_config.listen_port,
+                                 .proto = config.client_config.protocol };
+
+  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : config.tls_cert_filename.c_str(),
+                                    .tls_key_filename = config.tls_cert_filename.empty() ? NULL : config.tls_key_filename.c_str(),
+                                    .time_queue_init_queue_size = config.data_queue_size,
+                                    .debug = false,
+                                    .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024) };
+
+  logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
+
+  server =
+    std::make_unique<quicr::Server>(relayInfo, std::move(tcfg), get_shared_ptr(), logger);
   running = server->run();
 }
 
