@@ -39,7 +39,6 @@ class ClientManager : public quicr::ServerDelegate, public std::enable_shared_fr
                                                              ClientSubscriptions &subscriptions,
                                                              peerQueue &peer_queue)
   {
-      // Not using std::make_shared<Best> because the c'tor is private.
       return std::shared_ptr<ClientManager>(new ClientManager(cfg, cache, subscriptions,peer_queue));
   }
 
