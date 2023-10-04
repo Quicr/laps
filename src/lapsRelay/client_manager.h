@@ -2,6 +2,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <vector>
@@ -20,8 +21,13 @@ namespace laps {
 /**
  * @brief Thread-safe cache of named object data
  */
-class ClientManager : public quicr::ServerDelegate {
+class ClientManager : public quicr::ServerDelegate, public std::enable_shared_from_this<ClientManager> {
 public:
+  std::shared_ptr<ClientManager> get_shared_ptr()
+  {
+      return shared_from_this();
+  }
+
   ~ClientManager();
 
   ClientManager(const Config& cfg, Cache& cache,
@@ -29,6 +35,7 @@ public:
                 peerQueue &peer_queue);
 
   void start();
+  void stop();
   bool ready();
 
   /*
@@ -69,7 +76,7 @@ private:
   const uint16_t client_mgr_id;             /// This client mgr ID, uses listening port
   bool running {false};
 
-  std::unique_ptr<quicr::QuicRServer> server;
+  std::unique_ptr<quicr::Server> server;
   std::shared_ptr<qtransport::ITransport> transport;
   std::set<uint64_t> subscribers = {};
   peerQueue& _peer_queue;

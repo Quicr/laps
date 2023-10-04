@@ -166,23 +166,9 @@ main(int argc, char* argv[])
     quicr::RelayInfo relay{ .hostname = relayName, .port = uint16_t(port), .proto = protocol };
 
     qtransport::TransportConfig tcfg{ .tls_cert_filename = NULL, .tls_key_filename = NULL };
-    quicr::QuicRClient client(relay, std::move(tcfg), logger);
+    quicr::Client client(relay, std::move(tcfg), logger);
 
     client.connect();
-
-    switch (client.status()) {
-        case quicr::ClientStatus::READY:
-            logger->Log("... connected");
-            break;
-        case quicr::ClientStatus::TERMINATED:
-            logger->Log("... terminated");
-            exit(10);
-        default:
-            logger->info << "... connected status: "
-                         << static_cast<unsigned>(client.status())
-                         << std::flush;
-            exit(11);
-    }
 
     if (data.size() > 0) {
         auto pd = std::make_shared<pubDelegate>();

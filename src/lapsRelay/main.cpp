@@ -8,7 +8,6 @@
 
 #include "config.h"
 #include "version_config.h"
-#include <transport/safe_queue.h>
 #include <cantina/logger.h>
 #include "logger.h"
 
@@ -44,29 +43,36 @@ main(int /* argc */, char*[] /* argv[] */)
     Cache cache(cfg);
     peerQueue peer_queue;
 
-    // Start UDP client manager
-    ClientManager udp_mgr(cfg, cache, subscriptions, peer_queue);
-    udp_mgr.start();
+    {
+        // Start UDP client manager
+        Config cfg_udp = cfg;
+        auto udp_mgr = std::make_shared<ClientManager>(cfg_udp, cache, subscriptions, peer_queue);
+        udp_mgr->start();
 
-    cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
-    PeerManager peer_mgr(cfg, peer_queue, cache, subscriptions);
+        cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
+        PeerManager peer_mgr(cfg, peer_queue, cache, subscriptions);
 
-    // Start QUIC client manager using the UDP port plus one
-    cfg.client_config.listen_port++;
+        // Start QUIC client manager using the UDP port plus one
+        cfg.client_config.listen_port++;
 
-    if (cfg.tls_cert_filename.empty()) {
-        cfg.tls_cert_filename = "./server-cert.pem";
-        cfg.tls_key_filename = "./server-key.pem";
+        if (cfg.tls_cert_filename.empty()) {
+            cfg.tls_cert_filename = "./server-cert.pem";
+            cfg.tls_key_filename = "./server-key.pem";
+        }
+
+        cfg.client_config.protocol = RelayInfo::Protocol::QUIC;
+
+        Config cfg_quic = cfg;
+        //auto quic_mgr = std::make_shared<ClientManager>(cfg_quic, cache, subscriptions, peer_queue);
+        //quic_mgr->start();
+
+        while (/*quic_mgr->ready() &&*/ udp_mgr->ready()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        }
+
+        udp_mgr->stop();
+        //quic_mgr->stop();
     }
 
-    cfg.client_config.protocol = RelayInfo::Protocol::QUIC;
-
-    ClientManager quic_mgr(cfg, cache, subscriptions, peer_queue);
-    quic_mgr.start();
-
-    while (quic_mgr.ready() && udp_mgr.ready()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-    }
-
-    FLOG_INFO("Shutting down LAPS");
+    FLOG_INFO("LAPS stopped");
 }
