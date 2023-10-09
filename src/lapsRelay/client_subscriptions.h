@@ -31,8 +31,6 @@ public:
      */
     const uint64_t conn_id;         // Only used for split horizon right now
 
-    std::function<void(const quicr::messages::PublishDatagram& datagram)> sendObjFunc;
-
     bool operator==(const Remote &o) const {
       return client_mgr_id == o.client_mgr_id
              && subscribe_id == o.subscribe_id
@@ -70,14 +68,14 @@ public:
                                   const uint16_t client_mgr_id,
                                   const uint64_t subscriber_id);
 
-  std::map<uint16_t, std::map<uint64_t, Remote>> find(const quicr::Name &name);
+  std::map<uint16_t, std::map<uint64_t, Remote>> find(const quicr::Name &name) const;
 
 private:
   // subscriptions[name length in bits][quicr name][client_mgr_id][subscriber id] = remote info
   std::vector<std::map<quicr::Name, std::map<uint16_t, std::map<uint64_t, Remote>>>> subscriptions;
   const Config& config;
 
-  std::mutex mutex;
+  mutable std::mutex mutex;
 };
 
 } // namespace laps

@@ -19,6 +19,10 @@
 #include "config.h"
 
 
+namespace quicr {
+  class Server;
+}
+
 namespace laps {
     using namespace qtransport;
     using namespace quicr;
@@ -45,7 +49,7 @@ namespace laps {
           , _status{ other._status.load() }
           , _peer_queue { other._peer_queue }
           , _cache { other._cache }
-          , _subscriptions { other._subscriptions }
+          , _servers { other._servers }
           , logger { other.logger }
 
         {
@@ -62,7 +66,7 @@ namespace laps {
           , _status{ other._status.load() }
           , _peer_queue { other._peer_queue }
           , _cache { other._cache }
-          , _subscriptions { other._subscriptions }
+          , _servers { other._servers }
           , logger { other.logger }
         {
             _transport = std::move(other._transport);
@@ -86,7 +90,7 @@ namespace laps {
                     const TransportRemote& peer_remote,
                     safe_queue<PeerObject>& peer_queue,
                     Cache& cache,
-                    ClientSubscriptions& subscriptions);
+                    const std::vector<ForwardedServer>& servers);
 
         ~PeerSession();
 
@@ -179,7 +183,7 @@ namespace laps {
 
         peerQueue& _peer_queue;
         Cache& _cache;
-        ClientSubscriptions& _subscriptions;
+        std::vector<ForwardedServer> _servers;
         cantina::LoggerPointer logger;
 
         bool _is_inbound { false };               /// Indicates if the peer is server accepted (inbound) or client (outbound)

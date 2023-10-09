@@ -23,6 +23,28 @@ lapsVersion()
     return LAPS_VERSION;
 }
 
+namespace {
+std::pair<quicr::RelayInfo, qtransport::TransportConfig>
+make_server_configs(const Config& cfg)
+{
+    quicr::RelayInfo relay_info = {
+        .hostname = cfg.client_config.bind_addr,
+        .port = cfg.client_config.listen_port,
+        .proto = cfg.client_config.protocol,
+    };
+
+    qtransport::TransportConfig tcfg{
+        .tls_cert_filename = cfg.tls_cert_filename.empty() ? nullptr : cfg.tls_cert_filename.c_str(),
+        .tls_key_filename = cfg.tls_key_filename.empty() ? nullptr : cfg.tls_key_filename.c_str(),
+        .time_queue_init_queue_size = cfg.data_queue_size,
+        .debug = false,
+        .quic_cwin_minimum = static_cast<uint64_t>(cfg.cwin_min_kb * 1024),
+    };
+
+    return { relay_info, tcfg };
+}
+}
+
 int
 main(int /* argc */, char*[] /* argv[] */)
 {
@@ -39,40 +61,57 @@ main(int /* argc */, char*[] /* argv[] */)
         logger->info << "Disable split horizon" << std::flush;
     }
 
-    ClientSubscriptions subscriptions(cfg);
     Cache cache(cfg);
     peerQueue peer_queue;
 
     {
         // Start UDP client manager
-        Config cfg_udp = cfg;
+        auto [udp_relay_info, udp_tcfg] = make_server_configs(cfg);
+        ClientSubscriptions udp_subscriptions{ cfg };
+        auto udp_mgr = ClientManager::create(cfg, cache, udp_subscriptions, peer_queue);
+        auto udp_server = std::make_shared<quicr::Server>(udp_relay_info, std::move(udp_tcfg), udp_mgr, logger);
+        ForwardedServer udp_forward_server{
+            udp_server,
+            udp_mgr,
+        };
 
-        auto udp_mgr = ClientManager::create(cfg_udp, cache, subscriptions, peer_queue);
-        udp_mgr->start();
-
-        cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
-        PeerManager peer_mgr(cfg, peer_queue, cache, subscriptions);
-
-        // Start QUIC client manager using the UDP port plus one
-        cfg.client_config.listen_port++;
-
-        if (cfg.tls_cert_filename.empty()) {
-            cfg.tls_cert_filename = "./server-cert.pem";
-            cfg.tls_key_filename = "./server-key.pem";
+        // Set QUIC client manager to use the UDP port plus one
+        {
+            cfg.client_config.listen_port++;
+            if (cfg.tls_cert_filename.empty()) {
+                cfg.tls_cert_filename = "./server-cert.pem";
+                cfg.tls_key_filename = "./server-key.pem";
+            }
+            cfg.client_config.protocol = RelayInfo::Protocol::QUIC;
         }
 
-        cfg.client_config.protocol = RelayInfo::Protocol::QUIC;
+        auto [quic_relay_info, quic_tcfg] = make_server_configs(cfg);
+        ClientSubscriptions quic_subscriptions{ cfg };
+        auto quic_mgr = ClientManager::create(cfg, cache, quic_subscriptions, peer_queue);
+        auto quic_server = std::make_shared<quicr::Server>(quic_relay_info, std::move(quic_tcfg), quic_mgr, logger);
+        ForwardedServer quic_forward_server{
+            quic_server,
+            quic_mgr,
+        };
 
-        Config cfg_quic = cfg;
-        auto quic_mgr = ClientManager::create(cfg_quic, cache, subscriptions, peer_queue);
-        quic_mgr->start();
+        // Set peering config
+        {
+            cfg.client_config.listen_port++;
+            if (cfg.tls_cert_filename.empty()) {
+                cfg.tls_cert_filename = {};
+                cfg.tls_key_filename = {};
+            }
 
-        while (quic_mgr->ready() && udp_mgr->ready()) {
+            cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
+        }
+        PeerManager peer_mgr(cfg, peer_queue, cache, { udp_forward_server, quic_forward_server });
+
+        udp_server->run();
+        quic_server->run();
+
+        while (quic_server->is_transport_ready() && udp_server->is_transport_ready()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         }
-
-        udp_mgr->stop();
-        quic_mgr->stop();
     }
 
     FLOG_INFO("LAPS stopped");

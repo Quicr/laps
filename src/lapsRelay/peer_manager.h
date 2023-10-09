@@ -20,6 +20,10 @@
 #include "config.h"
 
 
+namespace quicr {
+  class Server;
+}
+
 namespace laps {
     using namespace qtransport;
     using namespace quicr;
@@ -36,7 +40,7 @@ namespace laps {
         PeerManager(const Config& cfg,
                     safe_queue<PeerObject>& peer_queue,
                     Cache& cache,
-                    ClientSubscriptions& subscriptions);
+                    std::vector<ForwardedServer>&& servers);
 
         ~PeerManager();
 
@@ -165,7 +169,7 @@ namespace laps {
 
         peerQueue& _peer_queue;
         Cache& _cache;
-        ClientSubscriptions& _subscriptions;
+        std::vector<ForwardedServer> _servers;
 
         std::shared_ptr<ITransport> _server_transport;           /// Server Transport for inbound connections
 

@@ -1,6 +1,8 @@
-
 #include "peer_manager.h"
+#include "client_manager.h"
+
 #include <quicr/quicr_client.h>
+
 #include <sstream>
 #include <chrono>
 
@@ -9,11 +11,11 @@ namespace laps {
     PeerManager::PeerManager(const Config& cfg,
                              safe_queue<PeerObject>& peer_queue,
                              Cache& cache,
-                             ClientSubscriptions& subscriptions)
+                             std::vector<ForwardedServer>&& servers)
       : _config(cfg)
       , _peer_queue(peer_queue)
       , _cache(cache)
-      , _subscriptions(subscriptions)
+      , _servers(std::move(servers))
       , logger(std::make_shared<cantina::Logger>("PMGR", cfg.logger))
     {
         _client_rx_msg_thr = std::thread(&PeerManager::PeerQueueThread, this);
@@ -81,7 +83,7 @@ namespace laps {
                                                              peer_config,
                                                              _peer_queue,
                                                              _cache,
-                                                             _subscriptions);
+                                                             _servers);
 
         peer_sess.connect();
     }
@@ -150,14 +152,21 @@ namespace laps {
 
         auto it = _peer_sess_subscribe_recv.find(ns);
         if (it == _peer_sess_subscribe_recv.end() || it->second.empty()) {
+            bool all_empty = true;
+            for (const auto& [_, w_delegate] : _servers) {
+                auto delegate = std::static_pointer_cast<ClientManager>(w_delegate.lock());
+                if (!delegate)
+                    continue;
+                auto list = delegate->getSubscriptions().find(ns);
+
+                all_empty &= list.empty();
+            }
 
             // No peers subscribed, check client edge subscription
-            std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list = _subscriptions.find(ns);
-
-            if (list.empty()) {
+            if (all_empty) {
                 FLOG_DEBUG("No subscribers, not sending subscription to peer(s) for " << ns);
-                // No subscribers, do not send subscription
-                return;
+                    // No subscribers, do not send subscription
+                    return;
             }
         }
 
@@ -394,13 +403,14 @@ namespace laps {
                         if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             // Indicate unsubscribe all peers if there are no clients/edge subs left
 
-                            std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
-                              _subscriptions.find(obj->nspace);
+                            for (const auto& [_, w_delegate] : _servers) {
+                                auto delegate = std::static_pointer_cast<ClientManager>(w_delegate.lock());
+                                if (!delegate)
+                                    continue;
 
-                            if (list.empty()) {
-                                un_sub_all = true;
+                                auto list = delegate->getSubscriptions().find(obj->nspace);
+                                un_sub_all = list.empty();
                             }
-
                         } else {
                             // Only unsubscribe all peers if there are no other peers subscribed
                             auto it = _peer_sess_subscribe_recv.find(obj->nspace);
@@ -502,7 +512,7 @@ namespace laps {
                                                                       std::move(peer),
                                                                       _peer_queue,
                                                                       _cache,
-                                                                      _subscriptions);
+                                                                      _servers);
 
             peer_iter = iter;
 

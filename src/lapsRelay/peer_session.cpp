@@ -1,8 +1,10 @@
-
-#include "peer_manager.h"
 #include "peer_session.h"
+#include "client_manager.h"
 #include "logger.h"
+#include "peer_manager.h"
+
 #include <quicr/quicr_client.h>
+#include <quicr/quicr_server.h>
 
 #include <sstream>
 
@@ -14,12 +16,12 @@ namespace laps {
                              const TransportRemote& peer_remote,
                              safe_queue<PeerObject>& peer_queue,
                              Cache& cache,
-                             ClientSubscriptions& subscriptions)
+                             const std::vector<ForwardedServer>& servers)
       : peer_config(peer_remote)
       , _config(cfg)
       , _peer_queue(peer_queue)
       , _cache(cache)
-      , _subscriptions(subscriptions)
+      , _servers(servers)
       , logger(std::make_shared<cantina::Logger>("PEER", cfg.logger))
       , _is_inbound(is_inbound)
       , t_context_id(context_id)
@@ -248,6 +250,9 @@ namespace laps {
 
                 // TODO: cleanup intents and subscriptions
             }
+
+            default:
+                break;
         }
     }
 
@@ -267,7 +272,7 @@ namespace laps {
                         case messages::MessageType::PeerMsg: {
                             auto data = msg_buffer.take();
                             auto subtype = static_cast<PeeringSubType>(data[1]);
-                            
+
                             switch (subtype) {
                                 case PeeringSubType::CONNECT: {
                                     MsgConnect c_msg;
@@ -411,7 +416,6 @@ namespace laps {
                             messages::PublishDatagram datagram;
                             msg_buffer >> datagram;
 
-
                             if (not _config.disable_dedup &&
                                 _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
                                 // duplicate, ignore
@@ -426,15 +430,25 @@ namespace laps {
                             _peer_queue.push(
                               { .type = PeerObjectType::PUBLISH, .source_peer_id = peer_id, .pub_obj = datagram });
 
-                            std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
-                              _subscriptions.find(datagram.header.name);
+                            for (const auto& [w_server, w_delegate] : _servers) {
+                                auto delegate = std::static_pointer_cast<ClientManager>(w_delegate.lock());
+                                if (!delegate) continue;
 
-                            for (const auto& cMgr : list) {
-                                for (const auto& dest : cMgr.second) {
-                                    dest.second.sendObjFunc(datagram);
+                                std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
+                                  delegate->getSubscriptions().find(datagram.header.name);
+
+                                auto server = w_server.lock();
+                                if (!server) continue;
+
+                                for (const auto& cMgr : list) {
+                                    for (const auto& dest : cMgr.second) {
+                                        server->sendNamedObject(dest.second.subscribe_id,
+                                                                _use_reliable,
+                                                                1,
+                                                                _config.time_queue_ttl_default,
+                                                                datagram);
+                                    }
                                 }
-
-                                break;
                             }
 
                             break;
@@ -443,15 +457,18 @@ namespace laps {
                             FLOG_INFO("Invalid Message Type " << static_cast<unsigned>(msg_type));
                             break;
                     }
-                } catch (const messages::MessageBuffer::ReadException& /* ex */) {
-                    FLOG_ERR("Received read exception error while reading from message buffer.");
+                } catch (const messages::MessageBuffer::ReadException& ex) {
+                    FLOG_ERR("Read exception while reading from message buffer: " << ex.what());
                     continue;
-                } catch (const std::exception& /* ex */) {
-                    FLOG_ERR("Received standard exception error while reading from message buffer.");
+                } catch (const std::exception& ex) {
+                    FLOG_ERR("Standard exception while reading from message buffer: " << ex.what());
                     continue;
-                } catch (...) {
-                    FLOG_ERR("Received unknown error while reading from message buffer.");
+                } catch (const std::string& ex) {
+                    FLOG_ERR("Error while reading from message buffer: " << ex);
                     continue;
+                } catch (...) { [[unlikely]]
+                    FLOG_ERR("Unknown error while reading from message buffer.");
+                    continue; // FIXME: Should we keep powering through? Or should we rethrow?
                 }
 
             } else {

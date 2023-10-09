@@ -2,6 +2,7 @@
 
 #include <quicr/encode.h>
 #include <quicr/namespace.h>
+#include <quicr/quicr_server.h>
 #include <transport/safe_queue.h>
 
 namespace laps {
@@ -30,5 +31,9 @@ namespace laps {
 
     using peerQueue = safe_queue<PeerObject>;
 
+    struct ForwardedServer {
+        std::weak_ptr<quicr::Server> server;
+        std::weak_ptr<quicr::ServerDelegate> delegate;
+    };
 
  } // namespace laps

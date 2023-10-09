@@ -102,7 +102,7 @@ const ClientSubscriptions::Remote ClientSubscriptions::getSubscribeRemote(const 
 }
 
 std::map<uint16_t, std::map<uint64_t,ClientSubscriptions::Remote>>
-ClientSubscriptions::find(const quicr::Name &name) {
+ClientSubscriptions::find(const quicr::Name &name) const {
   std::map<uint16_t, std::map<uint64_t, Remote>> ret;
 
   std::lock_guard<std::mutex> lock(mutex);
