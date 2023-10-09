@@ -1,28 +1,23 @@
 #pragma once
 
-
-#include <atomic>
-#include <memory>
-#include <unordered_set>
-#include <quicr/encode.h>
-#include <map>
-#include <set>
-#include <quicr/namespace.h>
-#include <transport/transport.h>
-#include <thread>
-#include <transport/safe_queue.h>
-
-#include "peer_common.h"
-#include "peer_protocol.h"
-#include "peer_session.h"
 #include "cache.h"
 #include "client_subscriptions.h"
 #include "config.h"
+#include "peer_common.h"
+#include "peer_protocol.h"
+#include "peer_session.h"
 
+#include <quicr/encode.h>
+#include <quicr/namespace.h>
+#include <thread>
+#include <transport/safe_queue.h>
+#include <transport/transport.h>
 
-namespace quicr {
-  class Server;
-}
+#include <atomic>
+#include <map>
+#include <memory>
+#include <set>
+#include <unordered_set>
 
 namespace laps {
     using namespace qtransport;

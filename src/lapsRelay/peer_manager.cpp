@@ -153,11 +153,11 @@ namespace laps {
         auto it = _peer_sess_subscribe_recv.find(ns);
         if (it == _peer_sess_subscribe_recv.end() || it->second.empty()) {
             bool all_empty = true;
-            for (const auto& [_, w_delegate] : _servers) {
-                auto delegate = std::static_pointer_cast<ClientManager>(w_delegate.lock());
-                if (!delegate)
+            for (const auto& [_, w_client_manager] : _servers) {
+                auto client_manager = std::static_pointer_cast<ClientManager>(w_client_manager.lock());
+                if (!client_manager)
                     continue;
-                auto list = delegate->getSubscriptions().find(ns);
+                auto list = client_manager->getSubscriptions().find(ns);
 
                 all_empty &= list.empty();
             }
@@ -402,14 +402,14 @@ namespace laps {
 
                         if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             // Indicate unsubscribe all peers if there are no clients/edge subs left
-
-                            for (const auto& [_, w_delegate] : _servers) {
-                                auto delegate = std::static_pointer_cast<ClientManager>(w_delegate.lock());
-                                if (!delegate)
+                            un_sub_all = true;
+                            for (const auto& [_, w_client_manager] : _servers) {
+                                auto client_manager = w_client_manager.lock();
+                                if (!client_manager)
                                     continue;
 
-                                auto list = delegate->getSubscriptions().find(obj->nspace);
-                                un_sub_all = list.empty();
+                                auto list = client_manager->getSubscriptions().find(obj->nspace);
+                                un_sub_all &= list.empty();
                             }
                         } else {
                             // Only unsubscribe all peers if there are no other peers subscribed

@@ -33,7 +33,7 @@ namespace laps {
 
     struct ForwardedServer {
         std::weak_ptr<quicr::Server> server;
-        std::weak_ptr<quicr::ServerDelegate> delegate;
+        std::weak_ptr<class ClientManager> client_manager;
     };
 
  } // namespace laps

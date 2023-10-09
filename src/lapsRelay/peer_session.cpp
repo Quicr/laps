@@ -430,19 +430,18 @@ namespace laps {
                             _peer_queue.push(
                               { .type = PeerObjectType::PUBLISH, .source_peer_id = peer_id, .pub_obj = datagram });
 
-                            for (const auto& [w_server, w_delegate] : _servers) {
-                                auto delegate = std::static_pointer_cast<ClientManager>(w_delegate.lock());
-                                if (!delegate) continue;
+                            for (const auto& [w_server, w_client_manager] : _servers) {
+                                auto client_manager = w_client_manager.lock();
+                                if (!client_manager) continue;
 
-                                std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
-                                  delegate->getSubscriptions().find(datagram.header.name);
+                                auto list = client_manager->getSubscriptions().find(datagram.header.name);
 
                                 auto server = w_server.lock();
                                 if (!server) continue;
 
-                                for (const auto& cMgr : list) {
-                                    for (const auto& dest : cMgr.second) {
-                                        server->sendNamedObject(dest.second.subscribe_id,
+                                for (const auto& subscription : list) {
+                                    for (const auto& [_, dest] : subscription.second) {
+                                        server->sendNamedObject(dest.subscribe_id,
                                                                 _use_reliable,
                                                                 1,
                                                                 _config.time_queue_ttl_default,
