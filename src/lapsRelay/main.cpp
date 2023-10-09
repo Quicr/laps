@@ -96,12 +96,8 @@ main(int /* argc */, char*[] /* argv[] */)
 
         // Set peering config
         {
-            cfg.client_config.listen_port++;
-            if (cfg.tls_cert_filename.empty()) {
-                cfg.tls_cert_filename = {};
-                cfg.tls_key_filename = {};
-            }
-
+            cfg.tls_cert_filename = {};
+            cfg.tls_key_filename = {};
             cfg.peer_config.protocol = RelayInfo::Protocol::QUIC;
         }
         PeerManager peer_mgr(cfg, peer_queue, cache, { udp_forward_server, quic_forward_server });
