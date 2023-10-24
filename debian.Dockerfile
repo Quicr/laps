@@ -14,9 +14,9 @@ RUN apt-get install -y \
 WORKDIR /tmp
 
 RUN [[ "$(uname -m)" == "x86_64" ]] \
-    && export CMAKE_FILENAME=cmake-3.28.0-rc2-linux-x86_64.sh \
-    || export CMAKE_FILENAME=cmake-3.28.0-rc2-linux-aarch64.sh; \
-    wget https://cmake.org/files/v3.28/$CMAKE_FILENAME; \
+    && export CMAKE_FILENAME=cmake-3.27.7-linux-x86_64.sh \
+    || export CMAKE_FILENAME=cmake-3.27.7-linux-aarch64.sh; \
+    wget https://cmake.org/files/v3.27/$CMAKE_FILENAME; \
     /bin/sh ./$CMAKE_FILENAME --skip-license --prefix=/usr/local
 
 WORKDIR /ws
