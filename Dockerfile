@@ -20,6 +20,9 @@ COPY ./version_config.h.in ./
 COPY ./dependencies ./dependencies
 COPY ./src ./src
 
+ENV CFLAGS="-Wno-error=stringop-overflow"
+ENV CXXFLAGS="-Wno-error=stringop-overflow -fpermissive -Wno-error=pedantic"
+
 RUN  make all
 
 RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \

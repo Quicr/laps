@@ -19,6 +19,7 @@ namespace laps {
         } client_config;
 
 
+        bool debug { false };                 /// Debug logging/code
         bool disable_splithz;                 /// Disable split horizon
         bool disable_dedup;                   /// Disable Deduplication
 
