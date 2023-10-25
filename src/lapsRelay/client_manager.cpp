@@ -44,7 +44,7 @@ void ClientManager::start() {
   qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : config.tls_cert_filename.c_str(),
                                     .tls_key_filename = config.tls_cert_filename.empty() ? NULL : config.tls_key_filename.c_str(),
                                     .time_queue_init_queue_size = config.data_queue_size,
-                                    .debug = false,
+                                    .debug = config.debug,
                                     .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024) };
 
   logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
@@ -133,8 +133,10 @@ void ClientManager::onSubscribe(
     subscribeList.getSubscribeRemote(quicr_namespace, client_mgr_id, subscriber_id);
 
   if (existing_remote.client_mgr_id != 0) {
-    FLOG_DEBUG("duplicate onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id"
+    if (config.debug) {
+        FLOG_DEBUG("duplicate onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id"
                                               << context_id << " stream_id: " << stream_id);
+    }
     return;
   }
 

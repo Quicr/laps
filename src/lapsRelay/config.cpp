@@ -10,11 +10,9 @@ namespace laps {
     Config::Config()
       : logger(std::make_shared<cantina::Logger>("lapsRelay"))
     {
-
-        init_logger();
-
         init_defaults();
         cfg_from_env();
+        init_logger();
     }
 
     void Config::init_defaults()
@@ -48,6 +46,8 @@ namespace laps {
 
     void Config::cfg_from_env()
     {
+        env_value(debug, "LAPS_DEBUG");
+
         env_value(tls_cert_filename, "LAPS_TLS_CERT_FILENAME");
         env_value(tls_key_filename, "LAPS_TLS_KEY_FILENAME");
 
@@ -130,7 +130,7 @@ namespace laps {
 
     void Config::init_logger()
     {
-        if (std::getenv("LAPS_DEBUG"))
+        if (debug)
         {
             logger->SetLogLevel(cantina::LogLevel::Debug);
         }
