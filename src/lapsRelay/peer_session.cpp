@@ -54,17 +54,20 @@ namespace laps {
         _status = Status::CONNECTING;
 
         if (not _is_inbound) {
+            _subscribed.clear();
+
             if (_transport)
                 _transport = nullptr;
 
             _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, logger);
             t_context_id = _transport->start();
-
         }
 
         // Create the datagram and control streams
         dgram_stream_id = createStream(t_context_id, false);
         control_stream_id = createStream(t_context_id, true);
+
+        logger->info << "Control stream ID " << control_stream_id << std::flush;
     }
 
     StreamId PeerSession::createStream(TransportContextId context_id, bool use_reliable) {
@@ -91,6 +94,18 @@ namespace laps {
 
         } else {
             _subscribed.try_emplace(ns, dgram_stream_id);
+        }
+    }
+
+    void PeerSession::removeSubscription(const Namespace& ns) {
+        auto iter = _subscribed.find(ns);
+        if (iter != _subscribed.end()) {
+            FLOG_DEBUG("Removing subscription " << ns << " from peer " << peer_id);
+
+            if (_config.peer_config.use_reliable && iter->second)
+                _transport->closeStream(t_context_id, iter->second);
+
+            _subscribed.erase(iter);
         }
     }
 
@@ -123,11 +138,6 @@ namespace laps {
         if (iter != _subscribed.end()) {
             FLOG_DEBUG("Sending unsubscribe to peer " << peer_id << " for ns: " << ns);
 
-            if (_config.peer_config.use_reliable && iter->second)
-                _transport->closeStream(t_context_id, iter->second);
-
-            _subscribed.erase(iter);
-
             std::vector<uint8_t> ns_array;
             encodeNamespaces(ns_array, { ns });
 
@@ -140,6 +150,8 @@ namespace laps {
             std::memcpy(buf.data() + sizeof(msg), ns_array.data(), ns_array.size());
 
             _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+
+            removeSubscription(ns);
         }
     }
 
@@ -209,7 +221,7 @@ namespace laps {
 
         _publish_intents.erase(ns);
 
-        FLOG_INFO("Sending publish intent DONE " << ns);
+        FLOG_INFO("Sending publish intent DONE to peer: " << peer_id << " ns: " << ns);
 
         std::vector<uint8_t> buf(sizeof(MsgPublishIntentDone) + origin_peer_id.length() + ns_array.size());
 
@@ -246,7 +258,9 @@ namespace laps {
 
                 FLOG_INFO("Peer context_id " << context_id << " is disconnected");
 
-                // TODO: cleanup intents and subscriptions
+                // No need to close streams when connection is closed/disconnected
+                _subscribed.clear();
+                break;
             }
         }
     }
@@ -324,7 +338,7 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
-                                    FLOG_INFO("Recv subscribe " << ns_list.front());
+                                    FLOG_INFO("Received subscribe from " << peer_id << " ns: " << ns_list.front());
                                     if (ns_list.size() > 0) {
                                         addSubscription(ns_list.front());
                                         _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
@@ -342,9 +356,11 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
-                                    FLOG_INFO("Recv unsubscribe " << ns_list.front());
+                                    FLOG_INFO("Received unsubscribe from " << peer_id << " ns: " << ns_list.front());
 
                                     if (ns_list.size() > 0) {
+                                        removeSubscription(ns_list.front());
+
                                         _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE,
                                                            .source_peer_id = peer_id,
                                                            .nspace = ns_list.front() });
