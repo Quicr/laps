@@ -375,10 +375,13 @@ namespace laps {
                     }
 
                     case PeerObjectType::SUBSCRIBE: {
-                        FLOG_DEBUG("Received subscribe message name: " << obj->nspace);
 
                         if (obj->source_peer_id.compare(CLIENT_PEER_ID)) { // if from peer
+                            FLOG_DEBUG("Received CMGR subscribe message name: " << obj->nspace);
                             _peer_sess_subscribe_recv.emplace(obj->nspace, std::initializer_list<peer_id_t>({obj->source_peer_id}));
+
+                        } else {
+                            FLOG_DEBUG("Received subscribe message name: " << obj->nspace);
                         }
 
                         // Send subscribe to all peers toward the best publish intent peer(s)
@@ -388,12 +391,12 @@ namespace laps {
                     }
 
                     case PeerObjectType::UNSUBSCRIBE: {
-                        FLOG_DEBUG("Received unsubscribe message name: " << obj->nspace);
 
                         bool un_sub_all { false };
 
                         if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             // Indicate unsubscribe all peers if there are no clients/edge subs left
+                            FLOG_DEBUG("Received CMGR unsubscribe message name: " << obj->nspace);
 
                             std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
                               _subscriptions.find(obj->nspace);
@@ -403,6 +406,8 @@ namespace laps {
                             }
 
                         } else {
+                            FLOG_DEBUG("Received unsubscribe message name: " << obj->nspace);
+
                             // Only unsubscribe all peers if there are no other peers subscribed
                             auto it = _peer_sess_subscribe_recv.find(obj->nspace);
                             if (it != _peer_sess_subscribe_recv.end()) {
@@ -432,6 +437,7 @@ namespace laps {
 
                         if (! obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             origin_peer_id = _config.peer_config.id;
+                            FLOG_DEBUG("Received CMGR publish intent message name: " << obj->nspace);
                         }
 
                         FLOG_DEBUG("Received publish intent message name: " << obj->nspace
@@ -448,10 +454,12 @@ namespace laps {
 
                         if (! obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             origin_peer_id = _config.peer_config.id;
-                        }
+                            FLOG_DEBUG("Received CMGR publish intent done message name: " << obj->nspace);
 
-                        FLOG_DEBUG("Received publish intent done message name: " << obj->nspace
-                                                                                 << " origin: " << origin_peer_id);
+                        } else {
+                            FLOG_DEBUG("Received publish intent done message name: " << obj->nspace
+                                                                                     << " origin: " << origin_peer_id);
+                        }
 
                         publishIntentDonePeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 

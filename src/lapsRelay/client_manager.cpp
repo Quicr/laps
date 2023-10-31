@@ -133,10 +133,10 @@ void ClientManager::onSubscribe(
     subscribeList.getSubscribeRemote(quicr_namespace, client_mgr_id, subscriber_id);
 
   if (existing_remote.client_mgr_id != 0) {
-    if (config.debug) {
-        FLOG_DEBUG("duplicate onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id"
-                                              << context_id << " stream_id: " << stream_id);
-    }
+//    if (config.debug) {
+//        FLOG_DEBUG("duplicate onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id"
+//                                              << context_id << " stream_id: " << stream_id);
+//    }
     return;
   }
 

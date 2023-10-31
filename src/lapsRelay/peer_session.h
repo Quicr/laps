@@ -168,7 +168,7 @@ namespace laps {
         void sendConnectOk();
 
         void addSubscription(const Namespace& ns);
-
+        void removeSubscription(const Namespace& ns);
 
       public:
         TransportRemote peer_config;
