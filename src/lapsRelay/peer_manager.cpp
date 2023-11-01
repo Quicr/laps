@@ -446,7 +446,7 @@ namespace laps {
 
                         publishIntentPeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 
-                        subscribePeers(obj->nspace, ""); // do not send src for intent based subscribes
+                        subscribePeers(obj->nspace, "_sync_"); // do not send src for intent based subscribes
                         break;
                     }
 

@@ -403,6 +403,8 @@ namespace laps {
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
 
+                                    // TODO: Remove subscription to allow a more optimized path based on new publish intent
+
                                     if (ns_list.size() > 0) {
                                         FLOG_INFO("Received publish intent DONE from "
                                                   << peer_id << " with namespace: " << ns_list.front());
