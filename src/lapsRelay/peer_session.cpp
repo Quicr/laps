@@ -195,7 +195,7 @@ namespace laps {
         if (_status != Status::CONNECTED)
             return;
 
-        FLOG_INFO("Sending publish intent " << ns << " origin: " << origin_peer_id);
+        FLOG_INFO("Sending publish intent " << ns << " origin: " << origin_peer_id << " peer: " << peer_id);
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -402,6 +402,8 @@ namespace laps {
                                     std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg) + msg.origin_id_len, data.end());
                                     std::vector<Namespace> ns_list;
                                     decodeNamespaces(encoded_ns, ns_list);
+
+                                    // TODO: Remove subscription to allow a more optimized path based on new publish intent
 
                                     if (ns_list.size() > 0) {
                                         FLOG_INFO("Received publish intent DONE from "
