@@ -441,7 +441,8 @@ namespace laps {
                         }
 
                         FLOG_DEBUG("Received publish intent message name: " << obj->nspace
-                                                                            << " origin: " << origin_peer_id);
+                                                                            << " origin: " << origin_peer_id
+                                                                            << " source: " << obj->source_peer_id);
 
                         publishIntentPeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 

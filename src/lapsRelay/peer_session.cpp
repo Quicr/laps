@@ -195,7 +195,7 @@ namespace laps {
         if (_status != Status::CONNECTED)
             return;
 
-        FLOG_INFO("Sending publish intent " << ns << " origin: " << origin_peer_id);
+        FLOG_INFO("Sending publish intent " << ns << " origin: " << origin_peer_id << " peer: " << peer_id);
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
