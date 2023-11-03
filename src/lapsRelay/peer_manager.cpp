@@ -381,7 +381,7 @@ namespace laps {
                             _peer_sess_subscribe_recv.emplace(obj->nspace, std::initializer_list<peer_id_t>({obj->source_peer_id}));
 
                         } else {
-                            FLOG_DEBUG("Received subscribe message name: " << obj->nspace);
+                            FLOG_DEBUG("Received subscribe message name: " << obj->nspace << " source peer_id: " << obj->source_peer_id);
                         }
 
                         // Send subscribe to all peers toward the best publish intent peer(s)
@@ -394,19 +394,18 @@ namespace laps {
 
                         bool un_sub_all { false };
 
-                        if (obj->source_peer_id.compare(CLIENT_PEER_ID)) {
-                            // Indicate unsubscribe all peers if there are no clients/edge subs left
+                        if (! obj->source_peer_id.compare(CLIENT_PEER_ID)) {
                             FLOG_DEBUG("Received CMGR unsubscribe message name: " << obj->nspace);
 
                             std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
                               _subscriptions.find(obj->nspace);
 
-                            if (list.empty()) {
+                            if (list.empty() && _peer_sess_subscribe_recv.count(obj->nspace) == 0) {
                                 un_sub_all = true;
                             }
 
                         } else {
-                            FLOG_DEBUG("Received unsubscribe message name: " << obj->nspace);
+                            FLOG_DEBUG("Received unsubscribe message name: " << obj->nspace << " source peer_id: " << obj->source_peer_id);
 
                             // Only unsubscribe all peers if there are no other peers subscribed
                             auto it = _peer_sess_subscribe_recv.find(obj->nspace);
@@ -442,7 +441,7 @@ namespace laps {
 
                         FLOG_DEBUG("Received publish intent message name: " << obj->nspace
                                                                             << " origin: " << origin_peer_id
-                                                                            << " source: " << obj->source_peer_id);
+                                                                            << " source peer_id: " << obj->source_peer_id);
 
                         publishIntentPeers(obj->nspace, obj->source_peer_id, origin_peer_id);
 
@@ -459,7 +458,8 @@ namespace laps {
 
                         } else {
                             FLOG_DEBUG("Received publish intent done message name: " << obj->nspace
-                                                                                     << " origin: " << origin_peer_id);
+                                                                                     << " origin: " << origin_peer_id
+                                                                                     << " source peer_id: " << obj->source_peer_id);
                         }
 
                         publishIntentDonePeers(obj->nspace, obj->source_peer_id, origin_peer_id);
