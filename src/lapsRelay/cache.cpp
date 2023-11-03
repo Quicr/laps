@@ -33,7 +33,7 @@ void Cache::monitor_thread() {
   lock.unlock();
 
   while (not stop) {
-    std::this_thread::sleep_for(std::chrono::seconds(30));
+    std::this_thread::sleep_for(std::chrono::milliseconds(config.cache_expire_ms));
 
     uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
@@ -41,14 +41,14 @@ void Cache::monitor_thread() {
 
     for (const auto &entry : cacheBuffer) {
 
-      if (entry.second.size() > 0) {
+      if (not entry.second.empty()) {
         uint64_t ms;
         std::memcpy(&ms, entry.second.at(CACHE_INFO_NAME).at(0).data(), 8);
 
-        if (now_ms - ms > MAX_CACHE_MS_AGE) {
+        if (now_ms - ms > config.cache_expire_ms) {
             FLOG_DEBUG("cache i: " << entry.first << " time: " << ms
-                       << " is over max age " << (now_ms - ms) << " > "
-                       << MAX_CACHE_MS_AGE << ", purging cache");
+                       << " is over max ms age " << (now_ms - ms) << " > "
+                       << config.cache_expire_ms << ", purging cache");
 
             lock.lock();
 
