@@ -3,6 +3,7 @@
 #include <cantina/logger.h>
 #include <quicr/namespace.h>
 #include <quicr/quicr_common.h>
+#include <list>
 
 namespace laps {
     class Config
@@ -50,9 +51,12 @@ namespace laps {
         // Cache
         unsigned int cache_max_buffers;       /// Max number of cache buffers
         unsigned int cache_map_capacity;      /// Max capacity for cache map
+        unsigned int cache_expire_ms { 5000 };         /// Expire cache interval in milliseconds
 
         // constructor
         Config();
+
+        void print_help();
 
       private:
         /**
@@ -63,10 +67,12 @@ namespace laps {
         void init_logger();
 
         template<typename Value_t>
-        void env_value(Value_t& vtype, std::string&& var);
+        void env_value(Value_t& vtype, std::string&& var, std::string help_descr={}, std::string def_value={});
 
         void init_defaults();
         void cfg_from_env();
+
+        std::list<std::string> help_msg;
     };
 
 } // namespace laps

@@ -24,9 +24,18 @@ lapsVersion()
 }
 
 int
-main(int /* argc */, char*[] /* argv[] */)
+main(int argc,  char* argv[])
 {
     Config cfg;
+
+    if (argc > 1) {
+        std::string arg = argv[1];
+        if (arg.compare("-h") == 0 || arg.compare("help") == 0) {
+            cfg.print_help();
+            return 0;
+        }
+    }
+
     logger = std::make_shared<cantina::Logger>("MAIN", cfg.logger);
 
     FLOG_INFO("Starting LAPS Relay (version " << lapsVersion() << ")");
