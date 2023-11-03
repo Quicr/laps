@@ -400,8 +400,11 @@ namespace laps {
                             std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
                               _subscriptions.find(obj->nspace);
 
-                            if (list.empty() && _peer_sess_subscribe_recv.count(obj->nspace) == 0) {
-                                un_sub_all = true;
+                            if (list.empty()) { // No clients, now check received
+                                auto it = _peer_sess_subscribe_recv.find(obj->nspace);
+                                if (it == _peer_sess_subscribe_recv.end() || it->second.empty()) {
+                                    un_sub_all = true;
+                                }
                             }
 
                         } else {
@@ -415,6 +418,7 @@ namespace laps {
 
                                 if (it->second.empty()) {
                                     un_sub_all = true;
+                                    _peer_sess_subscribe_recv.erase(it);
                                 } else {
                                     un_sub_all = false;
                                 }
