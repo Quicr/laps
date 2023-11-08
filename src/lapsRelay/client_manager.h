@@ -23,7 +23,7 @@ namespace laps {
  */
 class ClientManager : public quicr::ServerDelegate, public std::enable_shared_from_this<ClientManager> {
   private:
-    ClientManager() = default;
+    ClientManager() = delete;
 
     ClientManager(const Config& cfg, Cache& cache,
                   ClientSubscriptions &subscriptions,

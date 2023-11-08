@@ -33,7 +33,7 @@ void Cache::monitor_thread() {
   lock.unlock();
 
   while (not stop) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(config.cache_expire_ms));
+    std::this_thread::sleep_for(std::chrono::milliseconds(480));
 
     uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())

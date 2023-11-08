@@ -80,7 +80,11 @@ namespace laps {
 
         env_value(cache_map_capacity, "LAPS_CACHE_MAP_CAPACITY", "Max number of objects in cache buffer", std::to_string(cache_map_capacity));
         env_value(cache_max_buffers, "LAPS_CACHE_MAX_BUFFERS", "Max number of buffers", std::to_string(cache_max_buffers));
+
         env_value(cache_expire_ms, "LAPS_CACHE_EXPIRE_MS", "Expire interval/age for cached objects", std::to_string(cache_expire_ms));
+        if (cache_expire_ms < 500) {
+            cache_expire_ms = 500;
+        }
 
         env_value(disable_dedup, "LAPS_DISABLE_DEDUP", "Disable deduplication detection", "false");
         env_value(disable_splithz, "LAPS_DISABLE_SPLITHZ", "Disable split horizon detection", "false");
