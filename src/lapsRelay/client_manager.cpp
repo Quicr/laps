@@ -150,7 +150,7 @@ void ClientManager::onSubscribe(
       .sendObjFunc = [&, subscriber_id]
                       (const quicr::messages::PublishDatagram& datagram) {
 
-        server->sendNamedObject(subscriber_id,false, 1,
+        server->sendNamedObject(subscriber_id,false, datagram.header.priority,
                                 config.time_queue_ttl_default, datagram);
       }
   };

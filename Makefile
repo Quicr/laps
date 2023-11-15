@@ -27,7 +27,7 @@ help: Makefile
 all: build
 
 build-prep: CMakeLists.txt
-	cmake -S . -B${BUILD_DIR} -DBUILD_TESTING=TRUE -DLAPS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+	cmake -S . -B${BUILD_DIR} -DBUILD_TESTING=TRUE -DLAPS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Debug
 
 ## build: Builds the project
 build: build-prep
