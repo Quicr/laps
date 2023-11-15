@@ -37,7 +37,8 @@ namespace laps {
             .time_queue_bucket_interval = 2,
             .time_queue_size_rx = _config.rx_queue_size,
             .debug = _config.debug,
-            .quic_cwin_minimum = static_cast<uint64_t>(_config.cwin_min_kb * 1024)
+            .quic_cwin_minimum = static_cast<uint64_t>(_config.cwin_min_kb * 1024),
+            .quic_wifi_shadow_rtt_us = _config.peer_config.wifi_shadow_rtt_us
         };
 
         _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, logger);
