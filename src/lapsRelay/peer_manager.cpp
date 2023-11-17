@@ -37,7 +37,8 @@ namespace laps {
             .time_queue_bucket_interval = 2,
             .time_queue_size_rx = _config.rx_queue_size,
             .debug = _config.debug,
-            .quic_cwin_minimum = static_cast<uint64_t>(_config.cwin_min_kb * 1024)
+            .quic_cwin_minimum = static_cast<uint64_t>(_config.cwin_min_kb * 1024),
+            .quic_wifi_shadow_rtt_us = _config.peer_config.wifi_shadow_rtt_us
         };
 
         _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, logger);
@@ -199,6 +200,8 @@ namespace laps {
                     sess->sendSubscribe(ns);
                     addSubscribedPeer(ns, peer_id);
                 }
+            } else {
+                FLOG_DEBUG("Subscription " << ns << " already sent, suppressing");
             }
         }
     }
@@ -234,11 +237,14 @@ namespace laps {
             sess->sendUnsubscribe(ns);
         }
 
-        for (auto& [sub_ns, peers] : _peer_sess_subscribe_sent) {
-            if (sub_ns != ns) {
-                continue;
+        auto peer_subs_ns = _peer_sess_subscribe_sent.find(ns);
+
+        if (peer_subs_ns != _peer_sess_subscribe_sent.end()) {
+            peer_subs_ns->second.erase(peer_id);
+
+            if (peer_subs_ns->second.size() == 0) {
+                _peer_sess_subscribe_sent.erase(peer_subs_ns);
             }
-            peers.erase(peer_id);
         }
     }
 
@@ -421,6 +427,8 @@ namespace laps {
                                     _peer_sess_subscribe_recv.erase(it);
                                 } else {
                                     un_sub_all = false;
+                                    logger->debug << "Peers " << it->second.size()
+                                                  << " still subscribed to " << obj->nspace << std::flush;
                                 }
 
                             } else {
@@ -467,6 +475,8 @@ namespace laps {
                         }
 
                         publishIntentDonePeers(obj->nspace, obj->source_peer_id, origin_peer_id);
+
+                        unSubscribePeer(obj->nspace, obj->source_peer_id);
 
                         break;
                     }
