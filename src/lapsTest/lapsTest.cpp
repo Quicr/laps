@@ -43,8 +43,6 @@ class subDelegate : public quicr::SubscriberDelegate
 
     void onSubscribedObject([[maybe_unused]] const quicr::Name& quicr_name,
                             [[maybe_unused]] uint8_t priority,
-                            [[maybe_unused]] uint16_t expiry_age_ms,
-                            [[maybe_unused]] bool use_reliable_transport,
                             [[maybe_unused]] quicr::bytes&& data) override
     {
         static uint64_t prev_sent_time = 0UL;
@@ -79,8 +77,6 @@ class subDelegate : public quicr::SubscriberDelegate
 
     void onSubscribedObjectFragment([[maybe_unused]] const quicr::Name& quicr_name,
                                     [[maybe_unused]] uint8_t priority,
-                                    [[maybe_unused]] uint16_t expiry_age_ms,
-                                    [[maybe_unused]] bool use_reliable_transport,
                                     [[maybe_unused]] const uint64_t& offset,
                                     [[maybe_unused]] bool is_last_fragment,
                                     [[maybe_unused]] quicr::bytes&& data) override
@@ -101,6 +97,8 @@ class pubDelegate : public quicr::PublisherDelegate
     void onPublishIntentResponse([[maybe_unused]] const quicr::Namespace& quicr_namespace,
                                  [[maybe_unused]] const quicr::PublishIntentResult& result) override
     {
+        std::cout << "GOT PUB INTENT RESPONSE" << std::endl;
+
         got_intent_response = true;
     }
 };
@@ -176,7 +174,7 @@ main(int argc, char* argv[])
 
         logger->Log("PublishIntent");
 
-        client.publishIntent(pd, nspace, {}, {}, {});
+        client.publishIntent(pd, nspace, {}, {}, {}, quicr::TransportMode::ReliablePerGroup);
 
         logger->Log("... waiting for publish intent response");
         while (!pd->got_intent_response) {
@@ -189,8 +187,6 @@ main(int argc, char* argv[])
 
         // do publish
         for (int count = 0; count < obj_count; count++) {
-            // std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
             uint64_t now = now_us();
 
             auto copy = data;
@@ -198,8 +194,7 @@ main(int argc, char* argv[])
             logger->info << "Publish " << name << " Time us: " << now
                          << std::flush;
 
-            client.publishNamedObject(name, 0, 1000, false, std::move(copy));
-            name += 1;
+            client.publishNamedObject(name++, 0, 1000, std::move(copy));
         }
 
         logger->info << "Publish done: " << name << " Time us: " << now_us()
@@ -223,7 +218,8 @@ main(int argc, char* argv[])
 
         quicr::SubscribeIntent intent = quicr::SubscribeIntent::immediate;
         quicr::bytes empty;
-        client.subscribe(sd, nspace, intent, "origin_url", false, "auth_token", std::move(empty));
+
+        client.subscribe(sd, nspace, intent, quicr::TransportMode::UsePublisher, "origin_url", "auth_token", std::move(empty));
 
         logger->Log("===> RUNNING, Press ENTER to unsubscribe <===");
         std::string line;

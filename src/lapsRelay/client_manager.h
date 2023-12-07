@@ -55,24 +55,22 @@ class ClientManager : public quicr::ServerDelegate, public std::enable_shared_fr
 
   void onPublishIntent(const quicr::Namespace &quicr_name,
                        const std::string &origin_url,
-                       bool use_reliable_transport,
                        const std::string &auth_token,
                        quicr::bytes &&e2e_token) override;
 
   void onPublishIntentEnd(const quicr::Namespace &quicr_namespace, const std::string &auth_token,
                           quicr::bytes &&e2e_token) override;
 
-  void onPublisherObject(const qtransport::TransportContextId &context_id,
-                         const qtransport::StreamId &stream_id,
-                         bool use_reliable_transport,
+  void onPublisherObject(const qtransport::TransportConnId& conn_id,
+                         const qtransport::DataContextId& data_ctx_id,
                          quicr::messages::PublishDatagram &&datagram) override;
 
   void onSubscribe(const quicr::Namespace &quicr_namespace,
                    const uint64_t& subscriber_id,
-                   const qtransport::TransportContextId &context_id,
-                   const qtransport::StreamId& stream_id,
+                   const qtransport::TransportConnId& conn_id,
+                   const qtransport::DataContextId& data_ctx_id,
                    const quicr::SubscribeIntent subscribe_intent,
-                   const std::string &origin_url, bool use_reliable_transport,
+                   const std::string &origin_url,
                    const std::string &auth_token, quicr::bytes &&data) override;
 
   void onUnsubscribe(const quicr::Namespace &quicr_namespace,

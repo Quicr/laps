@@ -59,7 +59,6 @@ void ClientManager::start() {
 
 void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     const std::string& /* origin_url */,
-                                    bool /* use_reliable_transport */,
                                     const std::string& /* auth_token */,
                                     quicr::bytes&& /* e2e_token */) {
 
@@ -86,9 +85,8 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
   }
 
 void ClientManager::onPublisherObject(
-    const qtransport::TransportContextId &context_id,
-    [[maybe_unused]] const qtransport::StreamId &stream_id,
-    bool /* use_reliable_transport */,
+    const qtransport::TransportConnId& conn_id,
+    [[maybe_unused]] const qtransport::DataContextId& data_ctx_id,
     quicr::messages::PublishDatagram &&datagram) {
 
   if (not config.disable_dedup &&
@@ -113,7 +111,7 @@ void ClientManager::onPublisherObject(
 
       if (not config.disable_splithz &&
           dest.second.client_mgr_id == client_mgr_id &&
-          dest.second.conn_id == context_id) {
+          dest.second.conn_id == conn_id) {
         continue;
       }
 
@@ -124,34 +122,31 @@ void ClientManager::onPublisherObject(
 
 void ClientManager::onSubscribe(
     const quicr::Namespace &quicr_namespace, const uint64_t& subscriber_id,
-    const qtransport::TransportContextId &context_id,
-    const qtransport::StreamId& stream_id,
+    const qtransport::TransportConnId& conn_id,
+    const qtransport::DataContextId& data_ctx_id,
     const quicr::SubscribeIntent /* subscribe_intent */,
-    const std::string & /* origin_url */, bool /* use_reliable_transport */,
+    const std::string & /* origin_url */,
     const std::string & /* auth_token */, quicr::bytes && /* data */) {
 
   const auto& existing_remote =
     subscribeList.getSubscribeRemote(quicr_namespace, client_mgr_id, subscriber_id);
 
   if (existing_remote.client_mgr_id != 0) {
-//    if (config.debug) {
-//        FLOG_DEBUG("duplicate onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id"
-//                                              << context_id << " stream_id: " << stream_id);
-//    }
+    // ignore duplicate
     return;
   }
 
-  FLOG_INFO("onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " context_id "
-                                      << context_id << " stream_id: " << stream_id);
+  FLOG_INFO("onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " conn_id "
+                                      << conn_id << " data_ctx_id: " << data_ctx_id);
 
   ClientSubscriptions::Remote remote = {
       .client_mgr_id = client_mgr_id,
       .subscribe_id = subscriber_id,
-      .conn_id = context_id,
+      .conn_id = conn_id,
       .sendObjFunc = [&, subscriber_id]
                       (const quicr::messages::PublishDatagram& datagram) {
 
-        server->sendNamedObject(subscriber_id,false, datagram.header.priority,
+        server->sendNamedObject(subscriber_id, datagram.header.priority,
                                 config.time_queue_ttl_default, datagram);
       }
   };

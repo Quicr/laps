@@ -9,7 +9,7 @@
 namespace laps {
 
     PeerSession::PeerSession(const bool is_inbound,
-                             const TransportContextId context_id,
+                             const TransportConnId conn_id,
                              const Config& cfg,
                              const TransportRemote& peer_remote,
                              safe_queue<PeerObject>& peer_queue,
@@ -22,7 +22,7 @@ namespace laps {
       , _subscriptions(subscriptions)
       , logger(std::make_shared<cantina::Logger>("PEER", cfg.logger))
       , _is_inbound(is_inbound)
-      , t_context_id(context_id)
+      , t_conn_id(conn_id)
     {
         peer_id = peer_config.host_or_ip;
         _use_reliable = _config.peer_config.use_reliable;
@@ -60,18 +60,20 @@ namespace laps {
                 _transport = nullptr;
 
             _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, logger);
-            t_context_id = _transport->start();
+            t_conn_id = _transport->start();
         }
 
-        // Create the datagram and control streams
-        dgram_stream_id = createStream(t_context_id, false);
-        control_stream_id = createStream(t_context_id, true);
+        // Create the datagram and control data contexts
+        dgram_data_ctx_id = createDataCtx(t_conn_id, false);
+        control_data_ctx_id = createDataCtx(t_conn_id, true, 0);
 
-        logger->info << "Control stream ID " << control_stream_id << std::flush;
+        logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
     }
 
-    StreamId PeerSession::createStream(TransportContextId context_id, bool use_reliable) {
-        return _transport->createStream(context_id, use_reliable);
+    DataContextId PeerSession::createDataCtx(const TransportConnId conn_id,
+                                             const bool use_reliable,
+                                             const uint8_t priority) {
+        return _transport->createDataContext(conn_id, use_reliable, priority);
     }
 
     void PeerSession::publishObject(const messages::PublishDatagram& obj) {
@@ -81,19 +83,19 @@ namespace laps {
             //FLOG_DEBUG("Sending published object for name: " << obj.header.name);
             messages::MessageBuffer mb;
             mb << obj;
-            _transport->enqueue(t_context_id, iter->second, mb.take(), obj.header.priority);
+            _transport->enqueue(t_conn_id, iter->second, mb.take(), obj.header.priority);
         }
     }
 
     void PeerSession::addSubscription(const Namespace& ns)
     {
         if (_use_reliable) {
-            auto stream_id = createStream(t_context_id, true);
+            auto data_ctx_id = createDataCtx(t_conn_id, true, 2);
 
-            _subscribed.try_emplace(ns, stream_id);
+            _subscribed.try_emplace(ns, data_ctx_id);
 
         } else {
-            _subscribed.try_emplace(ns, dgram_stream_id);
+            _subscribed.try_emplace(ns, dgram_data_ctx_id);
         }
     }
 
@@ -103,7 +105,7 @@ namespace laps {
             FLOG_DEBUG("Removing subscription " << ns << " from peer " << peer_id);
 
             if (_config.peer_config.use_reliable && iter->second)
-                _transport->closeStream(t_context_id, iter->second);
+                _transport->deleteDataContext(t_conn_id, iter->second);
 
             _subscribed.erase(iter);
         }
@@ -129,7 +131,7 @@ namespace laps {
         std::memcpy(buf.data(), &msg, sizeof(msg));
         std::memcpy(buf.data() + sizeof(msg), ns_array.data(), ns_array.size());
 
-        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+        _transport->enqueue(t_conn_id, control_data_ctx_id, std::move(buf));
     }
 
     void PeerSession::sendUnsubscribe(const Namespace& ns)
@@ -149,7 +151,7 @@ namespace laps {
             std::memcpy(buf.data(), &msg, sizeof(msg));
             std::memcpy(buf.data() + sizeof(msg), ns_array.data(), ns_array.size());
 
-            _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+            _transport->enqueue(t_conn_id, control_data_ctx_id, std::move(buf));
 
             removeSubscription(ns);
         }
@@ -167,7 +169,7 @@ namespace laps {
         std::memcpy(buf.data(), &c_msg, sizeof(c_msg));
         std::memcpy(buf.data() + sizeof(c_msg), _config.peer_config.id.data(), _config.peer_config.id.length());
 
-        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+        _transport->enqueue(t_conn_id, control_data_ctx_id, std::move(buf));
     }
 
     void PeerSession::sendConnectOk()
@@ -182,7 +184,7 @@ namespace laps {
         std::memcpy(buf.data() + sizeof(cok_msg),
                     _config.peer_config.id.data(), _config.peer_config.id.length());
 
-        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+        _transport->enqueue(t_conn_id, control_data_ctx_id, std::move(buf));
     }
 
     void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
@@ -211,7 +213,7 @@ namespace laps {
         std::memcpy(buf.data() + sizeof(msg), origin_peer_id.data(), origin_peer_id.length());
         std::memcpy(buf.data() + sizeof(msg) + msg.origin_id_len,ns_array.data(), ns_array.size());
 
-        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+        _transport->enqueue(t_conn_id, control_data_ctx_id, std::move(buf));
     }
 
     void PeerSession::sendPublishIntentDone(const Namespace& ns, const peer_id_t& origin_peer_id)
@@ -233,20 +235,20 @@ namespace laps {
         std::memcpy(buf.data() + sizeof(msg), origin_peer_id.data(), origin_peer_id.length());
         std::memcpy(buf.data() + sizeof(msg) + msg.origin_id_len,ns_array.data(), ns_array.size());
 
-        _transport->enqueue(t_context_id, control_stream_id, std::move(buf));
+        _transport->enqueue(t_conn_id, control_data_ctx_id, std::move(buf));
     }
 
 
     /*
      * Delegate Implementations
      */
-    void PeerSession::on_connection_status(const TransportContextId& context_id, const TransportStatus status) {
+    void PeerSession::on_connection_status(const TransportConnId& conn_id, const TransportStatus status) {
 
         switch (status) {
             case TransportStatus::Ready: {
                 _status = Status::CONNECTED;
 
-                FLOG_INFO("Peer context_id " << context_id << " is ready, sending connect message");
+                FLOG_INFO("Peer conn_id " << conn_id << " is ready, sending connect message");
 
                 sendConnect();
 
@@ -256,22 +258,32 @@ namespace laps {
             case TransportStatus::Disconnected: {
                 _status = Status::DISCONNECTED;
 
-                FLOG_INFO("Peer context_id " << context_id << " is disconnected");
+                FLOG_INFO("Peer conn_id " << conn_id << " is disconnected");
 
-                // No need to close streams when connection is closed/disconnected
+                // No need to close data contexts when connection is closed/disconnected
                 _subscribed.clear();
                 break;
             }
+
+            case TransportStatus::Connecting:
+                break;
+            case TransportStatus::RemoteRequestClose:
+                break;
+            case TransportStatus::Shutdown:
+                break;
         }
     }
 
-    void PeerSession::on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) {
+    void PeerSession::on_new_connection(const TransportConnId& conn_id, const TransportRemote& remote) {
         // Not used for outgoing connections. Incoming connections are handled by the server delegate
     }
 
-    void PeerSession::on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) {
+    void PeerSession::on_recv_notify(const TransportConnId& conn_id,
+                                     const DataContextId& data_ctx_id,
+                                     [[maybe_unused]] const bool is_bidir) {
+
         for (int i = 0; i < 100; i++) {
-            if (auto data = _transport->dequeue(context_id, streamId)) {
+            if (auto data = _transport->dequeue(conn_id, data_ctx_id)) {
                 try {
                     auto msg_type = static_cast<messages::MessageType>(data->front());
                     messages::MessageBuffer msg_buffer{ data.value() };

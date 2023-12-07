@@ -222,7 +222,7 @@ The below is example output showing the peering connection established.
 2023-09-06T13:05:05.469752 [INFO] [PEER] [QUIC] Connecting to server relay.us-west-2.quicr.ctgpoc.com:33438
 2023-09-06T13:05:05.471123 [INFO] [PEER] [QUIC] Starting transport callback notifier thread
 2023-09-06T13:05:05.641780 [INFO] [CMGR] Starting client manager id 33435
-2023-09-06T13:05:05.642730 [INFO] [PEER] [QUIC] Thread client packet loop for client context_id: 367839281328
+2023-09-06T13:05:05.642730 [INFO] [PEER] [QUIC] Thread client packet loop for client conn_id: 367839281328
 2023-09-06T13:05:05.645660 [INFO] [CMGR] [QSES] [QUIC] Starting server, listening on 127.0.0.1:33435
 2023-09-06T13:05:05.646140 [INFO] [CMGR] [QSES] [QUIC] Starting transport callback notifier thread
 2023-09-06T13:05:05.646332 [INFO] [CMGR] [QSES] Waiting for server to be ready
@@ -231,7 +231,7 @@ The below is example output showing the peering connection established.
 2023-09-06T13:05:05.647493 [DEBUG] [CMGR] [QSES] [QUIC] Loop got cb_mode: packet_loop_port_update
 2023-09-06T13:05:05.647278 [DEBUG] [PEER] [QUIC] Loop got cb_mode: packet_loop_port_update
 2023-09-06T13:05:05.672293 [DEBUG] [PEER] [QUIC] Got event 9
-2023-09-06T13:05:05.697336 [INFO] [PEER] [QUIC] Connection established to server 35.89.146.164 stream_id: 0
-2023-09-06T13:05:05.697694 [INFO] [PEER] on_connection_status: Peer context_id 367839281328 is ready, sending connect message
+2023-09-06T13:05:05.697336 [INFO] [PEER] [QUIC] Connection established to server 35.89.146.164 current_stream_id: 0
+2023-09-06T13:05:05.697694 [INFO] [PEER] on_connection_status: Peer conn_id 367839281328 is ready, sending connect message
 2023-09-06T13:05:05.722637 [INFO] [PEER] on_recv_notify: Received peer connect OK message from ff8df452105a
 ```

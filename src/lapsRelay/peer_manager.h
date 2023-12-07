@@ -58,10 +58,12 @@ namespace laps {
         /*
          * Delegate functions for Incoming (e.g., server side)
          */
-        void on_connection_status(const TransportContextId& context_id, const TransportStatus status) override;
-        void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;
-        void on_new_stream(const TransportContextId& context_id, const StreamId& streamId) override {}
-        void on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) override;
+        void on_new_data_context(const TransportConnId& conn_id,
+                                 const DataContextId& data_ctx_id) override {}
+        void on_connection_status(const TransportConnId& conn_id, const TransportStatus status) override;
+        void on_new_connection(const TransportConnId& conn_id, const TransportRemote& remote) override;
+        void on_recv_notify(const TransportConnId& conn_id,
+                            const DataContextId& data_ctx_id, const bool is_bidir) override;
 
       private:
 
@@ -175,7 +177,7 @@ namespace laps {
 
 
         /// Peer sessions that are accepted by the server
-        std::map<TransportContextId , PeerSession> _server_peer_sessions;
+        std::map<TransportConnId, PeerSession> _server_peer_sessions;
 
 
         std::vector<PeerSession> _client_peer_sessions;          /// Peer sessions that are initiated by the peer manager

@@ -73,7 +73,7 @@ namespace laps {
          * @brief Constructor to create a new peer session
          *
          * @param is_inbound                True indicates the peering session is inbound (server accepted)
-         * @param context_id                Context ID from the transport for the connection
+         * @param conn_id                   Connection ID from the transport for the connection
          * @param cfg                       Global config
          * @param peer_remote               Transport remote peer config/parameters
          * @param peer_queue                Shared peer queue used by all peers
@@ -81,7 +81,7 @@ namespace laps {
          * @param subscriptions             Client/edge subscriptions
          */
         PeerSession(const bool is_inbound,
-                    const TransportContextId context_id,
+                    const TransportConnId conn_id,
                     const Config& cfg,
                     const TransportRemote& peer_remote,
                     safe_queue<PeerObject>& peer_queue,
@@ -117,14 +117,16 @@ namespace laps {
           }
 
         /**
-         * @brief Wrapper method to transport createStream()
+         * @brief Wrapper method to transport createDataContext()
          *
-         * @param context_id            Transport context ID
-         * @param use_reliable          Indicates if datagram or streams should be used
+         * @param conn_id            Transport connection context ID
+         * @param use_reliable       Indicates if datagram or streams should be used
          *
-         * @return Stream Id of the newly created stream
+         * @return Data context Id of the newly created data flow
          */
-        StreamId createStream(TransportContextId context_id, bool use_reliable);
+          DataContextId createDataCtx(const TransportConnId conn_id,
+                                      const bool use_reliable,
+                                      const uint8_t priority=1);
 
         /**
          * @brief Send/publish object to peers
@@ -158,10 +160,12 @@ namespace laps {
         /*
          * Delegate functions mainly for Outgoing but does include incoming
          */
-        void on_connection_status(const TransportContextId& context_id, const TransportStatus status) override;
-        void on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) override;
-        void on_new_stream(const TransportContextId& context_id, const StreamId& streamId) override {}
-        void on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) override;
+        void on_new_data_context(const TransportConnId& conn_id,
+                                 const DataContextId& data_ctx_id) override {}
+        void on_connection_status(const TransportConnId& conn_id, const TransportStatus status) override;
+        void on_new_connection(const TransportConnId& conn_id, const TransportRemote& remote) override;
+        void on_recv_notify(const TransportConnId& conn_id,
+                            const DataContextId& data_ctx_id, const bool is_bidir) override;
 
       private:
         void sendConnect();
@@ -204,14 +208,14 @@ namespace laps {
             .quic_wifi_shadow_rtt_us = _config.peer_config.wifi_shadow_rtt_us
         };
 
-        TransportContextId t_context_id;              /// Transport context ID
-        StreamId           dgram_stream_id;           /// Datagram stream ID
-        StreamId           control_stream_id;         /// Control stream ID
+        TransportConnId t_conn_id;                   /// Transport connection context ID
+        DataContextId dgram_data_ctx_id;             /// Datagram data context ID
+        DataContextId control_data_ctx_id;           /// Control data context ID
 
-        std::shared_ptr<ITransport> _transport;       /// Transport used for the peering connection
+        std::shared_ptr<ITransport> _transport;      /// Transport used for the peering connection
 
-        namespace_map<StreamId> _subscribed;          /// Subscribed namespace and associated stream id
-        namespace_map<peer_id_t> _publish_intents;    /// Publish intents sent to the peer
+        namespace_map<DataContextId> _subscribed;    /// Subscribed namespace and associated data ctx id
+        namespace_map<peer_id_t> _publish_intents;   /// Publish intents sent to the peer
     };
 
 } // namespace laps

@@ -488,9 +488,9 @@ namespace laps {
     /*
      * Delegate Implementations
      */
-    void PeerManager::on_connection_status(const TransportContextId& context_id, const TransportStatus status) {
+    void PeerManager::on_connection_status(const TransportConnId& conn_id, const TransportStatus status) {
 
-        auto peer_iter = _server_peer_sessions.find(context_id);
+        auto peer_iter = _server_peer_sessions.find(conn_id);
 
         switch (status) {
             case TransportStatus::Ready: {
@@ -502,7 +502,7 @@ namespace laps {
                 if (peer_iter == _server_peer_sessions.end())
                     break;
 
-                FLOG_INFO("Peer context_id: " << context_id << " is disconnected, closing peer connection");
+                FLOG_INFO("Peer conn_id: " << conn_id << " is disconnected, closing peer connection");
 
                 _server_peer_sessions.erase(peer_iter);
             }
@@ -512,16 +512,16 @@ namespace laps {
         }
     }
 
-    void PeerManager::on_new_connection(const TransportContextId& context_id, const TransportRemote& remote) {
-        auto peer_iter = _server_peer_sessions.find(context_id);
+    void PeerManager::on_new_connection(const TransportConnId& conn_id, const TransportRemote& remote) {
+        auto peer_iter = _server_peer_sessions.find(conn_id);
 
         if (peer_iter == _server_peer_sessions.end()) {
-            FLOG_INFO("New server accepted peer, context_id: " << context_id);
+            FLOG_INFO("New server accepted peer, conn_id: " << conn_id);
 
             TransportRemote peer = remote;
-            auto [iter, inserted] = _server_peer_sessions.try_emplace(context_id,
-                                                                      true,
-                                                                      context_id,
+            auto [iter, inserted] = _server_peer_sessions.try_emplace(
+              conn_id,
+                                                                      true, conn_id,
                                                                       _config,
                                                                       std::move(peer),
                                                                       _peer_queue,
@@ -532,7 +532,7 @@ namespace laps {
 
             auto& peer_sess = peer_iter->second;
 
-            FLOG_INFO("Peer context_id: " << context_id << " is ready, creating datagram and control streams");
+            FLOG_INFO("Peer conn_id: " << conn_id << " is ready, creating datagram and control stream");
 
             peer_sess.setTransport(_server_transport);
             peer_sess.connect();
@@ -547,11 +547,12 @@ namespace laps {
 
     }
 
-    void PeerManager::on_recv_notify(const TransportContextId& context_id, const StreamId& streamId) {
-        auto peer_iter = _server_peer_sessions.find(context_id);
+    void PeerManager::on_recv_notify(const TransportConnId& conn_id,
+                                     const DataContextId& data_ctx_id, const bool is_bidir) {
+        auto peer_iter = _server_peer_sessions.find(conn_id);
 
         if (peer_iter != _server_peer_sessions.end()) {
-            peer_iter->second.on_recv_notify(context_id, streamId);
+            peer_iter->second.on_recv_notify(conn_id, data_ctx_id, is_bidir);
         }
     }
 
