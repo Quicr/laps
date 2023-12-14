@@ -28,7 +28,7 @@ namespace laps {
         disable_dedup = false;
 
         peer_config.listen_port = client_config.listen_port + 3;
-        peer_config.peer_port = peer_config.listen_port + 3;
+        peer_config.peer_port = client_config.listen_port + 3;
         peer_config.bind_addr = client_config.bind_addr;
         peer_config.protocol = client_config.protocol;
         peer_config.latitude = 0;
@@ -95,7 +95,13 @@ namespace laps {
 
         env_value(peer_config.id, "LAPS_PEER_ID", "Local peer ID, must be unique", peer_config.id);
         env_value(peer_config.peer_port , "LAPS_PEER_PORT", "Peer connect port", std::to_string(peer_config.peer_port));
+
         env_value(peer_config.listen_port , "LAPS_PEER_LISTEN_PORT", "Peer listening port", std::to_string(peer_config.listen_port));
+
+        peer_config.listen_port = client_config.listen_port + 3;
+        peer_config.peer_port = client_config.listen_port + 3;
+
+
         env_value(peer_config.peers, "LAPS_PEERS", "Space or comma delimited peer IP or hostnames");
         env_value(peer_config.use_reliable, "LAPS_PEER_RELIABLE", "Peer connections use reliable transport", "true");
         env_value(peer_config.wifi_shadow_rtt_us, "LAPS_PEER_SHADOW_RTT_US", "QUIC shadow RTT microseconds", std::to_string(peer_config.wifi_shadow_rtt_us));
