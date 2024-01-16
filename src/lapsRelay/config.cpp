@@ -92,12 +92,11 @@ namespace laps {
         env_value(cwin_min_kb, "LAPS_CWIN_MIN_KB", "Congestion control window minimum size", std::to_string(cwin_min_kb));
         env_value(client_wifi_shadow_rtt_us, "LAPS_CLIENT_SHADOW_RTT_US", "QUIC shadow RTT microseconds", std::to_string(client_wifi_shadow_rtt_us));
 
+        peer_config.listen_port = client_config.listen_port + 3;
+        peer_config.peer_port = client_config.listen_port + 3;
 
         env_value(peer_config.id, "LAPS_PEER_ID", "Local peer ID, must be unique", peer_config.id);
         env_value(peer_config.listen_port , "LAPS_PEER_LISTEN_PORT", "Peer listening port", std::to_string(peer_config.listen_port));
-
-        peer_config.listen_port = client_config.listen_port + 3;
-        peer_config.peer_port = client_config.listen_port + 3;
 
         env_value(peer_config.peer_port , "LAPS_PEER_PORT", "Peer connect port", std::to_string(peer_config.peer_port));
 
