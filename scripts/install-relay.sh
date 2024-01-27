@@ -26,6 +26,10 @@ LAPS_UNIT_SERVICE=$(cat << END_LAPS_UNIT_SERVICE
 [Unit]
 Description=Latency Aware Publish Subscriber (LAPS) relay
 Documentation=https://github.com/quicr/laps
+Wants=network-online.target
+After=network.target
+Requires=network-online.target
+
 
 [Service]
 Type=simple
@@ -44,7 +48,7 @@ Environment="LAPS_CWIN_MIN_KB=4"
 Environment="LAPS_DEBUG=1"
 Environment="LAPS_PEERS=relay.us-west-2.quicr.ctgpoc.com"
 Environment="LAPS_PEER_PORT=33439"
-Environment="LAPS_PEER_ID=tievens-pi"
+Environment="LAPS_PEER_ID=$(hostname)-$(hostid)"
 
 #User=pi
 
@@ -69,6 +73,9 @@ update_systemd_unit_service() {
   sudo rm -f /tmp/laps-service.tmp
   echo "$LAPS_UNIT_SERVICE" > /tmp/laps-service.tmp
   sudo mv -f /tmp/laps-service.tmp $LAPS_UNIT_SERVICE_FILE
+
+  sudo systemctl enable laps.service
+
   sudo systemctl daemon-reload
 }
 
