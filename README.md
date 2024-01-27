@@ -114,9 +114,9 @@ make publish-image
 
 ---
 ## Build Raspberry PI Image
-The current build supports Raspberry Pi **Debian Lite Bullseye image.   
+The current build supports Raspberry Pi **Debian Lite Bullseye for Raspberry Pi 3 and Bookworm for Raspberry Pi 4.    
 
-### (1) Install 64bit OS Lite Debian Bullseye image 
+### (1) Install 64bit OS Lite Debian Bullseye (pi 3) or Bookworm (pi 4) image 
 Follow the PI imager instructions at https://www.raspberrypi.com/software/ to install base image. 
 
 ### (2) Install/Load the image on Raspberry Pi SD card
@@ -131,12 +131,13 @@ Remove the Pi SD card and put it into a reader that you can use to copy the imag
 1. Power off your existing raspberry Pi and eject the SD card
 2. Connect the SD card to laptop/desktop
 3. Run **"Raspberry Pi Imager"**
+4. Click "CHOOSE DEVICE" and select your Raspberry Pi version of 3, 4 or 5"
 4. Click "CHOOSE OS"
 5. In popup, select "**Raspberry Pi OS (other)**"
 6. Scroll down to and select on "**Raspberry Pi OS Lite (64-bit)**"
 7. Clock on "CHOOSE STORAGE"
 8. Click in the bottom right settings icon
-   1. Select and set the hostname you want to use
+   1. Select and set the **hostname** to something unique to you
    2. Select "Enable SSH"
    3. Select "Use password authentication"
    4. Select and set username and password
@@ -150,9 +151,9 @@ Remove the Pi SD card and put it into a reader that you can use to copy the imag
 
 > [!NOTE]
 > The raspberry Pi will use DHCP to get an IP address via the wired connection. 
-> MDNS can be used to access the device using the **hostname** you configured
-> in **step 8(i)**.  For example, my hostname is set to "raspberrypi" using
-> the mdns name `ssh pi@raspberrypi.local`
+> MDNS can be used to access the device using the **hostname** you configured.
+> For example, my hostname is set to "tievens-pi" using
+> the mdns name `ssh pi@tievens-pi.local`
  
 
 ### (3) Create binary
@@ -163,7 +164,7 @@ You will need docker installed to run the below.
 make image-pi
 ```
 
-### (4) Copy the binary to Pi
+### (4) Copy the latest install-relay.sh script and binary to Pi
 
 The binary will be created as `./build-pi/lapsRelay`
 
@@ -173,65 +174,51 @@ Copy the image:
 scp ./build-pi/lapsRelay <user>@<ip or hostname.local>:
 ```
 
-### (5) Create Certificate
-This step is only needed to be done once.
-
-SSH to raspberry Pi and run the below:
+Copy the `install-relay.sh` script:
 
 ```
-openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
-    -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.quicr.ctgpoc.com" \
-    -keyout server-key.pem -out server-cert.pem
+scp ./scripts/install-relay.sh <user>@<ip or hostname.local>:
 ```
 
-### (6) Run Relay
+### (5) Run the install-relay script
+The install-relay script will install or upgrade existing laps relay. 
 
-SSH to raspberry Pi and run the below:
+> [!NOTE]
+> You will be prompted for your password to run `sudo` comments.
 
-> [!IMPORTANT]
-> Cut/paste the below lines at once. They are a single command with the environment variables set. 
-
-```
-LAPS_PEERS=relay.us-west-2.quicr.ctgpoc.com \
-LAPS_PEER_PORT=33438 \
-LAPS_PEER_LISTEN_PORT=33439 \
-LAPS_PEER_RELIABLE=1 \
-LAPS_DISABLE_SPLITHZ=1 \
-LAPS_DISABLE_DEDUP=1 \
-LAPS_DEBUG=1 \
-   ./lapsRelay
-```
-
-The below is example output showing the peering connection established. 
 
 ```
-2023-09-06T13:05:05.446253 [INFO] [MAIN] main: Starting LAPS Relay (version 0.1.40)
-2023-09-06T13:05:05.447533 [INFO] [CMGR] Starting client manager id 33434
-2023-09-06T13:05:05.448515 [INFO] [CACHE] Running cache monitor thread
-2023-09-06T13:05:05.449103 [INFO] [CMGR] [QSES] [UDP] connect_server: port: 33434 fd: 3
-2023-09-06T13:05:05.450885 [INFO] [CMGR] [QSES] [UDP] Starting transport writer thread
-2023-09-06T13:05:05.450956 [INFO] [CMGR] [QSES] [UDP] Starting transport reader thread
-2023-09-06T13:05:05.453151 [INFO] [PMGR] PeerQueueThread: Running peer manager queue receive thread
-2023-09-06T13:05:05.453922 [INFO] [PMGR] PeerManager: Peering manager ID: raspberrypi
-2023-09-06T13:05:05.456542 [INFO] [PMGR] watchThread: Running peer manager outbound peer connection thread
-2023-09-06T13:05:05.462768 [INFO] [PMGR] [QUIC] Starting server, listening on 127.0.0.1:33439
-2023-09-06T13:05:05.462908 [INFO] [PMGR] [QUIC] Starting transport callback notifier thread
-2023-09-06T13:05:05.465205 [INFO] [PEER] PeerSession: Starting peer session
-2023-09-06T13:05:05.466288 [INFO] [PMGR] [QUIC] Loop got cb_mode: packet_loop_ready, waiting for packets
-2023-09-06T13:05:05.466642 [DEBUG] [PMGR] [QUIC] Loop got cb_mode: packet_loop_port_update
-2023-09-06T13:05:05.469752 [INFO] [PEER] [QUIC] Connecting to server relay.us-west-2.quicr.ctgpoc.com:33438
-2023-09-06T13:05:05.471123 [INFO] [PEER] [QUIC] Starting transport callback notifier thread
-2023-09-06T13:05:05.641780 [INFO] [CMGR] Starting client manager id 33435
-2023-09-06T13:05:05.642730 [INFO] [PEER] [QUIC] Thread client packet loop for client conn_id: 367839281328
-2023-09-06T13:05:05.645660 [INFO] [CMGR] [QSES] [QUIC] Starting server, listening on 127.0.0.1:33435
-2023-09-06T13:05:05.646140 [INFO] [CMGR] [QSES] [QUIC] Starting transport callback notifier thread
-2023-09-06T13:05:05.646332 [INFO] [CMGR] [QSES] Waiting for server to be ready
-2023-09-06T13:05:05.645672 [INFO] [PEER] [QUIC] Loop got cb_mode: packet_loop_ready, waiting for packets
-2023-09-06T13:05:05.647269 [INFO] [CMGR] [QSES] [QUIC] Loop got cb_mode: packet_loop_ready, waiting for packets
-2023-09-06T13:05:05.647493 [DEBUG] [CMGR] [QSES] [QUIC] Loop got cb_mode: packet_loop_port_update
-2023-09-06T13:05:05.647278 [DEBUG] [PEER] [QUIC] Loop got cb_mode: packet_loop_port_update
-2023-09-06T13:05:05.672293 [DEBUG] [PEER] [QUIC] Got event 9
-2023-09-06T13:05:05.697336 [INFO] [PEER] [QUIC] Connection established to server 35.89.146.164 current_stream_id: 0
-2023-09-06T13:05:05.697694 [INFO] [PEER] on_connection_status: Peer conn_id 367839281328 is ready, sending connect message
-2023-09-06T13:05:05.722637 [INFO] [PEER] on_recv_notify: Received peer connect OK message from ff8df452105a
+bash ~/install-relay.sh
+```
+
+Example:
+
+```
+tim@raspberrypi:~ $ bash install-relay.sh
+Shutting down lapsRelay
+Updating systemd unit file /etc/systemd/system/laps.service
+Copying ~/lapsRelay to /usr/local/laps/lapsRelay
+● laps.service - Latency Aware Publish Subscriber (LAPS) relay
+     Loaded: loaded (/etc/systemd/system/laps.service; disabled; vendor preset: enabled)
+     Active: active (running) since Fri 2024-01-26 16:20:12 PST; 101ms ago
+       Docs: https://github.com/quicr/laps
+   Main PID: 147676 (lapsRelay)
+      Tasks: 12 (limit: 779)
+        CPU: 50ms
+     CGroup: /system.slice/laps.service
+             └─147676 /usr/local/laps/lapsRelay
+
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.669225 [DEBUG] [PMGR] [QUIC] packet_loop_port_update
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.670094 [INFO] [PMGR] [QUIC] Starting transport callback notifier thread
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.676149 [INFO] [PEER] [QUIC] Setting idle timeout to 30000ms
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.676290 [INFO] [PEER] [QUIC] Setting wifi shadow RTT to 1us
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.677026 [INFO] [PEER] [QUIC] Connecting to server relay.us-west-2.quicr.ctgpoc.com:33439
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.677423 [INFO] [PEER] [QUIC] Starting transport callback notifier thread
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.745799 [INFO] [PEER] [QUIC] Created new connection context for conn_id: 367620619648
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.746410 [INFO] [PEER] [QUIC] conn_id: 367620619648 data_ctx_id: 1 create new stream with stream_id: 6
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.746557 [INFO] [PEER] Control stream ID 1
+Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.746769 [INFO] [CMGR] Starting client manager id 33435
+
+RUN 'systemctl status laps.service' to get status of service
+RUN 'journalctl -u laps.service -f' to tail laps relay log
 ```
