@@ -44,7 +44,7 @@ namespace laps {
         cache_max_buffers = 10;
         data_queue_size = 500;
         time_queue_ttl_default = 200;
-        rx_queue_size = 1000;
+        rx_queue_size = 200;
 
         help_msg.push_back("lapsRelay [help|-h]\n");
         help_msg.push_back("Environment Variables:");

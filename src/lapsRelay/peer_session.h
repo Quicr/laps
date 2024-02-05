@@ -202,7 +202,7 @@ namespace laps {
             .time_queue_init_queue_size = _config.data_queue_size,
             .time_queue_max_duration = 1000,
             .time_queue_bucket_interval = 2,
-            .time_queue_size_rx = _config.rx_queue_size,
+            .time_queue_rx_size = _config.rx_queue_size,
             .debug = _config.debug,
             .quic_cwin_minimum = static_cast<uint64_t>(_config.cwin_min_kb * 1024),
             .quic_wifi_shadow_rtt_us = _config.peer_config.wifi_shadow_rtt_us

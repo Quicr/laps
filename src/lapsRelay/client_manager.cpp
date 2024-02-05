@@ -44,6 +44,7 @@ void ClientManager::start() {
   qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : config.tls_cert_filename.c_str(),
                                     .tls_key_filename = config.tls_cert_filename.empty() ? NULL : config.tls_key_filename.c_str(),
                                     .time_queue_init_queue_size = config.data_queue_size,
+                                    .time_queue_rx_size = config.rx_queue_size,
                                     .debug = config.debug,
                                     .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024),
                                     .quic_wifi_shadow_rtt_us = config.client_wifi_shadow_rtt_us };
