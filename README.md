@@ -174,6 +174,11 @@ Copy the image:
 scp ./build-pi/lapsRelay <user>@<ip or hostname.local>:
 ```
 
+> [!IMPORTANT]
+> Before or after copying the **install-relay.sh** script, you **SHOULD**
+> edit the file and update the `Environment=<var=value>` lines based on your config/deployment.
+> The defaults should work, but you might need to update them. 
+
 Copy the `install-relay.sh` script:
 
 ```
