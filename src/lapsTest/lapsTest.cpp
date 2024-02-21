@@ -194,7 +194,12 @@ main(int argc, char* argv[])
             logger->info << "Publish " << name << " Time us: " << now
                          << std::flush;
 
-            client.publishNamedObject(name++, 0, 1000, std::move(copy));
+            std::vector<qtransport::MethodTraceItem> trace;
+            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+
+            trace.push_back({"client:publish", start_time});
+
+            client.publishNamedObject(name++, 0, 1000, std::move(copy), std::move(trace));
         }
 
         logger->info << "Publish done: " << name << " Time us: " << now_us()

@@ -73,9 +73,16 @@ class ClientManager : public quicr::ServerDelegate, public std::enable_shared_fr
                    const std::string &origin_url,
                    const std::string &auth_token, quicr::bytes &&data) override;
 
+  void onSubscribePause(const quicr::Namespace& quicr_namespace,
+                        const uint64_t subscriber_id,
+                        const qtransport::TransportConnId conn_id,
+                        const qtransport::DataContextId data_ctx_id,
+                        const bool pause) override;
+
   void onUnsubscribe(const quicr::Namespace &quicr_namespace,
                      const uint64_t &subscriber_id,
                      const std::string &auth_token) override;
+
 
 private:
   cantina::LoggerPointer logger;

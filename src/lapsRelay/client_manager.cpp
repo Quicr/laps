@@ -46,8 +46,7 @@ void ClientManager::start() {
                                     .time_queue_init_queue_size = config.data_queue_size,
                                     .time_queue_rx_size = config.rx_queue_size,
                                     .debug = config.debug,
-                                    .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024),
-                                    .quic_wifi_shadow_rtt_us = config.client_wifi_shadow_rtt_us };
+                                    .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024) };
 
   logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
 
@@ -119,6 +118,19 @@ void ClientManager::onPublisherObject(
       dest.second.sendObjFunc(datagram);
     }
   }
+}
+
+void ClientManager::onSubscribePause(const quicr::Namespace& quicr_namespace,
+                      const uint64_t subscriber_id,
+                      const qtransport::TransportConnId conn_id,
+                      const qtransport::DataContextId data_ctx_id,
+                      const bool pause) {
+
+  FLOG_INFO("onSubscribe " << (pause ? "Pause" : "Resume")
+                           << " namespace: " << quicr_namespace
+                           << " subscriber_id: " << subscriber_id
+                           << " conn_id " << conn_id
+                           << " data_ctx_id: " << data_ctx_id);
 }
 
 void ClientManager::onSubscribe(

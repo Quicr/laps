@@ -90,7 +90,6 @@ namespace laps {
         env_value(disable_splithz, "LAPS_DISABLE_SPLITHZ", "Disable split horizon detection", "false");
 
         env_value(cwin_min_kb, "LAPS_CWIN_MIN_KB", "Congestion control window minimum size", std::to_string(cwin_min_kb));
-        env_value(client_wifi_shadow_rtt_us, "LAPS_CLIENT_SHADOW_RTT_US", "QUIC shadow RTT microseconds", std::to_string(client_wifi_shadow_rtt_us));
 
         peer_config.listen_port = client_config.listen_port + 3;
         peer_config.peer_port = client_config.listen_port + 3;
@@ -103,7 +102,6 @@ namespace laps {
 
         env_value(peer_config.peers, "LAPS_PEERS", "Space or comma delimited peer IP or hostnames");
         env_value(peer_config.use_reliable, "LAPS_PEER_RELIABLE", "Peer connections use reliable transport", "true");
-        env_value(peer_config.wifi_shadow_rtt_us, "LAPS_PEER_SHADOW_RTT_US", "QUIC shadow RTT microseconds", std::to_string(peer_config.wifi_shadow_rtt_us));
     }
 
     template<typename Value_t>

@@ -42,7 +42,6 @@ WorkingDirectory=/tmp
 Environment="LAPS_DISABLE_SPLITHZ=1"
 Environment="LAPS_TLS_CERT_FILENAME=${INSTALL_DIR}/server-cert.pem"
 Environment="LAPS_TLS_KEY_FILENAME=${INSTALL_DIR}/server-key.pem"
-Environment="LAPS_PEER_SHADOW_RTT_US=0"
 Environment="LAPS_PEER_RELIABLE=1"
 Environment="LAPS_CWIN_MIN_KB=4"
 Environment="LAPS_DEBUG=1"

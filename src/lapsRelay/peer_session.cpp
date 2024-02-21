@@ -83,7 +83,8 @@ namespace laps {
             //FLOG_DEBUG("Sending published object for name: " << obj.header.name);
             messages::MessageBuffer mb;
             mb << obj;
-            _transport->enqueue(t_conn_id, iter->second, mb.take(), obj.header.priority);
+
+            _transport->enqueue(t_conn_id, iter->second, mb.take(), { MethodTraceItem{} }, obj.header.priority);
         }
     }
 
