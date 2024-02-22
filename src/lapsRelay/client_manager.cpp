@@ -46,7 +46,8 @@ void ClientManager::start() {
                                     .time_queue_init_queue_size = config.data_queue_size,
                                     .time_queue_rx_size = config.rx_queue_size,
                                     .debug = config.debug,
-                                    .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024) };
+                                    .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024),
+                                    .use_reset_wait_strategy = config.use_reset_wait_strategy };
 
   logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
 
