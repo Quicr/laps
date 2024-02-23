@@ -26,6 +26,7 @@ namespace laps {
 
         disable_splithz = false;
         disable_dedup = false;
+        use_reset_wait_strategy = false;
 
         peer_config.listen_port = client_config.listen_port + 3;
         peer_config.peer_port = client_config.listen_port + 3;
@@ -88,6 +89,7 @@ namespace laps {
 
         env_value(disable_dedup, "LAPS_DISABLE_DEDUP", "Disable deduplication detection", "false");
         env_value(disable_splithz, "LAPS_DISABLE_SPLITHZ", "Disable split horizon detection", "false");
+        env_value(use_reset_wait_strategy, "LAPS_RESET_WAIT", "Enables reset and wait strategy", "false");
 
         env_value(cwin_min_kb, "LAPS_CWIN_MIN_KB", "Congestion control window minimum size", std::to_string(cwin_min_kb));
 

@@ -195,7 +195,7 @@ main(int argc, char* argv[])
                          << std::flush;
 
             std::vector<qtransport::MethodTraceItem> trace;
-            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
             trace.push_back({"client:publish", start_time});
 
