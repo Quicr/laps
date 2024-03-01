@@ -15,6 +15,7 @@
 #
 INSTALL_DIR=/usr/local/laps
 LAPS_UNIT_SERVICE_FILE=/etc/systemd/system/laps.service
+LAPS_MDNS_SERVICE_FILE=/etc/avahi/services/moqt.service
 USER=$(id -u)
 
 # ----------------------------------------------------------------------------------
@@ -57,6 +58,31 @@ WantedBy=multi-user.target
 END_LAPS_UNIT_SERVICE
 )
 
+
+MDNS_UNIT_SERVICE=$(cat << END_MDNS_UNIT_SERVICE
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+
+<!-- Man 5 avahi.service for doc on this file -->
+
+<service-group>
+
+  <name replace-wildcards="yes">%h</name>
+
+  <service>
+    <type>_moqt._udp</type>
+    <port>33437</port>
+  </service>
+
+  <service>
+    <type>_moqt._quic</type>
+    <port>33437</port>
+  </service>
+
+</service-group>
+END_MDNS_UNIT_SERVICE
+)
+
 # ----------------------------------------------------------------------------------
 # Functions
 #
@@ -92,12 +118,18 @@ create_cert() {
   cd $INSTALL_DIR
 
   if [[ ! -f server-key.pem || ! -f server-cert.pem ]]; then
-    echo "Creating relay self-signed certificate"
-
-    openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
-        -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.quicr.ctgpoc.com" \
-        -keyout server-key.pem -out server-cert.pem
+    echo "Copying ~/lapsRelay to $INSTALL_DIR/lapsRelay"
+    sudo cp ~/lapsRelay $INSTALL_DIR/lapsRelay
   fi
+}
+
+update_mdns() {
+  sudo rm -f /tmp/laps-mdns-service.tmp
+  echo "$LAPS_MDNS_UNIT_SERVICE" > /tmp/laps-mdns-service.tmp
+  sudo mv -f /tmp/laps-mdns-service.tmp  $LAPS_MDNS_SERVICE_FILE
+
+  sudo systemctl enable avahi.service
+  
 }
 
 ## Main function
@@ -114,13 +146,15 @@ main() {
 
   upgrade_laps
   create_cert
+  setup_mdns
 
   sudo chown -R $USER $INSTALL_DIR
-
 
   sudo systemctl start laps.service
 
   sudo systemctl status laps.service
+
+  sudo sytemctl restart avahi.service 
 
   echo ""
   echo "RUN 'systemctl status laps.service' to get status of service"
