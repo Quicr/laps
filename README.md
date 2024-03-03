@@ -28,6 +28,7 @@ Run relay:
 cd build/src/lapsRelay
 openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
     -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.quicr.ctgpoc.com" \
+    -addext "subjectAltName=DNS:relay.quicr.ctgpoc.com" \
     -keyout server-key.pem -out server-cert.pem
 
 ./lapsRelay
