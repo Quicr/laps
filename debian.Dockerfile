@@ -6,7 +6,7 @@
 FROM debian:11-slim as builder
 
 RUN apt-get update
-RUN apt-get install -y make openssl golang perl wget
+RUN apt-get install -y make openssl golang perl wget git
 RUN apt-get install -y \
         ca-certificates \
         clang lld curl
