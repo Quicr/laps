@@ -39,7 +39,8 @@ void ClientManager::start() {
   quicr::RelayInfo relayInfo = {.hostname
                                  = config.client_config.bind_addr,
                                  .port = config.client_config.listen_port,
-                                 .proto = config.client_config.protocol };
+                                 .proto = config.client_config.protocol,
+                                 .relay_id = config.peer_config.id };
 
   qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : config.tls_cert_filename.c_str(),
                                     .tls_key_filename = config.tls_cert_filename.empty() ? NULL : config.tls_key_filename.c_str(),
