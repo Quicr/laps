@@ -50,22 +50,23 @@ namespace laps {
         return _status;
     }
 
-    void PeerSession::connect() {
+    void PeerSession::connect()
+    {
         _status = Status::CONNECTING;
 
-        if (not _is_inbound) {
-            _subscribed.clear();
-
-            if (_transport)
-                _transport = nullptr;
-
-            _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, logger);
-            t_conn_id = _transport->start();
+        if (_is_inbound) {
+            return;
         }
+        _subscribed.clear();
 
-        // Create the datagram and control data contexts
-        dgram_data_ctx_id = createDataCtx(t_conn_id, false);
-        control_data_ctx_id = createDataCtx(t_conn_id, true, 0);
+        if (_transport)
+            _transport = nullptr;
+
+        _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, logger);
+        t_conn_id = _transport->start();
+
+        // Create the control data context
+        control_data_ctx_id = _transport->createDataContext(t_conn_id, true, 0, true);
 
         logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
     }
@@ -84,30 +85,32 @@ namespace laps {
             messages::MessageBuffer mb;
             mb << obj;
 
-            _transport->enqueue(t_conn_id, iter->second, mb.take(), { MethodTraceItem{} }, obj.header.priority);
+            _transport->enqueue(t_conn_id, iter->second.data_ctx_id, mb.take(), { MethodTraceItem{} }, obj.header.priority);
         }
     }
 
-    void PeerSession::addSubscription(const Namespace& ns)
+    DataContextId PeerSession::addSubscription(const Namespace& ns, std::optional<DataContextId> remote_data_ctx_id)
     {
-        if (_use_reliable) {
-            auto data_ctx_id = createDataCtx(t_conn_id, true, 2);
+        auto data_ctx_id = createDataCtx(t_conn_id, _use_reliable, 2 /* TODO(tievens): Forward/use received PRI  */ );
 
-            _subscribed.try_emplace(ns, data_ctx_id);
+        auto ctx = _subscribed.try_emplace(ns, SubscribeContext{ data_ctx_id, *remote_data_ctx_id });
 
-        } else {
-            _subscribed.try_emplace(ns, dgram_data_ctx_id);
+        if (remote_data_ctx_id) {
+            ctx.first->second.remote_data_ctx_id = *remote_data_ctx_id;
+            _transport->setRemoteDataCtxId( t_conn_id, ctx.first->second.data_ctx_id, *remote_data_ctx_id);
         }
+
+        return data_ctx_id;
     }
+
+
 
     void PeerSession::removeSubscription(const Namespace& ns) {
         auto iter = _subscribed.find(ns);
         if (iter != _subscribed.end()) {
             FLOG_DEBUG("Removing subscription " << ns << " from peer " << peer_id);
 
-            if (_config.peer_config.use_reliable && iter->second)
-                _transport->deleteDataContext(t_conn_id, iter->second);
-
+            _transport->deleteDataContext(t_conn_id, iter->second.data_ctx_id);
             _subscribed.erase(iter);
         }
     }
@@ -117,7 +120,7 @@ namespace laps {
         if (_subscribed.count(ns)) // Ignore if ready subscribed
             return;
 
-        addSubscription(ns);
+        const auto data_ctx_id = addSubscription(ns);
 
         FLOG_DEBUG("Sending subscribe to peer " << peer_id << " for ns: " <<  ns);
 
@@ -127,6 +130,7 @@ namespace laps {
         std::vector<uint8_t> buf(sizeof(MsgSubscribe) + ns_array.size());
 
         MsgSubscribe msg;
+        msg.remote_data_ctx_id = data_ctx_id;
         msg.count_subscribes = 1;
 
         std::memcpy(buf.data(), &msg, sizeof(msg));
@@ -308,8 +312,12 @@ namespace laps {
                                     longitude = c_msg.longitude;
                                     latitude = c_msg.latitude;
 
+                                    control_data_ctx_id = data_ctx_id;
+
                                     FLOG_INFO("Received peer connect message from "
                                               << peer_id << " reliable: " << _use_reliable << ", sending ok");
+                                    logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
+
                                     sendConnectOk();
                                     _status = Status::CONNECTED;
 
@@ -353,7 +361,7 @@ namespace laps {
 
                                     FLOG_INFO("Received subscribe from " << peer_id << " ns: " << ns_list.front());
                                     if (ns_list.size() > 0) {
-                                        addSubscription(ns_list.front());
+                                        addSubscription(ns_list.front(), msg.remote_data_ctx_id);
                                         _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
                                                            .source_peer_id = peer_id,
                                                            .nspace = ns_list.front() });
