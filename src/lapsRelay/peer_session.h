@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <quicr/encode.h>
 #include <quicr/namespace.h>
 #include <quicr/message_buffer.h>
@@ -171,7 +172,18 @@ namespace laps {
         void sendConnect();
         void sendConnectOk();
 
-        void addSubscription(const Namespace& ns);
+        /**
+         * @brief Add/create subscription context
+         *
+         * @details Creates subscription and data context in transport. remote_data_ctx_id is nullptr
+         *    when peering manager adds/sends the subscription. remote data_ctx_id is set when
+         *    a subscription is received by the session.
+         *
+         * @param ns                        Namespace of the subscription
+         * @param remote_data_ctx_id        Remote side data context ID
+         * @returns local data context ID used for sending/receiving
+         */
+        DataContextId addSubscription(const Namespace& ns, std::optional<DataContextId> remote_data_ctx_id=std::nullopt);
         void removeSubscription(const Namespace& ns);
 
       public:
@@ -208,12 +220,17 @@ namespace laps {
         };
 
         TransportConnId t_conn_id;                   /// Transport connection context ID
-        DataContextId dgram_data_ctx_id;             /// Datagram data context ID
         DataContextId control_data_ctx_id;           /// Control data context ID
 
         std::shared_ptr<ITransport> _transport;      /// Transport used for the peering connection
 
-        namespace_map<DataContextId> _subscribed;    /// Subscribed namespace and associated data ctx id
+        struct SubscribeContext
+        {
+            DataContextId data_ctx_id {0};                      /// Local Data Context ID for sending/receiving data
+            std::optional<DataContextId> remote_data_ctx_id;    /// Remote Data Context ID
+        };
+
+        namespace_map<SubscribeContext> _subscribed;    /// Subscribed namespace and associated data ctx id
         namespace_map<peer_id_t> _publish_intents;   /// Publish intents sent to the peer
     };
 

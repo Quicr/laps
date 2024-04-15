@@ -82,7 +82,9 @@ namespace laps {
     {
         MsgSubscribe() { subtype = PeeringSubType::SUBSCRIBE; }
 
-        uint8_t count_subscribes; /// Number of subscribes by namespace
+        uint64_t remote_data_ctx_id{ 0 };         /// Remote data context ID
+
+        uint8_t count_subscribes;                 /// Number of subscribes by namespace
 
         /* subscribes use a 128 bit namespace with an encoding of <uint8_t bit_len><uint8_t*>. The number of bytes
          *       for the name is calculated using `len / 8 = byte_len + (len % 8 > 0 ? 1 : 0)`. In other
@@ -127,8 +129,10 @@ namespace laps {
     {
         MsgPublishIntent() { subtype = PeeringSubType::PUBLISH_INTENT; }
 
-        uint8_t origin_id_len; /// Length of the origin ID string in bytes
-        uint8_t count_publish_intents; /// Number of publish intent namespace
+        uint64_t remote_data_ctx_id{ 0 };         /// Remote data context ID
+
+        uint8_t origin_id_len;                    /// Length of the origin ID string in bytes
+        uint8_t count_publish_intents;            /// Number of publish intent namespace
 
         /// variable origin id follows using the size of origin_id_len
 
