@@ -24,6 +24,7 @@ namespace laps {
         bool disable_splithz;                 /// Disable split horizon
         bool disable_dedup;                   /// Disable Deduplication
         bool use_reset_wait_strategy { false };
+        bool use_bbr { true };
 
         std::string tls_cert_filename;
         std::string tls_key_filename;
