@@ -15,6 +15,9 @@ namespace laps {
       , _cache(cache)
       , _subscriptions(subscriptions)
       , logger(std::make_shared<cantina::Logger>("PMGR", cfg.logger))
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+      , _mexport(std::make_shared<MetricsExporter>(logger, false))
+#endif
     {
         _client_rx_msg_thr = std::thread(&PeerManager::PeerQueueThread, this);
 
@@ -45,12 +48,26 @@ namespace laps {
         _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, logger);
         _server_transport->start();
 
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+        if (_mexport->init("http://metrics.m10x.ctgpoc.com:8086",
+                          "Media10x",
+                          "cisco-cto-media10x") !=
+            MetricsExporter::MetricsExporterError::NoError) {
+            throw std::runtime_error("Failed to connect to InfluxDB");
+        }
+
+        _mexport->set_relay_id(_config.peer_config.id);
+        if (!_server_transport->metrics_conn_samples) {
+            logger->error << "ERROR metrics conn samples null" << std::flush;
+        }
+        _mexport->run(_server_transport->metrics_conn_samples, _server_transport->metrics_data_samples);
+#endif
+
         for (const auto& peer : cfg.peer_config.peers) {
             TransportRemote remote{ peer,
                                     cfg.peer_config.peer_port,
                                     cfg.peer_config.protocol == RelayInfo::Protocol::UDP ? TransportProtocol::UDP
                                                                                          : TransportProtocol::QUIC };
-
             createPeerSession(remote);
         }
     }
@@ -84,7 +101,11 @@ namespace laps {
                                                              peer_config,
                                                              _peer_queue,
                                                              _cache,
-                                                             _subscriptions);
+                                                             _subscriptions
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                                                            , _mexport
+#endif
+                                                             );
 
         peer_sess.connect();
     }
@@ -527,16 +548,21 @@ namespace laps {
                                                                       std::move(peer),
                                                                       _peer_queue,
                                                                       _cache,
-                                                                      _subscriptions);
+                                                                      _subscriptions
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                                                                      , _mexport
+#endif
+                                                                      );
 
             peer_iter = iter;
 
             auto& peer_sess = peer_iter->second;
 
-            FLOG_INFO("Peer conn_id: " << conn_id << " is ready, creating datagram and control stream");
+            FLOG_INFO("Peer conn_id: " << conn_id << " is ready");
 
             peer_sess.setTransport(_server_transport);
             peer_sess.connect();
+
 
             for (const auto& [ns, origins]: _pub_intent_namespaces) {
                 for (const auto& [o, l]: origins) {

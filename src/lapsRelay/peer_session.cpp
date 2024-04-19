@@ -14,7 +14,11 @@ namespace laps {
                              const TransportRemote& peer_remote,
                              safe_queue<PeerObject>& peer_queue,
                              Cache& cache,
-                             ClientSubscriptions& subscriptions)
+                             ClientSubscriptions& subscriptions
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                             , std::shared_ptr<MetricsExporter> mexport
+#endif
+                             )
       : peer_config(peer_remote)
       , _config(cfg)
       , _peer_queue(peer_queue)
@@ -23,6 +27,9 @@ namespace laps {
       , logger(std::make_shared<cantina::Logger>("PEER", cfg.logger))
       , _is_inbound(is_inbound)
       , t_conn_id(conn_id)
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+      , _mexport(mexport)
+#endif
     {
         peer_id = peer_config.host_or_ip;
         _use_reliable = _config.peer_config.use_reliable;
@@ -68,6 +75,10 @@ namespace laps {
         // Create the control data context
         control_data_ctx_id = _transport->createDataContext(t_conn_id, true, 0, true);
 
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+        _mexport->set_conn_ctx_info(t_conn_id, {.endpoint_id = peer_id, .data_ctx_info = {}});
+#endif
+
         logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
     }
 
@@ -92,6 +103,10 @@ namespace laps {
     DataContextId PeerSession::addSubscription(const Namespace& ns, std::optional<DataContextId> remote_data_ctx_id)
     {
         auto data_ctx_id = createDataCtx(t_conn_id, _use_reliable, 2 /* TODO(tievens): Forward/use received PRI  */ );
+
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+        _mexport->set_data_ctx_info(t_conn_id, data_ctx_id, {.subscribe = true, .nspace = ns});
+#endif
 
         auto ctx = _subscribed.try_emplace(ns, SubscribeContext{ data_ctx_id, *remote_data_ctx_id });
 
@@ -318,6 +333,9 @@ namespace laps {
                                               << peer_id << " reliable: " << _use_reliable << ", sending ok");
                                     logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
 
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                                    _mexport->set_conn_ctx_info(conn_id, {.endpoint_id = peer_id, .data_ctx_info = {}});
+#endif
                                     sendConnectOk();
                                     _status = Status::CONNECTED;
 
@@ -341,6 +359,12 @@ namespace laps {
 
                                     _status = Status::CONNECTED;
                                     FLOG_INFO("Received peer connect OK message from " << peer_id);
+
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                                    if (not _is_inbound) {
+                                        _mexport->set_relay_id(peer_id);
+                                    }
+#endif
 
                                     // Upon connection, send all publish intents
                                     for (const auto& [ns, o]: _publish_intents) {

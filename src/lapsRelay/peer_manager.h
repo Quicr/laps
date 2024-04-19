@@ -11,6 +11,7 @@
 #include <transport/transport.h>
 #include <thread>
 #include <transport/safe_queue.h>
+#include <quicr/metrics_exporter.h>
 
 #include "peer_common.h"
 #include "peer_protocol.h"
@@ -189,6 +190,10 @@ namespace laps {
 
         // Log handler to use
         cantina::LoggerPointer logger;
+
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+        std::shared_ptr<MetricsExporter> _mexport;
+#endif
     };
 
 } // namespace laps

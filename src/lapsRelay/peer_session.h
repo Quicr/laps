@@ -87,7 +87,11 @@ namespace laps {
                     const TransportRemote& peer_remote,
                     safe_queue<PeerObject>& peer_queue,
                     Cache& cache,
-                    ClientSubscriptions& subscriptions);
+                    ClientSubscriptions& subscriptions
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                    , std::shared_ptr<MetricsExporter> mexport
+#endif
+                    );
 
         ~PeerSession();
 
@@ -232,6 +236,10 @@ namespace laps {
 
         namespace_map<SubscribeContext> _subscribed;    /// Subscribed namespace and associated data ctx id
         namespace_map<peer_id_t> _publish_intents;   /// Publish intents sent to the peer
+
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+        std::shared_ptr<MetricsExporter> _mexport;
+#endif
     };
 
 } // namespace laps

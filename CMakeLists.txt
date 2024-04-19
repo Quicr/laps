@@ -42,13 +42,17 @@ add_subdirectory(dependencies)
 ###
 ### Build relay
 ###
+if(NOT LIBQUICR_WITHOUT_INFLUXDB)
+    include_directories(AFTER
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libquicr/dependencies/influxdb-cxx/include
+            ${CMAKE_CURRENT_BINARY_DIR}/dependencies/libquicr/dependencies/influxdb-cxx/src/)
+endif()
 add_subdirectory(src/lapsRelay)
 
 ###
 ### Build test app
 ###
 add_subdirectory(src/lapsTest)
-
 
 ###
 ### Tests
