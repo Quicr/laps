@@ -547,18 +547,18 @@ namespace laps {
             FLOG_INFO("New server accepted peer, conn_id: " << conn_id);
 
             TransportRemote peer = remote;
-            auto [iter, inserted] = _server_peer_sessions.try_emplace(
-              conn_id,
-                                                                      true, conn_id,
-                                                                      _config,
-                                                                      std::move(peer),
-                                                                      _peer_queue,
-                                                                      _cache,
-                                                                      _subscriptions
-#ifndef LIBQUICR_WITHOUT_INFLUXDB
-                                                                      , _mexport
+            auto [iter, inserted] = _server_peer_sessions.try_emplace(conn_id,
+                                                          true,
+                                                          conn_id,
+                                                          _config,
+                                                          std::move(peer),
+                                                          _peer_queue,
+                                                          _cache,
+                                                          _subscriptions
+#ifndef LIBQUICR_WITHOUT_INFLUXDB,
+                                                          , _mexport
 #endif
-                                                                      );
+            );
 
             peer_iter = iter;
 

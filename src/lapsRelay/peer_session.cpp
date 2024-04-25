@@ -76,6 +76,11 @@ namespace laps {
         control_data_ctx_id = _transport->createDataContext(t_conn_id, true, 0, true);
 
         logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
+
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+        _mexport->set_data_ctx_info(t_conn_id, control_data_ctx_id, {.subscribe = true, .nspace = {}});
+#endif
+
     }
 
     DataContextId PeerSession::createDataCtx(const TransportConnId conn_id,
@@ -334,6 +339,8 @@ namespace laps {
                                     _mexport->set_conn_ctx_info(conn_id, {.endpoint_id = peer_id,
                                                                                 .relay_id = _config.peer_config.id,
                                                                                 .data_ctx_info = {}}, false);
+                                    _mexport->set_data_ctx_info(t_conn_id, control_data_ctx_id,
+                                                                {.subscribe = true, .nspace = {}});
 #endif
                                     sendConnectOk();
                                     _status = Status::CONNECTED;
