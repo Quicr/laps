@@ -217,9 +217,10 @@ git submodule update --init --recursive
 make cclean 
 
 # Build
-export CFLAGS="-Wno-error=stringop-overflow"
-export CXXFLAGS="-Wno-error=stringop-overflow"
-make build
+export  CFLAGS="-Wno-error=stringop-overflow"
+export  CXXFLAGS="-Wno-error=stringop-overflow"
+
+BUILD_JOBS=3 make build 
 ```
 
 ### (4) Copy the latest install-relay.sh script and binary to Pi
