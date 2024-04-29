@@ -114,9 +114,9 @@ make publish-image
 
 ---
 ## Build Raspberry PI Image
-The current build supports Raspberry Pi **Debian Lite Bullseye for Raspberry Pi 3 and Bookworm for Raspberry Pi 4.    
+The current build supports Raspberry Pi **Debian Lite Bookworm**   
 
-### (1) Install 64bit OS Lite Debian Bullseye (pi 3) or Bookworm (pi 4) image 
+### (1) Install 64bit OS Lite Debian Bookworm 
 Follow the PI imager instructions at https://www.raspberrypi.com/software/ to install base image. 
 
 ### (2) Install/Load the image on Raspberry Pi SD card
@@ -156,7 +156,9 @@ Remove the Pi SD card and put it into a reader that you can use to copy the imag
 > the mdns name `ssh pi@tievens-pi.local`
  
 
-### (3) Create binary
+### (3) Creating the binary image
+
+#### Using docker
 
 You will need docker installed to run the below. 
 
@@ -164,9 +166,67 @@ You will need docker installed to run the below.
 make image-pi
 ```
 
+#### Native build on Pi
+
+##### One-time setup for your Pi
+After you have build/installed your Pi, you will need to SSH to it and run the below to setup the build
+environment. 
+
+###### (a) APT install dependencies
+
+```
+sudo apt-get update
+sudo apt-get install -y make cmake openssl golang wget git ca-certificates curl
+```
+
+###### (b) Get laps from Github
+
+> [!IMPORTANT]
+> Create a key so that you can then update your github account with this key. This is required since laps and
+> some of the submoudules are private repos.
+
+```
+# Hit enter through the prompts
+ssh-keygen
+
+cat ~/.ssh/id_rsa.pub
+```
+
+Goto github, under **settings**, then under **SSH and GPG keys**, add a new SSH key with the contents of the above
+output of the id_rsa.pub.  
+
+Clone laps 
+
+```
+git clone git@github.com:Quicr/laps.git
+```
+
+###### (c) Sync laps repo 
+
+> [!WARNING]
+> Run the below initially and before doing builds to make sure you have all submodules and latest code
+```
+git pull
+git submodule update --init --recursive
+```
+
+###### (d) Build the image
+
+```
+# optionally do the below
+make cclean 
+
+# Build
+export  CFLAGS="-Wno-error=stringop-overflow"
+export  CXXFLAGS="-Wno-error=stringop-overflow"
+
+BUILD_JOBS=3 make build 
+```
+
 ### (4) Copy the latest install-relay.sh script and binary to Pi
 
-The binary will be created as `./build-pi/lapsRelay`
+The docker built binary will be created as `./build-pi/lapsRelay`
+The natively built binary will be created as `./build/lapsRelay`
 
 Copy the image:
 
@@ -227,3 +287,5 @@ Jan 26 16:20:12 raspberrypi lapsRelay[147676]: 2024-01-26T16:20:12.746769 [INFO]
 RUN 'systemctl status laps.service' to get status of service
 RUN 'journalctl -u laps.service -f' to tail laps relay log
 ```
+
+##

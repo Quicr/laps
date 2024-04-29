@@ -16,7 +16,7 @@ namespace laps {
       , _subscriptions(subscriptions)
       , logger(std::make_shared<cantina::Logger>("PMGR", cfg.logger))
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
-      , _mexport(std::make_shared<MetricsExporter>(logger, false))
+      , _mexport(std::make_shared<MetricsExporter>(logger))
 #endif
     {
         _client_rx_msg_thr = std::thread(&PeerManager::PeerQueueThread, this);
@@ -36,7 +36,7 @@ namespace laps {
             .tls_cert_filename = _config.tls_cert_filename.c_str(),
             .tls_key_filename = _config.tls_key_filename.c_str(),
             .time_queue_init_queue_size = _config.data_queue_size,
-            .time_queue_max_duration = 1000,
+            .time_queue_max_duration = 5000,
             .time_queue_bucket_interval = 2,
             .time_queue_rx_size = _config.rx_queue_size,
             .debug = _config.debug,
@@ -46,7 +46,14 @@ namespace laps {
         };
 
         _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, logger);
-        _server_transport->start();
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+        _server_transport->start(_mexport->metrics_conn_samples, _mexport->metrics_data_samples);
+#endif
+
+        while (_server_transport->status() == qtransport::TransportStatus::Connecting) {
+            logger->Log("Waiting for server to be ready");
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
         if (_mexport->init("http://metrics.m10x.ctgpoc.com:8086",
@@ -56,11 +63,10 @@ namespace laps {
             throw std::runtime_error("Failed to connect to InfluxDB");
         }
 
-        _mexport->set_relay_id(_config.peer_config.id);
         if (!_server_transport->metrics_conn_samples) {
             logger->error << "ERROR metrics conn samples null" << std::flush;
         }
-        _mexport->run(_server_transport->metrics_conn_samples, _server_transport->metrics_data_samples);
+        _mexport->run();
 #endif
 
         for (const auto& peer : cfg.peer_config.peers) {
@@ -541,18 +547,18 @@ namespace laps {
             FLOG_INFO("New server accepted peer, conn_id: " << conn_id);
 
             TransportRemote peer = remote;
-            auto [iter, inserted] = _server_peer_sessions.try_emplace(
-              conn_id,
-                                                                      true, conn_id,
-                                                                      _config,
-                                                                      std::move(peer),
-                                                                      _peer_queue,
-                                                                      _cache,
-                                                                      _subscriptions
-#ifndef LIBQUICR_WITHOUT_INFLUXDB
-                                                                      , _mexport
+            auto [iter, inserted] = _server_peer_sessions.try_emplace(conn_id,
+                                                          true,
+                                                          conn_id,
+                                                          _config,
+                                                          std::move(peer),
+                                                          _peer_queue,
+                                                          _cache,
+                                                          _subscriptions
+#ifndef LIBQUICR_WITHOUT_INFLUXDB,
+                                                          , _mexport
 #endif
-                                                                      );
+            );
 
             peer_iter = iter;
 

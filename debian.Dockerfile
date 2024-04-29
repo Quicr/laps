@@ -3,20 +3,17 @@
 #---------------------------------------------------------------------
 
 # Build layer
-FROM debian:11-slim as builder
+FROM debian:12-slim as builder
 
-RUN apt-get update && apt-get install -y make openssl golang perl wget git
-RUN apt-get install -y \
-        ca-certificates \
-        clang lld curl
+RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake ca-certificates
 
 WORKDIR /tmp
 
-RUN [[ "$(uname -m)" == "x86_64" ]] \
-    && export CMAKE_FILENAME=cmake-3.27.7-linux-x86_64.sh \
-    || export CMAKE_FILENAME=cmake-3.27.7-linux-aarch64.sh; \
-    wget https://cmake.org/files/v3.27/$CMAKE_FILENAME; \
-    /bin/sh ./$CMAKE_FILENAME --skip-license --prefix=/usr/local
+#RUN [[ "$(uname -m)" == "x86_64" ]] \
+#    && export CMAKE_FILENAME=cmake-3.29.2-linux-x86_64.sh \
+#    || export CMAKE_FILENAME=cmake-3.29.2-linux-aarch64.sh; \
+#    wget https://cmake.org/files/v3.29/$CMAKE_FILENAME; \
+#    /bin/sh ./$CMAKE_FILENAME --skip-license --prefix=/usr/local
 
 WORKDIR /ws
 
@@ -27,7 +24,8 @@ COPY ./dependencies ./dependencies
 COPY ./src ./src
 
 ENV CFLAGS="-Wno-error=stringop-overflow"
-ENV CXXFLAGS="-Wno-error=stringop-overflow -fpermissive -Wno-error=pedantic"
+ENV CXXFLAGS="-Wno-error=stringop-overflow"
+
 RUN make all
 
 RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \

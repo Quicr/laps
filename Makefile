@@ -4,6 +4,7 @@
 # Set CMAKE_GENERATOR in the environment to select how you build, e.g.:
 #   CMAKE_GENERATOR=Ninja
 
+BUILD_JOBS?=4
 BUILD_DIR?=build
 CLANG_FORMAT=clang-format -i
 
@@ -33,7 +34,7 @@ build-prep: CMakeLists.txt
 build: build-prep
 	@echo "Skipping submodule update due to possible custom changes"
 #	git submodule update --init --recursive
-	cmake --build ${BUILD_DIR} -j 4
+	cmake --build ${BUILD_DIR} -j ${BUILD_JOBS}
 
 ## clean: cmake clean - soft clean
 clean:

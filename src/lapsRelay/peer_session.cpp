@@ -70,16 +70,17 @@ namespace laps {
             _transport = nullptr;
 
         _transport = qtransport::ITransport::make_client_transport(peer_config, _transport_config, *this, logger);
-        t_conn_id = _transport->start();
+        t_conn_id = _transport->start(_mexport->metrics_conn_samples, _mexport->metrics_data_samples);
 
         // Create the control data context
         control_data_ctx_id = _transport->createDataContext(t_conn_id, true, 0, true);
 
+        logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
+
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
-        _mexport->set_conn_ctx_info(t_conn_id, {.endpoint_id = peer_id, .data_ctx_info = {}});
+        _mexport->set_data_ctx_info(t_conn_id, control_data_ctx_id, {.subscribe = true, .nspace = {}});
 #endif
 
-        logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
     }
 
     DataContextId PeerSession::createDataCtx(const TransportConnId conn_id,
@@ -304,6 +305,7 @@ namespace laps {
 
         for (int i = 0; i < 100; i++) {
             if (auto data = _transport->dequeue(conn_id, data_ctx_id)) {
+                if (!data->size()) continue;
                 try {
                     auto msg_type = static_cast<messages::MessageType>(data->front());
                     messages::MessageBuffer msg_buffer{ data.value() };
@@ -334,7 +336,11 @@ namespace laps {
                                     logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
-                                    _mexport->set_conn_ctx_info(conn_id, {.endpoint_id = peer_id, .data_ctx_info = {}});
+                                    _mexport->set_conn_ctx_info(conn_id, {.endpoint_id = peer_id,
+                                                                                .relay_id = _config.peer_config.id,
+                                                                                .data_ctx_info = {}}, false);
+                                    _mexport->set_data_ctx_info(t_conn_id, control_data_ctx_id,
+                                                                {.subscribe = true, .nspace = {}});
 #endif
                                     sendConnectOk();
                                     _status = Status::CONNECTED;
@@ -361,9 +367,9 @@ namespace laps {
                                     FLOG_INFO("Received peer connect OK message from " << peer_id);
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
-                                    if (not _is_inbound) {
-                                        _mexport->set_relay_id(peer_id);
-                                    }
+                                    _mexport->set_conn_ctx_info(conn_id, {.endpoint_id = _config.peer_config.id,
+                                                                                .relay_id = peer_id,
+                                                                                .data_ctx_info = {}}, true);
 #endif
 
                                     // Upon connection, send all publish intents

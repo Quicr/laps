@@ -44,7 +44,7 @@ namespace laps {
         cache_map_capacity = 20000;
         cache_max_buffers = 10;
         data_queue_size = 500;
-        time_queue_ttl_default = 200;
+        time_queue_ttl_default = 500;
         rx_queue_size = 200;
 
         help_msg.push_back("lapsRelay [help|-h]\n");
