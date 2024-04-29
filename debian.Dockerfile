@@ -5,7 +5,7 @@
 # Build layer
 FROM debian:12-slim as builder
 
-RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake ca-certificates curl
+RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake ca-certificates
 
 WORKDIR /tmp
 
@@ -25,6 +25,7 @@ COPY ./src ./src
 
 ENV CFLAGS="-Wno-error=stringop-overflow"
 ENV CXXFLAGS="-Wno-error=stringop-overflow"
+
 RUN make all
 
 RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
