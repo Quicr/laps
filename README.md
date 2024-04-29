@@ -176,7 +176,7 @@ environment.
 
 ```
 sudo apt-get update
-sudo apt-get install -y make cmake openssl golang wget git ca-certificates curl
+sudo apt-get install -y make cmake openssl golang wget git ca-certificates
 ```
 
 ###### (b) Get laps from Github
