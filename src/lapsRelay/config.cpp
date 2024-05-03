@@ -69,6 +69,8 @@ namespace laps {
             tls_key_filename = "./server-key.pem";
         }
 
+        env_value(qlog_path, "LAPS_QLOG_PATH", "QLOG directory/path", "");
+
         env_value(client_config.bind_addr, "LAPS_CLIENT_BIND_ADDR", "Client bind address", client_config.bind_addr);
         env_value(client_config.listen_port, "LAPS_CLIENT_PORT", "Client listening port",
                   std::to_string(client_config.listen_port));

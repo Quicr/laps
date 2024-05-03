@@ -28,6 +28,7 @@ namespace laps {
 
         std::string tls_cert_filename;
         std::string tls_key_filename;
+        std::string qlog_path;
 
         uint16_t data_queue_size;
         uint16_t time_queue_ttl_default;
