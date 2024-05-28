@@ -63,8 +63,12 @@ namespace laps {
                                  const DataContextId& data_ctx_id) override {}
         void on_connection_status(const TransportConnId& conn_id, const TransportStatus status) override;
         void on_new_connection(const TransportConnId& conn_id, const TransportRemote& remote) override;
-        void on_recv_notify(const TransportConnId& conn_id,
-                            const DataContextId& data_ctx_id, const bool is_bidir) override;
+        void on_recv_stream(const TransportConnId& conn_id,
+                            uint64_t stream_id,
+                            std::optional<DataContextId> data_ctx_id,
+                            const bool is_bidir=false) override;
+        void on_recv_dgram(const TransportConnId& conn_id,
+                           std::optional<DataContextId> data_ctx_id) override;
 
       private:
 
