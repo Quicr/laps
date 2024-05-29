@@ -299,233 +299,343 @@ namespace laps {
         // Not used for outgoing connections. Incoming connections are handled by the server delegate
     }
 
-    void PeerSession::on_recv_notify(const TransportConnId& conn_id,
-                                     const DataContextId& data_ctx_id,
-                                     [[maybe_unused]] const bool is_bidir) {
+    void PeerSession::on_recv_stream(const TransportConnId& conn_id,
+                                     uint64_t stream_id,
+                                     std::optional<DataContextId> data_ctx_id,
+                                     const bool is_bidir)
+    {
+        auto stream_buf = _transport->getStreamBuffer(conn_id, stream_id);
 
-        for (int i = 0; i < 100; i++) {
-            if (auto data = _transport->dequeue(conn_id, data_ctx_id)) {
-                if (!data->size()) continue;
-                try {
-                    auto msg_type = static_cast<messages::MessageType>(data->front());
-                    messages::MessageBuffer msg_buffer{ data.value() };
+        if (stream_buf == nullptr) {
+            return;
+        }
 
+        while (true) {
+            if (stream_buf->available(4)) {
+                auto msg_len_b = stream_buf->front(4);
 
-                    switch (msg_type) {
-                        case messages::MessageType::PeerMsg: {
-                            auto data = msg_buffer.take();
-                            auto subtype = static_cast<PeeringSubType>(data[1]);
-                            
-                            switch (subtype) {
-                                case PeeringSubType::CONNECT: {
-                                    MsgConnect c_msg;
-                                    std::memcpy(&c_msg, data.data(), sizeof(c_msg));
+                if (!msg_len_b.size())
+                    return;
 
-                                    char c_peer_id[256] { 0 };
-                                    std::memcpy(c_peer_id, data.data() + sizeof(c_msg), c_msg.id_len);
-                                    peer_id = c_peer_id;
+                auto* msg_len = reinterpret_cast<uint32_t*>(msg_len_b.data());
 
-                                    _use_reliable = c_msg.flag_reliable;
-                                    longitude = c_msg.longitude;
-                                    latitude = c_msg.latitude;
+                if (stream_buf->available(*msg_len)) {
+                    auto obj = stream_buf->front(*msg_len);
+                    stream_buf->pop(*msg_len);
 
-                                    control_data_ctx_id = data_ctx_id;
+                    try {
+                        messages::MessageBuffer msg_buffer{ obj };
 
-                                    FLOG_INFO("Received peer connect message from "
-                                              << peer_id << " reliable: " << _use_reliable << ", sending ok");
-                                    logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
+                        handle(stream_id, data_ctx_id, std::move(msg_buffer), is_bidir);
 
-#ifndef LIBQUICR_WITHOUT_INFLUXDB
-                                    _mexport->set_conn_ctx_info(conn_id, {.endpoint_id = peer_id,
-                                                                                .relay_id = _config.peer_config.id,
-                                                                                .data_ctx_info = {}}, false);
-                                    _mexport->set_data_ctx_info(t_conn_id, control_data_ctx_id,
-                                                                {.subscribe = true, .nspace = {}});
-#endif
-                                    sendConnectOk();
-                                    _status = Status::CONNECTED;
+                    } catch (const messages::MessageBuffer::ReadException& ex) {
 
-                                    for (const auto& [ns, o]: _publish_intents) {
-                                        if (o.compare(peer_id)) // Send intents not from this peer
-                                            sendPublishIntent(ns, o);
-                                    }
+                        // TODO(trigaux): When reliable, we really should reset the stream if
+                        // this happens (at least more than once)
+                        logger->critical << "Received read exception error while reading from message buffer: "
+                                         << ex.what() << std::flush;
+                        return;
 
-                                    break;
-                                }
-                                case PeeringSubType::CONNECT_OK: {
-                                    MsgConnectOk cok_msg;
-                                    std::memcpy(&cok_msg, data.data(), sizeof(cok_msg));
-
-                                    char c_peer_id[256] {0};
-                                    std::memcpy(c_peer_id, data.data() + sizeof(cok_msg), cok_msg.id_len);
-                                    peer_id = c_peer_id;
-
-                                    longitude = cok_msg.longitude;
-                                    latitude = cok_msg.latitude;
-
-                                    _status = Status::CONNECTED;
-                                    FLOG_INFO("Received peer connect OK message from " << peer_id);
-
-#ifndef LIBQUICR_WITHOUT_INFLUXDB
-                                    _mexport->set_conn_ctx_info(conn_id, {.endpoint_id = _config.peer_config.id,
-                                                                                .relay_id = peer_id,
-                                                                                .data_ctx_info = {}}, true);
-#endif
-
-                                    // Upon connection, send all publish intents
-                                    for (const auto& [ns, o]: _publish_intents) {
-                                        if (o.compare(peer_id))
-                                            sendPublishIntent(ns, o);
-                                    }
-
-                                    break;
-                                }
-
-                                case PeeringSubType::SUBSCRIBE: {
-                                    MsgSubscribe msg;
-                                    std::memcpy(&msg, data.data(), sizeof(msg));
-
-                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg), data.end());
-                                    std::vector<Namespace> ns_list;
-                                    decodeNamespaces(encoded_ns, ns_list);
-
-                                    FLOG_INFO("Received subscribe from " << peer_id << " ns: " << ns_list.front());
-                                    if (ns_list.size() > 0) {
-                                        addSubscription(ns_list.front(), msg.remote_data_ctx_id);
-                                        _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
-                                                           .source_peer_id = peer_id,
-                                                           .nspace = ns_list.front() });
-                                    }
-                                    break;
-                                }
-
-                                case PeeringSubType::UNSUBSCRIBE: {
-                                    MsgUnsubscribe msg;
-                                    std::memcpy(&msg, data.data(), sizeof(msg));
-
-                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg), data.end());
-                                    std::vector<Namespace> ns_list;
-                                    decodeNamespaces(encoded_ns, ns_list);
-
-                                    FLOG_INFO("Received unsubscribe from " << peer_id << " ns: " << ns_list.front());
-
-                                    if (ns_list.size() > 0) {
-                                        removeSubscription(ns_list.front());
-
-                                        _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE,
-                                                           .source_peer_id = peer_id,
-                                                           .nspace = ns_list.front() });
-                                    }
-                                    break;
-                                }
-
-                                case PeeringSubType::PUBLISH_INTENT: {
-                                    MsgPublishIntent msg;
-                                    std::memcpy(&msg, data.data(), sizeof(msg));
-
-                                    char o_peer_id[256] { 0 };
-                                    std::memcpy(o_peer_id, data.data() + sizeof(msg), msg.origin_id_len);
-
-                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg) + msg.origin_id_len, data.end());
-                                    std::vector<Namespace> ns_list;
-                                    decodeNamespaces(encoded_ns, ns_list);
-
-                                    if (ns_list.size() > 0) {
-                                        FLOG_INFO("Received publish intent from "
-                                                  << peer_id << " with namespace: " << ns_list.front());
-
-                                        _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT,
-                                                           .source_peer_id = peer_id,
-                                                           .origin_peer_id = o_peer_id,
-                                                           .nspace = ns_list.front() });
-                                    }
-
-                                    break;
-                                }
-
-                                case PeeringSubType::PUBLISH_INTENT_DONE: {
-                                    MsgPublishIntentDone msg;
-                                    std::memcpy(&msg, data.data(), sizeof(msg));
-
-                                    char o_peer_id[256] { 0 };
-                                    std::memcpy(o_peer_id, data.data() + sizeof(msg), msg.origin_id_len);
-
-                                    std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg) + msg.origin_id_len, data.end());
-                                    std::vector<Namespace> ns_list;
-                                    decodeNamespaces(encoded_ns, ns_list);
-
-                                    // TODO: Remove subscription to allow a more optimized path based on new publish intent
-
-                                    if (ns_list.size() > 0) {
-                                        FLOG_INFO("Received publish intent DONE from "
-                                                  << peer_id << " with namespace: " << ns_list.front());
-
-                                        _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT_DONE,
-                                                           .source_peer_id = peer_id,
-                                                           .origin_peer_id = o_peer_id,
-                                                           .nspace = ns_list.front() });
-                                    }
-
-                                    break;
-                                }
-
-                                default:
-                                    FLOG_WARN("Unknown subtype " << static_cast<unsigned>(subtype));
-                                    break;
-                            }
-
-                            break;
-                        }
-                        case messages::MessageType::Publish: {
-                            messages::PublishDatagram datagram;
-                            msg_buffer >> datagram;
-
-
-                            if (not _config.disable_dedup &&
-                                _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
-                                // duplicate, ignore
-                                FLOG_DEBUG("Duplicate message Name: " << datagram.header.name);
-                                break;
-
-                            } else {
-                                _cache.put(datagram.header.name, datagram.header.offset_and_fin, datagram.media_data);
-                            }
-
-                            // Send to peers
-                            _peer_queue.push(
-                              { .type = PeerObjectType::PUBLISH, .source_peer_id = peer_id, .pub_obj = datagram });
-
-                            std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
-                              _subscriptions.find(datagram.header.name);
-
-                            for (const auto& cMgr : list) {
-                                for (const auto& dest : cMgr.second) {
-                                    dest.second.sendObjFunc(datagram);
-                                }
-
-                                break;
-                            }
-
-                            break;
-                        }
-                        default:
-                            FLOG_INFO("Invalid Message Type " << static_cast<unsigned>(msg_type));
-                            break;
+                    } catch (const std::exception& /* ex */) {
+                        logger->Log(cantina::LogLevel::Critical,
+                                    "Received standard exception error while reading "
+                                    "from message buffer");
+                        return;
+                    } catch (...) {
+                        logger->Log(cantina::LogLevel::Critical,
+                          "Received unknown error while reading from message buffer");
+                        return;
                     }
-                } catch (const messages::MessageBuffer::ReadException& /* ex */) {
-                    FLOG_ERR("Received read exception error while reading from message buffer.");
-                    continue;
-                } catch (const std::exception& /* ex */) {
-                    FLOG_ERR("Received standard exception error while reading from message buffer.");
-                    continue;
-                } catch (...) {
-                    FLOG_ERR("Received unknown error while reading from message buffer.");
-                    continue;
+                } else {
+                    break;
                 }
-
             } else {
                 break;
             }
         }
     }
-} // namespace laps
+
+    void PeerSession::on_recv_dgram(const TransportConnId& conn_id, std::optional<DataContextId> data_ctx_id)
+    {
+        for (int i = 0; i < 150; i++) {
+            auto data = _transport->dequeue(conn_id, data_ctx_id);
+
+            if (!data) {
+                return;
+            }
+
+            messages::MessageBuffer msg_buffer{ *data };
+
+            try {
+                handle(std::nullopt, std::nullopt, std::move(msg_buffer));
+            } catch (const std::exception& e) {
+                LOGGER_DEBUG(logger, "Dropping malformed message: " << e.what());
+                return;
+            } catch (...) {
+                LOGGER_CRITICAL(logger,
+                                "Received malformed message with unknown fatal error");
+                throw;
+            }
+        }
+    }
+
+    void PeerSession::handle(std::optional<uint64_t> stream_id,
+                             std::optional<DataContextId> data_ctx_id,
+                             messages::MessageBuffer&& msg,
+                             [[maybe_unused]] bool is_bidir)
+    {
+        if (msg.empty()) {
+            std::cout << "Transport Reported Empty Data" << std::endl;
+            return;
+        }
+
+        auto chdr = msg.front(5); // msg_len + type
+        auto msg_type = static_cast<messages::MessageType>(chdr.back());
+
+        switch (msg_type) {
+            case messages::MessageType::PeerMsg: {
+                auto data = msg.take();
+                auto subtype = static_cast<PeeringSubType>(data[1]);
+
+                switch (subtype) {
+                    case PeeringSubType::CONNECT: {
+                        MsgConnect c_msg;
+                        std::memcpy(&c_msg, data.data(), sizeof(c_msg));
+
+                        char c_peer_id[256]{ 0 };
+                        std::memcpy(c_peer_id, data.data() + sizeof(c_msg), c_msg.id_len);
+                        peer_id = c_peer_id;
+
+                        _use_reliable = c_msg.flag_reliable;
+                        longitude = c_msg.longitude;
+                        latitude = c_msg.latitude;
+
+                        // Only create control context on connnect
+                        if (data_ctx_id) {
+                            control_data_ctx_id = *data_ctx_id;
+                        } else if (stream_id) {
+                            control_data_ctx_id = createDataCtx(t_conn_id, true, 1);
+                            _transport->setStreamIdDataCtxId(t_conn_id, control_data_ctx_id, *stream_id);
+                        } else {
+                            logger->error << " conn_id: " << t_conn_id
+                                          << " connect is invalid due to stream ID being null"
+                                          << std::flush;
+                            return;
+                        }
+
+                        FLOG_INFO("Received peer connect message from " << peer_id << " reliable: " << _use_reliable
+                                                                        << ", sending ok");
+                        logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
+
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                        _mexport->set_conn_ctx_info(
+                          t_conn_id,
+                          { .endpoint_id = peer_id, .relay_id = _config.peer_config.id, .data_ctx_info = {} },
+                          false);
+                        _mexport->set_data_ctx_info(
+                          t_conn_id, control_data_ctx_id, { .subscribe = true, .nspace = {} });
+#endif
+                        sendConnectOk();
+                        _status = Status::CONNECTED;
+
+                        for (const auto& [ns, o] : _publish_intents) {
+                            if (o.compare(peer_id)) // Send intents not from this peer
+                                sendPublishIntent(ns, o);
+                        }
+
+                        break;
+                    }
+                    case PeeringSubType::CONNECT_OK: {
+                        MsgConnectOk cok_msg;
+                        std::memcpy(&cok_msg, data.data(), sizeof(cok_msg));
+
+                        char c_peer_id[256]{ 0 };
+                        std::memcpy(c_peer_id, data.data() + sizeof(cok_msg), cok_msg.id_len);
+                        peer_id = c_peer_id;
+
+                        longitude = cok_msg.longitude;
+                        latitude = cok_msg.latitude;
+
+                        if (!stream_id || !data_ctx_id) {
+                            logger->warning << "conn_id: " << t_conn_id
+                                            << " Missing stream_id or data_ctx_id for control messages"
+                                            << std::flush;
+                            return;
+                        }
+                        _status = Status::CONNECTED;
+                        FLOG_INFO("Received peer connect OK message from " << peer_id);
+
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
+                        _mexport->set_conn_ctx_info(
+                          t_conn_id,
+                          { .endpoint_id = _config.peer_config.id, .relay_id = peer_id, .data_ctx_info = {} },
+                          true);
+#endif
+
+                        // Upon connection, send all publish intents
+                        for (const auto& [ns, o] : _publish_intents) {
+                            if (o.compare(peer_id))
+                                sendPublishIntent(ns, o);
+                        }
+
+                        break;
+                    }
+
+                    case PeeringSubType::SUBSCRIBE: {
+                        if (!stream_id || !data_ctx_id) {
+                            logger->warning << "conn_id: " << t_conn_id
+                                            << " Missing stream_id or data_ctx_id for control messages"
+                                            << std::flush;
+                            return;
+                        }
+
+                        MsgSubscribe msg;
+                        std::memcpy(&msg, data.data(), sizeof(msg));
+
+                        std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg), data.end());
+                        std::vector<Namespace> ns_list;
+                        decodeNamespaces(encoded_ns, ns_list);
+
+                        FLOG_INFO("Received subscribe from " << peer_id << " ns: " << ns_list.front());
+                        if (ns_list.size() > 0) {
+                            addSubscription(ns_list.front(), msg.remote_data_ctx_id);
+                            _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
+                                               .source_peer_id = peer_id,
+                                               .nspace = ns_list.front() });
+                        }
+                        break;
+                    }
+
+                    case PeeringSubType::UNSUBSCRIBE: {
+                        if (!stream_id || !data_ctx_id) {
+                            logger->warning << "conn_id: " << t_conn_id
+                                            << " Missing stream_id or data_ctx_id for control messages"
+                                            << std::flush;
+                            return;
+                        }
+
+                        MsgUnsubscribe msg;
+                        std::memcpy(&msg, data.data(), sizeof(msg));
+
+                        std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg), data.end());
+                        std::vector<Namespace> ns_list;
+                        decodeNamespaces(encoded_ns, ns_list);
+
+                        FLOG_INFO("Received unsubscribe from " << peer_id << " ns: " << ns_list.front());
+
+                        if (ns_list.size() > 0) {
+                            removeSubscription(ns_list.front());
+
+                            _peer_queue.push({ .type = PeerObjectType::UNSUBSCRIBE,
+                                               .source_peer_id = peer_id,
+                                               .nspace = ns_list.front() });
+                        }
+                        break;
+                    }
+
+                    case PeeringSubType::PUBLISH_INTENT: {
+                        if (!stream_id || !data_ctx_id) {
+                            logger->warning << "conn_id: " << t_conn_id
+                                            << " Missing stream_id or data_ctx_id for control messages"
+                                            << std::flush;
+                            return;
+                        }
+
+                        MsgPublishIntent msg;
+                        std::memcpy(&msg, data.data(), sizeof(msg));
+
+                        char o_peer_id[256]{ 0 };
+                        std::memcpy(o_peer_id, data.data() + sizeof(msg), msg.origin_id_len);
+
+                        std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg) + msg.origin_id_len, data.end());
+                        std::vector<Namespace> ns_list;
+                        decodeNamespaces(encoded_ns, ns_list);
+
+                        if (ns_list.size() > 0) {
+                            FLOG_INFO("Received publish intent from " << peer_id
+                                                                      << " with namespace: " << ns_list.front());
+
+                            _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT,
+                                               .source_peer_id = peer_id,
+                                               .origin_peer_id = o_peer_id,
+                                               .nspace = ns_list.front() });
+                        }
+
+                        break;
+                    }
+
+                    case PeeringSubType::PUBLISH_INTENT_DONE: {
+                        if (!stream_id || !data_ctx_id) {
+                            logger->warning << "conn_id: " << t_conn_id
+                                            << " Missing stream_id or data_ctx_id for control messages"
+                                            << std::flush;
+                            return;
+                        }
+
+                        MsgPublishIntentDone msg;
+                        std::memcpy(&msg, data.data(), sizeof(msg));
+
+                        char o_peer_id[256]{ 0 };
+                        std::memcpy(o_peer_id, data.data() + sizeof(msg), msg.origin_id_len);
+
+                        std::vector<uint8_t> encoded_ns(data.begin() + sizeof(msg) + msg.origin_id_len, data.end());
+                        std::vector<Namespace> ns_list;
+                        decodeNamespaces(encoded_ns, ns_list);
+
+                        // TODO: Remove subscription to allow a more optimized path based on new publish intent
+
+                        if (ns_list.size() > 0) {
+                            FLOG_INFO("Received publish intent DONE from " << peer_id
+                                                                           << " with namespace: " << ns_list.front());
+
+                            _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT_DONE,
+                                               .source_peer_id = peer_id,
+                                               .origin_peer_id = o_peer_id,
+                                               .nspace = ns_list.front() });
+                        }
+
+                        break;
+                    }
+
+                    default:
+                        FLOG_WARN("Unknown subtype " << static_cast<unsigned>(subtype));
+                        break;
+                }
+
+                break;
+            }
+            case messages::MessageType::Publish: {
+                messages::PublishDatagram datagram;
+                msg >> datagram;
+
+                if (not _config.disable_dedup && _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
+                    // duplicate, ignore
+                    FLOG_DEBUG("Duplicate message Name: " << datagram.header.name);
+                    break;
+
+                } else {
+                    _cache.put(datagram.header.name, datagram.header.offset_and_fin, datagram.media_data);
+                }
+
+                // Send to peers
+                _peer_queue.push({ .type = PeerObjectType::PUBLISH, .source_peer_id = peer_id, .pub_obj = datagram });
+
+                std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
+                  _subscriptions.find(datagram.header.name);
+
+                for (const auto& cMgr : list) {
+                    for (const auto& dest : cMgr.second) {
+                        dest.second.sendObjFunc(datagram);
+                    }
+
+                    break;
+                }
+
+                break;
+            }
+            default:
+                FLOG_INFO("Invalid Message Type " << static_cast<unsigned>(msg_type));
+                break;
+        }
+    }
+}

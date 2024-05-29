@@ -581,15 +581,23 @@ namespace laps {
 
     }
 
-    void PeerManager::on_recv_notify(const TransportConnId& conn_id,
-                                     const DataContextId& data_ctx_id, const bool is_bidir) {
+    void PeerManager::on_recv_stream(const TransportConnId& conn_id,
+                                     uint64_t stream_id,
+                                     std::optional<DataContextId> data_ctx_id,
+                                     const bool is_bidir)
+    {
         auto peer_iter = _server_peer_sessions.find(conn_id);
-
         if (peer_iter != _server_peer_sessions.end()) {
-            peer_iter->second.on_recv_notify(conn_id, data_ctx_id, is_bidir);
+            peer_iter->second.on_recv_stream(conn_id, stream_id, data_ctx_id, is_bidir);
         }
     }
 
-
+    void PeerManager::on_recv_dgram(const TransportConnId& conn_id, std::optional<DataContextId> data_ctx_id)
+    {
+        auto peer_iter = _server_peer_sessions.find(conn_id);
+        if (peer_iter != _server_peer_sessions.end()) {
+            peer_iter->second.on_recv_dgram(conn_id, data_ctx_id);
+        }
+    }
 
 } // namespace laps
