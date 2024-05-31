@@ -25,6 +25,7 @@ namespace laps {
      */
     struct PeerCommonHeader
     {
+        uint32_t msg_len;                       /// Length of the message
         uint8_t type{ QUICR_PEERING_MSG_TYPE }; /// Indicates this is a peering message
         PeeringSubType subtype;                 /// Message header subtype/encoding
     };
@@ -42,7 +43,7 @@ namespace laps {
     {
         MsgConnect() { subtype = PeeringSubType::CONNECT; }
 
-        // Flags
+      // Flags
         uint8_t     flag_reliable : 1;            /// Instructs peer to use reliable for published objects
         uint8_t     flag_reserved : 7;            /// Reserved/unused flags
 

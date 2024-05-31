@@ -131,7 +131,8 @@ namespace laps {
          */
           DataContextId createDataCtx(const TransportConnId conn_id,
                                       const bool use_reliable,
-                                      const uint8_t priority=1);
+                                      const uint8_t priority=1,
+                                      bool is_bidir=false);
 
         /**
          * @brief Send/publish object to peers
