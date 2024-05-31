@@ -85,8 +85,9 @@ namespace laps {
 
     DataContextId PeerSession::createDataCtx(const TransportConnId conn_id,
                                              const bool use_reliable,
-                                             const uint8_t priority) {
-        return _transport->createDataContext(conn_id, use_reliable, priority);
+                                             const uint8_t priority,
+                                             bool is_bidir) {
+        return _transport->createDataContext(conn_id, use_reliable, priority, is_bidir);
     }
 
     void PeerSession::publishObject(const messages::PublishDatagram& obj) {
@@ -148,6 +149,7 @@ namespace laps {
         MsgSubscribe msg;
         msg.remote_data_ctx_id = data_ctx_id;
         msg.count_subscribes = 1;
+        msg.msg_len = sizeof(msg) + ns_array.size();
 
         std::memcpy(buf.data(), &msg, sizeof(msg));
         std::memcpy(buf.data() + sizeof(msg), ns_array.data(), ns_array.size());
@@ -168,6 +170,7 @@ namespace laps {
 
             MsgUnsubscribe msg;
             msg.count_subscribes = 1;
+            msg.msg_len = sizeof(msg) + ns_array.size();
 
             std::memcpy(buf.data(), &msg, sizeof(msg));
             std::memcpy(buf.data() + sizeof(msg), ns_array.data(), ns_array.size());
@@ -187,6 +190,9 @@ namespace laps {
         c_msg.longitude = _config.peer_config.longitude;
         c_msg.latitude = _config.peer_config.latitude;
         c_msg.id_len = _config.peer_config.id.length();
+
+        c_msg.msg_len = sizeof(c_msg) + _config.peer_config.id.length();
+
         std::memcpy(buf.data(), &c_msg, sizeof(c_msg));
         std::memcpy(buf.data() + sizeof(c_msg), _config.peer_config.id.data(), _config.peer_config.id.length());
 
@@ -200,6 +206,8 @@ namespace laps {
         cok_msg.longitude = _config.peer_config.longitude;
         cok_msg.latitude = _config.peer_config.latitude;
         cok_msg.id_len = _config.peer_config.id.length();
+
+        cok_msg.msg_len = sizeof(cok_msg) + _config.peer_config.id.length();
 
         std::memcpy(buf.data(), &cok_msg, sizeof(cok_msg));
         std::memcpy(buf.data() + sizeof(cok_msg),
@@ -229,6 +237,7 @@ namespace laps {
         MsgPublishIntent msg;
         msg.origin_id_len = origin_peer_id.length();
         msg.count_publish_intents = 1;
+        msg.msg_len = sizeof(msg) + origin_peer_id.length() + ns_array.size();
 
         std::memcpy(buf.data(), &msg, sizeof(msg));
         std::memcpy(buf.data() + sizeof(msg), origin_peer_id.data(), origin_peer_id.length());
@@ -251,6 +260,7 @@ namespace laps {
         MsgPublishIntentDone msg;
         msg.origin_id_len = origin_peer_id.length();
         msg.count_publish_intents = 1;
+        msg.msg_len = sizeof(msg) + origin_peer_id.length() + ns_array.size();
 
         std::memcpy(buf.data(), &msg, sizeof(msg));
         std::memcpy(buf.data() + sizeof(msg), origin_peer_id.data(), origin_peer_id.length());
@@ -314,10 +324,15 @@ namespace laps {
             if (stream_buf->available(4)) {
                 auto msg_len_b = stream_buf->front(4);
 
-                if (!msg_len_b.size())
+                if (msg_len_b.empty())
                     return;
 
                 auto* msg_len = reinterpret_cast<uint32_t*>(msg_len_b.data());
+
+                if (!*msg_len) {
+                    // Invalid to have message length of zero
+                    return;
+                }
 
                 if (stream_buf->available(*msg_len)) {
                     auto obj = stream_buf->front(*msg_len);
@@ -385,7 +400,9 @@ namespace laps {
                              [[maybe_unused]] bool is_bidir)
     {
         if (msg.empty()) {
-            std::cout << "Transport Reported Empty Data" << std::endl;
+            logger->error << "stream_id:" << *stream_id
+                          << " msg size: " << msg.size()
+                          << " Is empty" << std::flush;
             return;
         }
 
@@ -395,7 +412,7 @@ namespace laps {
         switch (msg_type) {
             case messages::MessageType::PeerMsg: {
                 auto data = msg.take();
-                auto subtype = static_cast<PeeringSubType>(data[1]);
+                auto subtype = static_cast<PeeringSubType>(data[5]);
 
                 switch (subtype) {
                     case PeeringSubType::CONNECT: {
@@ -411,21 +428,19 @@ namespace laps {
                         latitude = c_msg.latitude;
 
                         // Only create control context on connnect
-                        if (data_ctx_id) {
+                        if (data_ctx_id && is_bidir) {
                             control_data_ctx_id = *data_ctx_id;
-                        } else if (stream_id) {
-                            control_data_ctx_id = createDataCtx(t_conn_id, true, 1);
-                            _transport->setStreamIdDataCtxId(t_conn_id, control_data_ctx_id, *stream_id);
                         } else {
                             logger->error << " conn_id: " << t_conn_id
-                                          << " connect is invalid due to stream ID being null"
+                                          << " connect is invalid due to control message not sent over bidir stream"
                                           << std::flush;
                             return;
                         }
 
                         FLOG_INFO("Received peer connect message from " << peer_id << " reliable: " << _use_reliable
-                                                                        << ", sending ok");
-                        logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
+                                                                        << ", sending ok"
+                                                                        << " control_data_ctx: " << control_data_ctx_id
+                                                                        << " control_stream_id: " << *stream_id);
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
                         _mexport->set_conn_ctx_info(

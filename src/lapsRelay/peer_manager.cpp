@@ -556,7 +556,7 @@ namespace laps {
                                                           _peer_queue,
                                                           _cache,
                                                           _subscriptions
-#ifndef LIBQUICR_WITHOUT_INFLUXDB,
+#ifndef LIBQUICR_WITHOUT_INFLUXDB
                                                           , _mexport
 #endif
             );
