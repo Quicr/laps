@@ -46,6 +46,7 @@ namespace laps {
         data_queue_size = 500;
         time_queue_ttl_default = 500;
         rx_queue_size = 200;
+        priority_limit_bypass = 0;
 
         help_msg.push_back("lapsRelay [help|-h]\n");
         help_msg.push_back("Environment Variables:");
@@ -95,6 +96,7 @@ namespace laps {
         env_value(use_bbr, "LAPS_USE_BBR", "True to enable BBR, false to use NewReno", "true");
 
         env_value(cwin_min_kb, "LAPS_CWIN_MIN_KB", "Congestion control window minimum size", std::to_string(cwin_min_kb));
+        env_value(priority_limit_bypass, "LAPS_PRI_LIMIT_BYPASS", "Priority value for limit bypass", std::to_string(priority_limit_bypass));
 
         peer_config.listen_port = client_config.listen_port + 3;
         peer_config.peer_port = client_config.listen_port + 3;
@@ -128,7 +130,8 @@ namespace laps {
             return;
 
         if constexpr ( std::is_same_v<Value_t, uint16_t>
-            || std::is_same_v<Value_t, int>) {
+            || std::is_same_v<Value_t, int>
+            || std::is_same_v<Value_t, uint8_t>) {
             value = atoi(envVar);
         }
 

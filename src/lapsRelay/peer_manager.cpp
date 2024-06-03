@@ -43,7 +43,8 @@ namespace laps {
             .quic_cwin_minimum = static_cast<uint64_t>(_config.cwin_min_kb * 1024),
             .use_reset_wait_strategy = _config.use_reset_wait_strategy,
             .use_bbr = _config.use_bbr,
-            .quic_qlog_path = _config.qlog_path.size() ? _config.qlog_path.c_str() : nullptr
+            .quic_qlog_path = _config.qlog_path.size() ? _config.qlog_path.c_str() : nullptr,
+            .quic_priority_limit = _config.priority_limit_bypass
         };
 
         _server_transport = qtransport::ITransport::make_server_transport(server, tconfig, *this, logger);

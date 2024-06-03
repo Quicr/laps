@@ -51,7 +51,8 @@ void ClientManager::start() {
                                     .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024),
                                     .use_reset_wait_strategy = config.use_reset_wait_strategy,
                                     .use_bbr = config.use_bbr,
-                                    .quic_qlog_path = config.qlog_path.size() ? config.qlog_path.c_str() : nullptr};
+                                    .quic_qlog_path = config.qlog_path.size() ? config.qlog_path.c_str() : nullptr,
+                                    .quic_priority_limit = config.priority_limit_bypass};
 
   logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
 

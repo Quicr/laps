@@ -34,6 +34,7 @@ namespace laps {
         uint16_t time_queue_ttl_default;
         uint16_t rx_queue_size;
         uint16_t cwin_min_kb { 128 };                  /// QUIC CWIN minimum KB size
+        uint8_t priority_limit_bypass { 0 };
 
         // Peering Manager Config parameters
         struct peerConfig {
