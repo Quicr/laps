@@ -90,18 +90,25 @@ namespace laps {
         return _transport->createDataContext(conn_id, use_reliable, priority, is_bidir);
     }
 
-    void PeerSession::publishObject(const messages::PublishDatagram& obj) {
+    void PeerSession::publishObject(const messages::PublishDatagram& obj, bool reliable) {
         auto iter = _subscribed.find(obj.header.name);
 
         if (iter != _subscribed.end()) {
-            ITransport::EnqueueFlags eflags { true, false, false, false };
+
+            auto min_priority = std::min(obj.header.priority, iter->second.priority);
+            if (min_priority != iter->second.priority) {
+                iter->second.priority = min_priority;
+                _transport->setDataCtxPriority(t_conn_id, iter->second.data_ctx_id, iter->second.priority);
+            }
+
+            ITransport::EnqueueFlags eflags { reliable, false, false, false };
 
             //FLOG_DEBUG("Sending published object for name: " << obj.header.name);
             messages::MessageBuffer mb;
             mb << obj;
 
             // Check if group has incremented, if so start a new stream (reliable using per group)
-            if (iter->second.prev_group_id && iter->second.prev_group_id < obj.header.group_id) {
+            if (reliable && iter->second.prev_group_id && iter->second.prev_group_id < obj.header.group_id) {
                 eflags.clear_tx_queue = true;
                 eflags.new_stream = true;
                 eflags.use_reset = true;
@@ -122,7 +129,8 @@ namespace laps {
 
     DataContextId PeerSession::addSubscription(const Namespace& ns, std::optional<DataContextId> remote_data_ctx_id)
     {
-        auto data_ctx_id = createDataCtx(t_conn_id, _use_reliable, 2 /* TODO(tievens): Forward/use received PRI  */ );
+        auto data_ctx_id = createDataCtx(t_conn_id, _use_reliable, 2);
+
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
         _mexport->set_data_ctx_info(t_conn_id, data_ctx_id, {.subscribe = true, .nspace = ns});

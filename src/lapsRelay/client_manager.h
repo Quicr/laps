@@ -63,6 +63,7 @@ class ClientManager : public quicr::ServerDelegate, public std::enable_shared_fr
 
   void onPublisherObject(const qtransport::TransportConnId& conn_id,
                          const qtransport::DataContextId& data_ctx_id,
+                         bool reliable,
                          quicr::messages::PublishDatagram &&datagram) override;
 
   void onSubscribe(const quicr::Namespace &quicr_namespace,

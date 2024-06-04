@@ -399,12 +399,12 @@ namespace laps {
 
                         for (auto& sess: _client_peer_sessions) {
                             if (obj->source_peer_id.compare(sess.getPeerId()))
-                                sess.publishObject(obj->pub_obj);
+                                sess.publishObject(obj->pub_obj, obj->reliable);
                         }
 
                         for (auto& [_, sess]: _server_peer_sessions) {
                             if (obj->source_peer_id.compare(sess.getPeerId()))
-                                sess.publishObject(obj->pub_obj);
+                                sess.publishObject(obj->pub_obj, obj->reliable);
                         }
 
                         break;

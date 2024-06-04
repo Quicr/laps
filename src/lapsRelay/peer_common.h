@@ -23,6 +23,7 @@ namespace laps {
         PeerObjectType  type;                             /// Object type
         peer_id_t       source_peer_id;                   /// Peer ID if from peer, otherwise empty
         peer_id_t       origin_peer_id;                   /// Origin of a publish intent
+        bool            reliable;                         /// Object received via reliable transport
 
         messages::PublishDatagram pub_obj;                /// published object to send
         Namespace nspace {};                              /// Subscribe or publish intent namespace
