@@ -138,8 +138,9 @@ namespace laps {
          * @brief Send/publish object to peers
          *
          * @param obj          Published Object to send
+         * @param reliable     Indicates reliable transport should be used
          */
-        void publishObject(const messages::PublishDatagram& obj);
+        void publishObject(const messages::PublishDatagram& obj, bool reliable);
 
         /**
          * @brief Send subscribe to peer
@@ -244,6 +245,9 @@ namespace laps {
         {
             DataContextId data_ctx_id {0};                      /// Local Data Context ID for sending/receiving data
             std::optional<DataContextId> remote_data_ctx_id;    /// Remote Data Context ID
+            uint8_t priority {100};                             /// Priority to use in transport data context
+
+            uint64_t prev_group_id {0};
         };
 
         namespace_map<SubscribeContext> _subscribed;    /// Subscribed namespace and associated data ctx id

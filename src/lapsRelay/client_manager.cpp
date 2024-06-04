@@ -93,6 +93,7 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
 void ClientManager::onPublisherObject(
     const qtransport::TransportConnId& conn_id,
     [[maybe_unused]] const qtransport::DataContextId& data_ctx_id,
+    bool reliable,
     quicr::messages::PublishDatagram &&datagram) {
 
   if (not config.disable_dedup &&
@@ -107,7 +108,9 @@ void ClientManager::onPublisherObject(
   }
 
   // Send to peers
-  _peer_queue.push({ .type =PeerObjectType::PUBLISH,.source_peer_id = CLIENT_PEER_ID, .pub_obj = datagram });
+  _peer_queue.push({ .type =PeerObjectType::PUBLISH, .source_peer_id = CLIENT_PEER_ID,
+                            .reliable = reliable,
+                            .pub_obj = datagram });
 
   std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
       subscribeList.find(datagram.header.name);
