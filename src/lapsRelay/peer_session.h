@@ -244,6 +244,8 @@ namespace laps {
         {
             DataContextId data_ctx_id {0};                      /// Local Data Context ID for sending/receiving data
             std::optional<DataContextId> remote_data_ctx_id;    /// Remote Data Context ID
+
+            uint64_t prev_group_id {0};
         };
 
         namespace_map<SubscribeContext> _subscribed;    /// Subscribed namespace and associated data ctx id

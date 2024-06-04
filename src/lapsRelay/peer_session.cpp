@@ -91,14 +91,32 @@ namespace laps {
     }
 
     void PeerSession::publishObject(const messages::PublishDatagram& obj) {
-
         auto iter = _subscribed.find(obj.header.name);
+
         if (iter != _subscribed.end()) {
+            ITransport::EnqueueFlags eflags { true, false, false, false };
+
             //FLOG_DEBUG("Sending published object for name: " << obj.header.name);
             messages::MessageBuffer mb;
             mb << obj;
 
-            _transport->enqueue(t_conn_id, iter->second.data_ctx_id, mb.take(), { MethodTraceItem{} }, obj.header.priority);
+            // Check if group has incremented, if so start a new stream (reliable using per group)
+            if (iter->second.prev_group_id && iter->second.prev_group_id < obj.header.group_id) {
+                eflags.clear_tx_queue = true;
+                eflags.new_stream = true;
+                eflags.use_reset = true;
+            }
+
+            iter->second.prev_group_id = obj.header.group_id;
+
+            _transport->enqueue(t_conn_id,
+                                iter->second.data_ctx_id,
+                                mb.take(),
+                                { MethodTraceItem{} },
+                                obj.header.priority,
+                                _config.time_queue_ttl_default,
+                                0,
+                                eflags);
         }
     }
 
