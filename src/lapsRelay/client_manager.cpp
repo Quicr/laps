@@ -176,7 +176,7 @@ void ClientManager::onSubscribe(
                      client_mgr_id, remote);
 
   _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE, .source_peer_id = CLIENT_PEER_ID,
-                     .nspace = quicr_namespace });
+                            .nspace = quicr_namespace });
 
 
   // respond with response
