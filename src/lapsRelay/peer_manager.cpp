@@ -193,7 +193,7 @@ namespace laps {
             }
         }
 
-        // Add namespace with empty list if it doesn't exist
+        // Add namespace with empty list if it desn't exist
         auto peer_subs_it = _peer_sess_subscribe_sent.find(ns);
         if (peer_subs_it == _peer_sess_subscribe_sent.end()) {
             auto [it, _] = _peer_sess_subscribe_sent.emplace(ns, std::initializer_list<peer_id_t>({ }));
@@ -309,7 +309,6 @@ namespace laps {
         const auto iter = _pub_intent_namespaces.find(ns);
         if (iter == _pub_intent_namespaces.end()) {
             FLOG_DEBUG("New published intent message origin " << origin_peer_id);
-            update_peers = true;
 
             std::map<peer_id_t, std::list<peer_id_t>> intent_map;
             intent_map.emplace(origin_peer_id, std::initializer_list<peer_id_t>{ source_peer_id });
@@ -319,7 +318,6 @@ namespace laps {
             const auto it = iter->second.find(origin_peer_id);
             if (it == iter->second.end()) {
                 FLOG_DEBUG("New published intent origin " << origin_peer_id);
-                update_peers = true;
 
                 iter->second.emplace(origin_peer_id,
                                          std::initializer_list<peer_id_t>{ source_peer_id });
@@ -341,16 +339,14 @@ namespace laps {
             }
         }
 
-        if (update_peers) {
-            for (auto& sess : _client_peer_sessions) {
-                if (source_peer_id.compare(sess.getPeerId()))
-                    sess.sendPublishIntent(ns, origin_peer_id);
-            }
+        for (auto& sess : _client_peer_sessions) {
+            if (source_peer_id.compare(sess.getPeerId()))
+                sess.sendPublishIntent(ns, origin_peer_id);
+        }
 
-            for (auto& [_, sess] : _server_peer_sessions) {
-                if (source_peer_id.compare(sess.getPeerId()))
-                    sess.sendPublishIntent(ns, origin_peer_id);
-            }
+        for (auto& [_, sess] : _server_peer_sessions) {
+            if (source_peer_id.compare(sess.getPeerId()))
+                sess.sendPublishIntent(ns, origin_peer_id);
         }
     }
 
@@ -413,11 +409,11 @@ namespace laps {
                     case PeerObjectType::SUBSCRIBE: {
 
                         if (obj->source_peer_id.compare(CLIENT_PEER_ID)) { // if from peer
-                            FLOG_DEBUG("Received CMGR subscribe message name: " << obj->nspace);
+                            FLOG_DEBUG("Received subscribe message name: " << obj->nspace << " source peer_id: " << obj->source_peer_id);
                             _peer_sess_subscribe_recv.emplace(obj->nspace, std::initializer_list<peer_id_t>({obj->source_peer_id}));
 
                         } else {
-                            FLOG_DEBUG("Received subscribe message name: " << obj->nspace << " source peer_id: " << obj->source_peer_id);
+                            FLOG_DEBUG("Received CMGR subscribe message name: " << obj->nspace);
                         }
 
                         // Send subscribe to all peers toward the best publish intent peer(s)
@@ -455,6 +451,14 @@ namespace laps {
                                 if (it->second.empty()) {
                                     un_sub_all = true;
                                     _peer_sess_subscribe_recv.erase(it);
+
+                                    // If there are still clients on this relay, do not unsubscribe all peers
+                                    auto list = _subscriptions.find(obj->nspace);
+                                    if (!list.empty()) {
+                                        logger->debug << "Client(s) still subscribed to " << obj->nspace << std::flush;
+                                        un_sub_all = false;
+                                    }
+
                                 } else {
                                     un_sub_all = false;
                                     logger->debug << "Peers " << it->second.size()

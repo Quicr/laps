@@ -127,7 +127,7 @@ namespace laps {
         }
     }
 
-    DataContextId PeerSession::addSubscription(const Namespace& ns, std::optional<DataContextId> remote_data_ctx_id)
+    DataContextId PeerSession:: addSubscription(const Namespace& ns)
     {
         auto data_ctx_id = createDataCtx(t_conn_id, _use_reliable, 2);
 
@@ -136,11 +136,10 @@ namespace laps {
         _mexport->set_data_ctx_info(t_conn_id, data_ctx_id, {.subscribe = true, .nspace = ns});
 #endif
 
-        auto ctx = _subscribed.try_emplace(ns, SubscribeContext{ data_ctx_id, *remote_data_ctx_id });
+        auto ctx = _subscribed.try_emplace(ns, SubscribeContext{ data_ctx_id });
 
-        if (remote_data_ctx_id) {
-            ctx.first->second.remote_data_ctx_id = *remote_data_ctx_id;
-            _transport->setRemoteDataCtxId( t_conn_id, ctx.first->second.data_ctx_id, *remote_data_ctx_id);
+        if (!ctx.second) {
+            ctx.first->second.data_ctx_id = data_ctx_id;
         }
 
         return data_ctx_id;
@@ -367,7 +366,7 @@ namespace laps {
                     try {
                         messages::MessageBuffer msg_buffer{ obj };
 
-                        handle(stream_id, data_ctx_id, std::move(msg_buffer), is_bidir);
+                        handle(stream_id, data_ctx_id, true, std::move(msg_buffer), is_bidir);
 
                     } catch (const messages::MessageBuffer::ReadException& ex) {
 
@@ -408,7 +407,7 @@ namespace laps {
             messages::MessageBuffer msg_buffer{ *data };
 
             try {
-                handle(std::nullopt, std::nullopt, std::move(msg_buffer));
+                handle(std::nullopt, std::nullopt, false, std::move(msg_buffer));
             } catch (const std::exception& e) {
                 LOGGER_DEBUG(logger, "Dropping malformed message: " << e.what());
                 return;
@@ -422,6 +421,7 @@ namespace laps {
 
     void PeerSession::handle(std::optional<uint64_t> stream_id,
                              std::optional<DataContextId> data_ctx_id,
+                             bool reliable,
                              messages::MessageBuffer&& msg,
                              [[maybe_unused]] bool is_bidir)
     {
@@ -539,10 +539,10 @@ namespace laps {
 
                         FLOG_INFO("Received subscribe from " << peer_id << " ns: " << ns_list.front());
                         if (ns_list.size() > 0) {
-                            addSubscription(ns_list.front(), msg.remote_data_ctx_id);
+                            addSubscription(ns_list.front());
                             _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
-                                               .source_peer_id = peer_id,
-                                               .nspace = ns_list.front() });
+                                                      .source_peer_id = peer_id,
+                                                      .nspace = ns_list.front() });
                         }
                         break;
                     }
@@ -594,12 +594,13 @@ namespace laps {
 
                         if (ns_list.size() > 0) {
                             FLOG_INFO("Received publish intent from " << peer_id
+                                                                      << " origin_peer: " << o_peer_id
                                                                       << " with namespace: " << ns_list.front());
 
                             _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT,
-                                               .source_peer_id = peer_id,
-                                               .origin_peer_id = o_peer_id,
-                                               .nspace = ns_list.front() });
+                                                      .source_peer_id = peer_id,
+                                                      .origin_peer_id = o_peer_id,
+                                                      .nspace = ns_list.front() });
                         }
 
                         break;
@@ -659,7 +660,9 @@ namespace laps {
                 }
 
                 // Send to peers
-                _peer_queue.push({ .type = PeerObjectType::PUBLISH, .source_peer_id = peer_id, .pub_obj = datagram });
+                _peer_queue.push({ .type = PeerObjectType::PUBLISH, .source_peer_id = peer_id,
+                                          .reliable = reliable,
+                                          .pub_obj = datagram });
 
                 std::map<uint16_t, std::map<uint64_t, ClientSubscriptions::Remote>> list =
                   _subscriptions.find(datagram.header.name);

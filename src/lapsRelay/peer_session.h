@@ -185,6 +185,7 @@ namespace laps {
 
         void handle(std::optional<uint64_t> stream_id,
                     std::optional<DataContextId> data_ctx_id,
+                    bool reliable,
                     messages::MessageBuffer&& msg,
                     bool is_bidir=false);
 
@@ -197,10 +198,10 @@ namespace laps {
          *    a subscription is received by the session.
          *
          * @param ns                        Namespace of the subscription
-         * @param remote_data_ctx_id        Remote side data context ID
+         *
          * @returns local data context ID used for sending/receiving
          */
-        DataContextId addSubscription(const Namespace& ns, std::optional<DataContextId> remote_data_ctx_id=std::nullopt);
+        DataContextId addSubscription(const Namespace& ns);
         void removeSubscription(const Namespace& ns);
 
       public:
@@ -244,7 +245,6 @@ namespace laps {
         struct SubscribeContext
         {
             DataContextId data_ctx_id {0};                      /// Local Data Context ID for sending/receiving data
-            std::optional<DataContextId> remote_data_ctx_id;    /// Remote Data Context ID
             uint8_t priority {100};                             /// Priority to use in transport data context
 
             uint64_t prev_group_id {0};
