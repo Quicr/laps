@@ -33,8 +33,8 @@ namespace laps {
         };
 
         TransportConfig tconfig {
-            .tls_cert_filename = _config.tls_cert_filename.c_str(),
-            .tls_key_filename = _config.tls_key_filename.c_str(),
+            .tls_cert_filename = const_cast<char *>(_config.tls_cert_filename.c_str()),
+            .tls_key_filename = const_cast<char *>(_config.tls_key_filename.c_str()),
             .time_queue_init_queue_size = _config.data_queue_size,
             .time_queue_max_duration = 5000,
             .time_queue_bucket_interval = 2,
@@ -43,7 +43,7 @@ namespace laps {
             .quic_cwin_minimum = static_cast<uint64_t>(_config.cwin_min_kb * 1024),
             .use_reset_wait_strategy = _config.use_reset_wait_strategy,
             .use_bbr = _config.use_bbr,
-            .quic_qlog_path = _config.qlog_path.size() ? _config.qlog_path.c_str() : nullptr,
+            .quic_qlog_path = _config.qlog_path.size() ? const_cast<char *>(_config.qlog_path.c_str()) : nullptr,
             .quic_priority_limit = _config.priority_limit_bypass
         };
 
