@@ -5,7 +5,7 @@ file(GLOB RELAY_HEADER *.h)
 
 add_executable( lapsRelay  ${RELAY_SOURCES} ${RELAY_HEADERS} )
 
-target_link_libraries( lapsRelay PUBLIC quicr quicr-transport picotls-core picotls-openssl)
+target_link_libraries( lapsRelay PUBLIC quicr quicr-transport)
 target_compile_options(lapsRelay
         PRIVATE
         $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall -Wno-unused-parameter>

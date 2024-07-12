@@ -6,7 +6,7 @@
 FROM alpine:latest as builder
 
 RUN apk update
-RUN apk add --no-cache cmake alpine-sdk openssl-dev go perl
+RUN apk add --no-cache cmake alpine-sdk openssl-dev go python3
 RUN apk add --no-cache tcsh bash linux-headers
 RUN apk add --no-cache \
         ca-certificates \
@@ -29,9 +29,10 @@ RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
     && cp  build/src/lapsTest/lapsTest  /usr/local/bin/.
 
 WORKDIR /usr/local/cert
-RUN openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
-    -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.quicr.ctgpoc.com" \
-    -keyout server-key.pem -out server-cert.pem
+RUN openssl ecparam -name prime256v1 -genkey -noout -out server-key-ec.pem
+RUN openssl req -nodes -x509 -key server-key-ec.pem -days 365 \
+            -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.m10x.org" \
+            -keyout server-key.pem -out server-cert.pem
 
 # Run layer
 FROM alpine:latest

@@ -5,15 +5,7 @@
 # Build layer
 FROM debian:12-slim as builder
 
-RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake ca-certificates
-
-WORKDIR /tmp
-
-#RUN [[ "$(uname -m)" == "x86_64" ]] \
-#    && export CMAKE_FILENAME=cmake-3.29.2-linux-x86_64.sh \
-#    || export CMAKE_FILENAME=cmake-3.29.2-linux-aarch64.sh; \
-#    wget https://cmake.org/files/v3.29/$CMAKE_FILENAME; \
-#    /bin/sh ./$CMAKE_FILENAME --skip-license --prefix=/usr/local
+RUN apt-get update && apt-get install -y make openssl golang python3-venv wget git cmake ca-certificates
 
 WORKDIR /ws
 
@@ -32,12 +24,13 @@ RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
     && cp  build/src/lapsTest/lapsTest  /usr/local/bin/.
 
 WORKDIR /usr/local/cert
-RUN openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
-    -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.quicr.ctgpoc.com" \
-    -keyout server-key.pem -out server-cert.pem
+RUN openssl ecparam -name prime256v1 -genkey -noout -out server-key-ec.pem
+RUN openssl req -nodes -x509 -key server-key-ec.pem -days 365 \
+            -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.m10x.org" \
+            -keyout server-key.pem -out server-cert.pem
 
 # Run layer
-FROM debian:11-slim
+FROM debian:12-slim
 RUN apt-get install -y libstdc++ bash
 
 COPY --from=builder /usr/local/bin/lapsRelay /usr/local/bin/.
@@ -54,7 +47,9 @@ COPY --chown=laps:laps --from=builder /usr/local/cert/server-key.pem /usr/local/
 
 EXPOSE 33434/udp
 EXPOSE 33435/udp
-EXPOSE 33434/tcp
+EXPOSE 33436/udp
+EXPOSE 33437/udp
+EXPOSE 33438/udp
 
 ENV LAPS_TLS_CERT_FILENAME=/usr/local/cert/server-cert.pem
 ENV LAPS_TLS_KEY_FILENAME=/usr/local/cert/server-key.pem

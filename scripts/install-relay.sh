@@ -94,8 +94,9 @@ create_cert() {
   if [[ ! -f server-key.pem || ! -f server-cert.pem ]]; then
     echo "Creating relay self-signed certificate"
 
-    openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
-        -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=relay.quicr.ctgpoc.com" \
+    openssl ecparam -name prime256v1 -genkey -noout -out server-key-ec.pem
+    openssl req -nodes -x509 -key server-key-ec.pem -days 365 \
+        -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=test.m10x.org" \
         -keyout server-key.pem -out server-cert.pem
   fi
 }
