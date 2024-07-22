@@ -227,8 +227,8 @@ namespace laps {
         double  latitude { 0 };                   /// 8 byte latitude value detailing the location of the local relay
 
         TransportConfig _transport_config {
-            .tls_cert_filename = const_cast<char *>(_config.tls_cert_filename.c_str()),
-            .tls_key_filename = const_cast<char *>(_config.tls_key_filename.c_str()),
+            .tls_cert_filename = _config.tls_cert_filename,
+            .tls_key_filename = _config.tls_key_filename,
             .time_queue_init_queue_size = _config.data_queue_size,
             .time_queue_max_duration = 1000,
             .time_queue_bucket_interval = 2,

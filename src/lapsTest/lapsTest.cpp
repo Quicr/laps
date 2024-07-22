@@ -163,7 +163,7 @@ main(int argc, char* argv[])
 
     quicr::RelayInfo relay{ .hostname = relayName, .port = uint16_t(port), .proto = protocol };
 
-    qtransport::TransportConfig tcfg{ .tls_cert_filename = NULL, .tls_key_filename = NULL };
+    qtransport::TransportConfig tcfg{ .tls_cert_filename = "", .tls_key_filename = "" };
     quicr::Client client(relay, "lapsTest@cisco.com", 0, std::move(tcfg), logger);
 
     client.connect();

@@ -42,8 +42,8 @@ void ClientManager::start() {
                                  .proto = config.client_config.protocol,
                                  .relay_id = config.peer_config.id };
 
-  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : const_cast<char *>(config.tls_cert_filename.c_str()),
-                                    .tls_key_filename = config.tls_cert_filename.empty() ? NULL : const_cast<char *>(config.tls_key_filename.c_str()),
+  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
+                                    .tls_key_filename = config.tls_key_filename,
                                     .time_queue_init_queue_size = config.data_queue_size,
                                     .time_queue_max_duration = 5000,
                                     .time_queue_rx_size = config.rx_queue_size,
@@ -51,7 +51,7 @@ void ClientManager::start() {
                                     .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024),
                                     .use_reset_wait_strategy = config.use_reset_wait_strategy,
                                     .use_bbr = config.use_bbr,
-                                    .quic_qlog_path = config.qlog_path.size() ? const_cast<char *>(config.qlog_path.c_str()) : nullptr,
+                                    .quic_qlog_path = config.qlog_path,
                                     .quic_priority_limit = config.priority_limit_bypass};
 
   logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;

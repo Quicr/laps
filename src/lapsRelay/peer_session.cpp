@@ -35,8 +35,8 @@ namespace laps {
         _use_reliable = _config.peer_config.use_reliable;
 
         if (_config.tls_cert_filename.length() == 0) {
-            _transport_config.tls_cert_filename = NULL;
-            _transport_config.tls_key_filename = NULL;
+            _transport_config.tls_cert_filename = "";
+            _transport_config.tls_key_filename = "";
         }
 
         FLOG_INFO("Starting peer session");
