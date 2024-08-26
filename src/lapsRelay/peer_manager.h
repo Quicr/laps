@@ -35,7 +35,7 @@ namespace laps {
       public:
 
         PeerManager(const Config& cfg,
-                    safe_queue<PeerObject>& peer_queue,
+                    SafeQueue<PeerObject>& peer_queue,
                     Cache& cache,
                     ClientSubscriptions& subscriptions);
 
@@ -193,7 +193,7 @@ namespace laps {
         namespace_map<std::map<peer_id_t, std::list<peer_id_t>>> _pub_intent_namespaces; /// Publish intents received from peers
 
         // Log handler to use
-        cantina::LoggerPointer logger;
+        std::shared_ptr<spdlog::logger> logger;
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
         std::shared_ptr<MetricsExporter> _mexport;

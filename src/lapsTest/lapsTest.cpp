@@ -1,6 +1,7 @@
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <transport/transport.h>
 
-#include <cantina/logger.h>
-#include "transport/transport.h"
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -22,8 +23,8 @@ class subDelegate : public quicr::SubscriberDelegate
     uint64_t prev_recv_time {0};
 
   public:
-    subDelegate(const cantina::LoggerPointer& logger)
-      : logger(std::make_shared<cantina::Logger>("SDEL", logger))
+    subDelegate(std::shared_ptr<spdlog::logger> logger)
+      : logger(std::move(logger))
     {
     }
     ~subDelegate() override = default;
@@ -31,14 +32,16 @@ class subDelegate : public quicr::SubscriberDelegate
     void onSubscribeResponse([[maybe_unused]] const quicr::Namespace& quicr_namespace,
                              [[maybe_unused]] const quicr::SubscribeResult& result) override
     {
-        logger->info << "onSubscriptionResponse: name: " << quicr_namespace
-                     << " status: " << static_cast<unsigned>(result.status) << std::flush;
+        SPDLOG_LOGGER_INFO(logger,
+                           "onSubscriptionResponse: name: {0} status: {1}",
+                           std::string(quicr_namespace),
+                           static_cast<unsigned>(result.status));
     }
 
     void onSubscriptionEnded([[maybe_unused]] const quicr::Namespace& quicr_namespace,
                              [[maybe_unused]] const quicr::SubscribeResult::SubscribeStatus& reason) override
     {
-        logger->info << "onSubscriptionEnded: name: " << quicr_namespace << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "onSubscriptionEnded: name: {0}", std::string(quicr_namespace));
     }
 
     void onSubscribedObject([[maybe_unused]] const quicr::Name& quicr_name,
@@ -49,7 +52,8 @@ class subDelegate : public quicr::SubscriberDelegate
 
         auto now = now_us();
 
-        logger->info << "recv object: name: " << quicr_name << " data sz: " << data.size();
+        std::ostringstream log_msg;
+        log_msg << "recv object: name: " << quicr_name << " data sz: " << data.size();
 
         uint64_t sent_time{ 0 };
         std::memcpy(&sent_time, data.data(), sizeof(uint64_t));
@@ -61,7 +65,7 @@ class subDelegate : public quicr::SubscriberDelegate
             uint64_t sub_jitter = now - prev_recv_time;
             uint64_t e2e_latency = now - sent_time;
 
-            logger->info << " pub_jitter: " << pub_jitter
+            log_msg << " pub_jitter: " << pub_jitter
                          << " sub_jitter: " << sub_jitter
                          << " e2e_latency: " << e2e_latency;
         }
@@ -70,9 +74,9 @@ class subDelegate : public quicr::SubscriberDelegate
         prev_recv_time = now;
 
         if (data.size())
-            logger->info << " data: " << data.data();
+            log_msg << " data: " << data.data();
 
-        logger->info << std::flush;
+        SPDLOG_LOGGER_INFO(logger, log_msg.str());
     }
 
     void onSubscribedObjectFragment([[maybe_unused]] const quicr::Name& quicr_name,
@@ -84,7 +88,7 @@ class subDelegate : public quicr::SubscriberDelegate
     }
 
   private:
-    cantina::LoggerPointer logger;
+    std::shared_ptr<spdlog::logger> logger;
 };
 
 class pubDelegate : public quicr::PublisherDelegate
@@ -97,8 +101,6 @@ class pubDelegate : public quicr::PublisherDelegate
     void onPublishIntentResponse([[maybe_unused]] const quicr::Namespace& quicr_namespace,
                                  [[maybe_unused]] const quicr::PublishIntentResult& result) override
     {
-        std::cout << "GOT PUB INTENT RESPONSE" << std::endl;
-
         got_intent_response = true;
     }
 };
@@ -116,7 +118,7 @@ main(int argc, char* argv[])
         exit(-1);
     }
 
-    cantina::LoggerPointer logger = std::make_shared<cantina::Logger>("lapsTest");
+    auto logger = spdlog::stderr_color_mt("lapsTest");
 
     char* relayName = getenv("LAPS_RELAY");
     if (!relayName) {
@@ -150,7 +152,7 @@ main(int argc, char* argv[])
 
     std::stringstream log_msg;
 
-    logger->info << "Name = " << name << std::flush;
+    SPDLOG_LOGGER_INFO(logger, "Name = {0}", std::string(name));
 
     std::vector<uint8_t> data;
 
@@ -159,11 +161,11 @@ main(int argc, char* argv[])
         data.insert(data.end(), (uint8_t*)(argv[2]), ((uint8_t*)(argv[2])) + std::strlen(argv[2]));
     }
 
-    logger->info << "Connecting to " << relayName << ":" << port << std::flush;
+    SPDLOG_LOGGER_INFO(logger, "Connecting to {0}:{1}", relayName, port);
 
     quicr::RelayInfo relay{ .hostname = relayName, .port = uint16_t(port), .proto = protocol };
 
-    qtransport::TransportConfig tcfg{ .tls_cert_filename = NULL, .tls_key_filename = NULL };
+    qtransport::TransportConfig tcfg{ .tls_cert_filename = "", .tls_key_filename = "" };
     quicr::Client client(relay, "lapsTest@cisco.com", 0, std::move(tcfg), logger);
 
     client.connect();
@@ -172,18 +174,16 @@ main(int argc, char* argv[])
         auto pd = std::make_shared<pubDelegate>();
         auto nspace = quicr::Namespace(name, 96);
 
-        logger->Log("PublishIntent");
+        SPDLOG_LOGGER_INFO(logger, "PublishIntent");
 
         client.publishIntent(pd, nspace, {}, {}, {}, quicr::TransportMode::ReliablePerGroup);
 
-        logger->Log("... waiting for publish intent response");
+        SPDLOG_LOGGER_INFO(logger, "... waiting for publish intent response");
         while (!pd->got_intent_response) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        logger->Log("... got publish intent response");
-
-        logger->info << "Publish starting: " << name << " Time us: " << now_us()
-                     << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "... got publish intent response");
+        SPDLOG_LOGGER_INFO(logger, "Publish starting: {0} Time us: {1}", std::string(name), now_us());
 
         // do publish
         for (int count = 0; count < obj_count; count++) {
@@ -191,8 +191,7 @@ main(int argc, char* argv[])
 
             auto copy = data;
             std::memcpy(copy.data(), &now, sizeof(uint64_t));
-            logger->info << "Publish " << name << " Time us: " << now
-                         << std::flush;
+            SPDLOG_LOGGER_INFO(logger, "Publish : {0} Time us: {1}", std::string(name), now);
 
             std::vector<qtransport::MethodTraceItem> trace;
             const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
@@ -202,10 +201,9 @@ main(int argc, char* argv[])
             client.publishNamedObject(name++, 0, 1000, std::move(copy), std::move(trace));
         }
 
-        logger->info << "Publish done: " << name << " Time us: " << now_us()
-                     << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "Publish done: {0} Time us: {1}", std::string(name), now_us());
 
-        logger->Log("===> Press ENTER to exit <=== ");
+        SPDLOG_LOGGER_INFO(logger, "===> Press ENTER to exit <=== ");
 
         std::string line;
         std::getline(std::cin, line);
@@ -215,25 +213,25 @@ main(int argc, char* argv[])
 
     } else {
         // do subscribe
-        logger->Log("Subscribe");
+        SPDLOG_LOGGER_INFO(logger, "Subscribe");
         auto sd = std::make_shared<subDelegate>(logger);
         auto nspace = quicr::Namespace(name, 96);
 
-        logger->info << "Subscribe to " << name << "/" << 96 << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "Subscribe to {0}/{1}", std::string(name), 96);
 
         quicr::SubscribeIntent intent = quicr::SubscribeIntent::immediate;
         quicr::bytes empty;
 
         client.subscribe(sd, nspace, intent, quicr::TransportMode::UsePublisher, "origin_url", "auth_token", std::move(empty));
 
-        logger->Log("===> RUNNING, Press ENTER to unsubscribe <===");
+        SPDLOG_LOGGER_INFO(logger, "===> RUNNING, Press ENTER to unsubscribe <===");
         std::string line;
         std::getline(std::cin, line);
 
-        logger->Log("Now unsubscribing");
+        SPDLOG_LOGGER_INFO(logger, "Now unsubscribing");
         client.unsubscribe(nspace, {}, {});
 
-        logger->Log("===> Press ENTER to exit <=== ");
+        SPDLOG_LOGGER_INFO(logger, "===> Press ENTER to exit <=== ");
 
         std::getline(std::cin, line);
     }

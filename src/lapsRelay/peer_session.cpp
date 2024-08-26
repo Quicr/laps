@@ -1,7 +1,6 @@
 
 #include "peer_manager.h"
 #include "peer_session.h"
-#include "logger.h"
 #include <quicr/quicr_client.h>
 
 #include <sstream>
@@ -12,7 +11,7 @@ namespace laps {
                              const TransportConnId conn_id,
                              const Config& cfg,
                              const TransportRemote& peer_remote,
-                             safe_queue<PeerObject>& peer_queue,
+                             SafeQueue<PeerObject>& peer_queue,
                              Cache& cache,
                              ClientSubscriptions& subscriptions
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
@@ -24,7 +23,7 @@ namespace laps {
       , _peer_queue(peer_queue)
       , _cache(cache)
       , _subscriptions(subscriptions)
-      , logger(std::make_shared<cantina::Logger>("PEER", cfg.logger))
+      , logger(cfg.logger)
       , _is_inbound(is_inbound)
       , t_conn_id(conn_id)
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
@@ -35,11 +34,11 @@ namespace laps {
         _use_reliable = _config.peer_config.use_reliable;
 
         if (_config.tls_cert_filename.length() == 0) {
-            _transport_config.tls_cert_filename = NULL;
-            _transport_config.tls_key_filename = NULL;
+            _transport_config.tls_cert_filename = "";
+            _transport_config.tls_key_filename = "";
         }
 
-        FLOG_INFO("Starting peer session");
+        SPDLOG_LOGGER_INFO(logger, "Starting peer session");
 
     }
 
@@ -49,8 +48,7 @@ namespace laps {
             _transport = nullptr;
         }
 
-        FLOG_INFO("Removing peer session with " << peer_config.host_or_ip.c_str() << ":" << peer_config.port
-                                                << " id: " << peer_id.c_str());
+        SPDLOG_LOGGER_INFO(logger, "Removing peer session with {0}:{1} id: {2}", peer_config.host_or_ip, peer_config.port, peer_id);
     }
 
     PeerSession::Status PeerSession::status() {
@@ -75,7 +73,7 @@ namespace laps {
         // Create the control data context
         control_data_ctx_id = _transport->createDataContext(t_conn_id, true, 0, true);
 
-        logger->info << "Control stream ID " << control_data_ctx_id << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "Control stream ID {0}", control_data_ctx_id);
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
         _mexport->set_data_ctx_info(t_conn_id, control_data_ctx_id, {.subscribe = true, .nspace = {}});
@@ -103,7 +101,6 @@ namespace laps {
 
             ITransport::EnqueueFlags eflags { reliable, false, false, false };
 
-            //FLOG_DEBUG("Sending published object for name: " << obj.header.name);
             messages::MessageBuffer mb;
             mb << obj;
 
@@ -150,7 +147,7 @@ namespace laps {
     void PeerSession::removeSubscription(const Namespace& ns) {
         auto iter = _subscribed.find(ns);
         if (iter != _subscribed.end()) {
-            FLOG_DEBUG("Removing subscription " << ns << " from peer " << peer_id);
+            SPDLOG_LOGGER_DEBUG(logger, "Removing subscription {0} from peer {1}", std::string(ns), peer_id);
 
             _transport->deleteDataContext(t_conn_id, iter->second.data_ctx_id);
             _subscribed.erase(iter);
@@ -164,7 +161,7 @@ namespace laps {
 
         const auto data_ctx_id = addSubscription(ns);
 
-        FLOG_DEBUG("Sending subscribe to peer " << peer_id << " for ns: " <<  ns);
+        SPDLOG_LOGGER_DEBUG(logger, "Sending subscribe to peer {0} for ns: {1}", peer_id, std::string(ns));
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -186,7 +183,7 @@ namespace laps {
     {
         auto iter = _subscribed.find(ns);
         if (iter != _subscribed.end()) {
-            FLOG_DEBUG("Sending unsubscribe to peer " << peer_id << " for ns: " << ns);
+            SPDLOG_LOGGER_DEBUG(logger, "Sending unsubscribe to peer {0} for ns: {1}", peer_id, std::string(ns));
 
             std::vector<uint8_t> ns_array;
             encodeNamespaces(ns_array, { ns });
@@ -243,7 +240,7 @@ namespace laps {
 
     void PeerSession::sendPublishIntent(const Namespace& ns, const peer_id_t& origin_peer_id)
     {
-        FLOG_INFO("Adding to state publish intent " << ns);
+        SPDLOG_LOGGER_INFO(logger, "Adding to state publish intent {0}", std::string(ns));
 
         _publish_intents.try_emplace(ns, origin_peer_id);
 
@@ -251,7 +248,7 @@ namespace laps {
         if (_status != Status::CONNECTED)
             return;
 
-        FLOG_INFO("Sending publish intent " << ns << " origin: " << origin_peer_id << " peer: " << peer_id);
+        SPDLOG_LOGGER_INFO(logger, "Sending publish intent {0} origin: {1} peer: {2}", std::string(ns), origin_peer_id, peer_id);
 
         std::vector<uint8_t> ns_array;
         encodeNamespaces(ns_array, { ns });
@@ -278,7 +275,7 @@ namespace laps {
 
         _publish_intents.erase(ns);
 
-        FLOG_INFO("Sending publish intent DONE to peer: " << peer_id << " ns: " << ns);
+        SPDLOG_LOGGER_INFO(logger, "Sending publish intent DONE to peer: {0} ns: {1}", peer_id, std::string(ns));
 
         std::vector<uint8_t> buf(sizeof(MsgPublishIntentDone) + origin_peer_id.length() + ns_array.size());
 
@@ -304,7 +301,7 @@ namespace laps {
             case TransportStatus::Ready: {
                 _status = Status::CONNECTED;
 
-                FLOG_INFO("Peer conn_id " << conn_id << " is ready, sending connect message");
+                SPDLOG_LOGGER_INFO(logger, "Peer conn_id {0} is ready, sending connect message", conn_id);
 
                 sendConnect();
 
@@ -314,7 +311,7 @@ namespace laps {
             case TransportStatus::Disconnected: {
                 _status = Status::DISCONNECTED;
 
-                FLOG_INFO("Peer conn_id " << conn_id << " is disconnected");
+                SPDLOG_LOGGER_INFO(logger, "Peer conn_id {0} is disconnected", conn_id);
 
                 // No need to close data contexts when connection is closed/disconnected
                 _subscribed.clear();
@@ -372,18 +369,15 @@ namespace laps {
 
                         // TODO(trigaux): When reliable, we really should reset the stream if
                         // this happens (at least more than once)
-                        logger->critical << "Received read exception error while reading from message buffer: "
-                                         << ex.what() << std::flush;
+                        SPDLOG_LOGGER_CRITICAL(logger, "Received read exception error while reading from message buffer: {0}", ex.what());
                         return;
 
-                    } catch (const std::exception& /* ex */) {
-                        logger->Log(cantina::LogLevel::Critical,
-                                    "Received standard exception error while reading "
-                                    "from message buffer");
+                    } catch (const std::exception& e) {
+                        SPDLOG_LOGGER_CRITICAL(logger,
+                                               "Received standard exception error while reading from message buffer: {0}", e.what());
                         return;
                     } catch (...) {
-                        logger->Log(cantina::LogLevel::Critical,
-                          "Received unknown error while reading from message buffer");
+                        SPDLOG_LOGGER_CRITICAL(logger, "Received unknown error while reading from message buffer");
                         return;
                     }
                 } else {
@@ -409,11 +403,10 @@ namespace laps {
             try {
                 handle(std::nullopt, std::nullopt, false, std::move(msg_buffer));
             } catch (const std::exception& e) {
-                LOGGER_DEBUG(logger, "Dropping malformed message: " << e.what());
+                SPDLOG_LOGGER_DEBUG(logger, "Dropping malformed message: {0}", e.what());
                 return;
             } catch (...) {
-                LOGGER_CRITICAL(logger,
-                                "Received malformed message with unknown fatal error");
+                SPDLOG_LOGGER_CRITICAL(logger, "Received malformed message with unknown fatal error");
                 throw;
             }
         }
@@ -426,9 +419,7 @@ namespace laps {
                              [[maybe_unused]] bool is_bidir)
     {
         if (msg.empty()) {
-            logger->error << "stream_id:" << *stream_id
-                          << " msg size: " << msg.size()
-                          << " Is empty" << std::flush;
+            SPDLOG_LOGGER_ERROR(logger, "stream_id: {0} msg size: {1} is empty", *stream_id, msg.size());
             return;
         }
 
@@ -457,16 +448,17 @@ namespace laps {
                         if (data_ctx_id && is_bidir) {
                             control_data_ctx_id = *data_ctx_id;
                         } else {
-                            logger->error << " conn_id: " << t_conn_id
-                                          << " connect is invalid due to control message not sent over bidir stream"
-                                          << std::flush;
+                            SPDLOG_LOGGER_ERROR(logger, " conn_id: {0} connect is invalid due to control message not sent over bidir stream", t_conn_id);
                             return;
                         }
 
-                        FLOG_INFO("Received peer connect message from " << peer_id << " reliable: " << _use_reliable
-                                                                        << ", sending ok"
-                                                                        << " control_data_ctx: " << control_data_ctx_id
-                                                                        << " control_stream_id: " << *stream_id);
+                        SPDLOG_LOGGER_INFO(logger,
+                                           "Received peer connect message from {0} reliable: {1}, sending ok "
+                                           "control_data_ctx: {2} control_stream_id: {3}",
+                                           peer_id,
+                                           _use_reliable,
+                                           control_data_ctx_id,
+                                           *stream_id);
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
                         _mexport->set_conn_ctx_info(
@@ -498,13 +490,11 @@ namespace laps {
                         latitude = cok_msg.latitude;
 
                         if (!stream_id || !data_ctx_id) {
-                            logger->warning << "conn_id: " << t_conn_id
-                                            << " Missing stream_id or data_ctx_id for control messages"
-                                            << std::flush;
+                            SPDLOG_LOGGER_WARN(logger, "conn_id: {0} missing stream_id or data_ctx_id for control messages", t_conn_id);
                             return;
                         }
                         _status = Status::CONNECTED;
-                        FLOG_INFO("Received peer connect OK message from " << peer_id);
+                        SPDLOG_LOGGER_INFO(logger, "Received peer connect OK message from {0}", peer_id);
 
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
                         _mexport->set_conn_ctx_info(
@@ -524,9 +514,7 @@ namespace laps {
 
                     case PeeringSubType::SUBSCRIBE: {
                         if (!stream_id || !data_ctx_id) {
-                            logger->warning << "conn_id: " << t_conn_id
-                                            << " Missing stream_id or data_ctx_id for control messages"
-                                            << std::flush;
+                            SPDLOG_LOGGER_WARN(logger, "conn_id: {0} missing stream_id or data_ctx_id for control messages", t_conn_id);
                             return;
                         }
 
@@ -537,7 +525,7 @@ namespace laps {
                         std::vector<Namespace> ns_list;
                         decodeNamespaces(encoded_ns, ns_list);
 
-                        FLOG_INFO("Received subscribe from " << peer_id << " ns: " << ns_list.front());
+                        SPDLOG_LOGGER_INFO(logger, "Received subscribe from {0} ns: {1}", peer_id, std::string(ns_list.front()));
                         if (ns_list.size() > 0) {
                             addSubscription(ns_list.front());
                             _peer_queue.push({ .type = PeerObjectType::SUBSCRIBE,
@@ -549,9 +537,7 @@ namespace laps {
 
                     case PeeringSubType::UNSUBSCRIBE: {
                         if (!stream_id || !data_ctx_id) {
-                            logger->warning << "conn_id: " << t_conn_id
-                                            << " Missing stream_id or data_ctx_id for control messages"
-                                            << std::flush;
+                            SPDLOG_LOGGER_WARN(logger, "conn_id: {0} missing stream_id or data_ctx_id for control messages", t_conn_id);
                             return;
                         }
 
@@ -562,7 +548,7 @@ namespace laps {
                         std::vector<Namespace> ns_list;
                         decodeNamespaces(encoded_ns, ns_list);
 
-                        FLOG_INFO("Received unsubscribe from " << peer_id << " ns: " << ns_list.front());
+                        SPDLOG_LOGGER_INFO(logger, "Received unsubscribe from {0} ns: {1}", peer_id, std::string(ns_list.front()));
 
                         if (ns_list.size() > 0) {
                             removeSubscription(ns_list.front());
@@ -576,9 +562,7 @@ namespace laps {
 
                     case PeeringSubType::PUBLISH_INTENT: {
                         if (!stream_id || !data_ctx_id) {
-                            logger->warning << "conn_id: " << t_conn_id
-                                            << " Missing stream_id or data_ctx_id for control messages"
-                                            << std::flush;
+                            SPDLOG_LOGGER_WARN(logger, "conn_id: {0} missing stream_id or data_ctx_id for control messages", t_conn_id);
                             return;
                         }
 
@@ -593,9 +577,11 @@ namespace laps {
                         decodeNamespaces(encoded_ns, ns_list);
 
                         if (ns_list.size() > 0) {
-                            FLOG_INFO("Received publish intent from " << peer_id
-                                                                      << " origin_peer: " << o_peer_id
-                                                                      << " with namespace: " << ns_list.front());
+                            SPDLOG_LOGGER_INFO(logger,
+                                               "Received publish intent from {0} origin_peer: {1} with namespace: {2}",
+                                               peer_id,
+                                               o_peer_id,
+                                               std::string(ns_list.front()));
 
                             _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT,
                                                       .source_peer_id = peer_id,
@@ -608,9 +594,7 @@ namespace laps {
 
                     case PeeringSubType::PUBLISH_INTENT_DONE: {
                         if (!stream_id || !data_ctx_id) {
-                            logger->warning << "conn_id: " << t_conn_id
-                                            << " Missing stream_id or data_ctx_id for control messages"
-                                            << std::flush;
+                            SPDLOG_LOGGER_WARN(logger, "conn_id: {0} missing stream_id or data_ctx_id for control messages", t_conn_id);
                             return;
                         }
 
@@ -627,8 +611,10 @@ namespace laps {
                         // TODO: Remove subscription to allow a more optimized path based on new publish intent
 
                         if (ns_list.size() > 0) {
-                            FLOG_INFO("Received publish intent DONE from " << peer_id
-                                                                           << " with namespace: " << ns_list.front());
+                            SPDLOG_LOGGER_INFO(logger,
+                                               "Received publish intent DONE from {0} with namespace: {1}",
+                                               peer_id,
+                                               std::string(ns_list.front()));
 
                             _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT_DONE,
                                                .source_peer_id = peer_id,
@@ -640,7 +626,7 @@ namespace laps {
                     }
 
                     default:
-                        FLOG_WARN("Unknown subtype " << static_cast<unsigned>(subtype));
+                        SPDLOG_LOGGER_WARN(logger, "Unknown subtype {0}", static_cast<unsigned>(subtype));
                         break;
                 }
 
@@ -652,7 +638,7 @@ namespace laps {
 
                 if (not _config.disable_dedup && _cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
                     // duplicate, ignore
-                    FLOG_DEBUG("Duplicate message Name: " << datagram.header.name);
+                    SPDLOG_LOGGER_DEBUG(logger, "Duplicate message Name: {0}", std::string(datagram.header.name));
                     break;
 
                 } else {
@@ -678,7 +664,7 @@ namespace laps {
                 break;
             }
             default:
-                FLOG_INFO("Invalid Message Type " << static_cast<unsigned>(msg_type));
+                SPDLOG_LOGGER_INFO(logger, "Invalid Message Type {0}", static_cast<unsigned>(msg_type));
                 break;
         }
     }

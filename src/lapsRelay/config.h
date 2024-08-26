@@ -1,15 +1,17 @@
 #pragma once
 
-#include <cantina/logger.h>
+#include <spdlog/spdlog.h>
 #include <quicr/namespace.h>
 #include <quicr/quicr_common.h>
+
 #include <list>
+#include <memory>
 
 namespace laps {
     class Config
     {
       public:
-        cantina::LoggerPointer logger;        /// Local source logger reference
+        std::shared_ptr<spdlog::logger> logger;        /// Local source logger reference
 
         // Client Manager
         struct clientConfig {

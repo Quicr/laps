@@ -13,7 +13,6 @@
 #include <transport/transport.h>
 
 #include "config.h"
-#include "logger.h"
 
 namespace laps {
     const std::string CLIENT_PEER_ID = "_client_";

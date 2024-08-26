@@ -1,6 +1,8 @@
 #include <chrono>
 #include <sstream>
 
+#include <spdlog/spdlog.h>
+
 #include "cache.h"
 #include "client_manager.h"
 #include "peer_common.h"
@@ -8,14 +10,12 @@
 
 #include "config.h"
 #include "version_config.h"
-#include <cantina/logger.h>
-#include "logger.h"
 
 using namespace laps;
 using namespace qtransport;
 using namespace quicr;
 
-static cantina::LoggerPointer logger;
+static std::shared_ptr<spdlog::logger> logger;
 
 std::string
 lapsVersion()
@@ -36,16 +36,16 @@ main(int argc,  char* argv[])
         }
     }
 
-    logger = std::make_shared<cantina::Logger>("MAIN", cfg.logger);
+    logger = cfg.logger;
 
-    FLOG_INFO("Starting LAPS Relay (version " << lapsVersion() << ")");
+    SPDLOG_LOGGER_INFO(logger, "Starting LAPS Relay (version {0})", lapsVersion());
 
     if (cfg.disable_dedup) {
-        logger->info << "Disable dedup of objects" << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "Disable dedup of objects");
     }
 
     if (cfg.disable_splithz) {
-        logger->info << "Disable split horizon" << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "Disable split horizon");
     }
 
     ClientSubscriptions subscriptions(cfg);
@@ -84,5 +84,5 @@ main(int argc,  char* argv[])
         quic_mgr->stop();
     }
 
-    FLOG_INFO("LAPS stopped");
+    SPDLOG_LOGGER_INFO(logger, "LAPS stopped");
 }

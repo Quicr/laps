@@ -3,7 +3,6 @@
 #include <iostream>
 #include <memory>
 
-#include "logger.h"
 #include "cache.h"
 #include "config.h"
 
@@ -11,7 +10,7 @@ namespace laps {
 Cache::Cache(const Config &cfg) : config(cfg) {
 
   stop = false;
-  logger = std::make_shared<cantina::Logger>("CACHE", cfg.logger);
+  logger = cfg.logger;
   CacheMaxBuffers = cfg.cache_max_buffers;
   CacheMapCapacity = cfg.cache_map_capacity;
 
@@ -27,7 +26,7 @@ Cache::Cache(const Config &cfg) : config(cfg) {
 }
 
 void Cache::monitor_thread() {
-  logger->Log("Running cache monitor thread");
+  SPDLOG_LOGGER_INFO(logger, "Running cache monitor thread");
 
   std::unique_lock<std::mutex> lock(w_mutex);
   lock.unlock();
@@ -46,9 +45,12 @@ void Cache::monitor_thread() {
         std::memcpy(&ms, entry.second.at(CACHE_INFO_NAME).at(0).data(), 8);
 
         if (now_ms - ms > config.cache_expire_ms) {
-            FLOG_DEBUG("cache i: " << entry.first << " time: " << ms
-                       << " is over max ms age " << (now_ms - ms) << " > "
-                       << config.cache_expire_ms << ", purging cache");
+            SPDLOG_LOGGER_DEBUG(logger,
+                                "cache i: {0} time: {1} is over max ms age {2} > {3}, purging cache",
+                                entry.first,
+                                ms,
+                                (now_ms - ms),
+                                config.cache_expire_ms);
 
             lock.lock();
 
@@ -67,18 +69,18 @@ void Cache::put(const quicr::Name &name, unsigned int offset,
 
   // Move to next buffer if current buffer is at capacity
   if (cacheBuffer[cacheBufferPos].size() >= CacheMapCapacity) {
-    FLOG_DEBUG("Current buffer " << cacheBufferPos << " full, moving to next buffer");
+    SPDLOG_LOGGER_DEBUG(logger, "Current buffer {0} full, moving to next buffer", cacheBufferPos);
     cacheBufferPos++;
 
     // Wrap the buffer position if at the end
     if (cacheBufferPos >= CacheMaxBuffers) {
-      FLOG_DEBUG("Buffer wrapped");
+      SPDLOG_LOGGER_DEBUG(logger, "Buffer wrapped");
       cacheBufferPos = 0;
     }
 
     // Clear the moved-to buffer cache if it is not empty
     if (cacheBuffer[cacheBufferPos].size() > 0) {
-      FLOG_DEBUG("Clearing oldest buffer");
+      SPDLOG_LOGGER_DEBUG(logger, "Clearing oldest buffer");
       cacheBuffer[cacheBufferPos].clear();
     }
   }
@@ -89,7 +91,7 @@ void Cache::put(const quicr::Name &name, unsigned int offset,
                       std::chrono::system_clock::now().time_since_epoch())
                       .count();
 
-    FLOG_DEBUG("New cache buffer " << cacheBufferPos << " time is " << ms);
+    SPDLOG_LOGGER_DEBUG(logger, "New cache buffer {0} time is {1}", cacheBufferPos, ms);
     std::vector<uint8_t> time;
     time.resize(8);
     std::memcpy(time.data(), &ms, 8);
@@ -183,7 +185,7 @@ std::list<quicr::Name> Cache::find(const quicr::Name &name, const int len) {
 Cache::~Cache() {
   stop = true;
 
-  logger->info << "Cache stopped" << std::flush;
+  SPDLOG_LOGGER_INFO(logger, "Cache stopped");
   if (cache_mon_thr.joinable()) {
     cache_mon_thr.detach(); // join hangs on monitor thread sleep. Detach is fine in this case
   }
