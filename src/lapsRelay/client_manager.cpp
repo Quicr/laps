@@ -12,14 +12,14 @@ namespace laps {
 ClientManager::ClientManager(const Config& cfg, Cache& cache,
                              ClientSubscriptions& subscriptions,
                              peerQueue &peer_queue)
-    : logger(std::make_shared<cantina::Logger>("CMGR", cfg.logger))
+    : logger(cfg.logger)
       , subscribeList(subscriptions)
       , config(cfg), cache(cache)
       , client_mgr_id(cfg.client_config.listen_port)
       , _peer_queue(peer_queue) {}
 
 ClientManager::~ClientManager() {
-    logger->info << "Client manager " << client_mgr_id << " ended" << std::flush;
+    SPDLOG_LOGGER_INFO(logger, "Client manager {0} ended",client_mgr_id);
     running = false;
 }
 
@@ -42,8 +42,8 @@ void ClientManager::start() {
                                  .proto = config.client_config.protocol,
                                  .relay_id = config.peer_config.id };
 
-  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename.empty() ? NULL : const_cast<char *>(config.tls_cert_filename.c_str()),
-                                    .tls_key_filename = config.tls_cert_filename.empty() ? NULL : const_cast<char *>(config.tls_key_filename.c_str()),
+  qtransport::TransportConfig tcfg { .tls_cert_filename = config.tls_cert_filename,
+                                    .tls_key_filename = config.tls_key_filename,
                                     .time_queue_init_queue_size = config.data_queue_size,
                                     .time_queue_max_duration = 5000,
                                     .time_queue_rx_size = config.rx_queue_size,
@@ -51,10 +51,10 @@ void ClientManager::start() {
                                     .quic_cwin_minimum = static_cast<uint64_t>(config.cwin_min_kb * 1024),
                                     .use_reset_wait_strategy = config.use_reset_wait_strategy,
                                     .use_bbr = config.use_bbr,
-                                    .quic_qlog_path = config.qlog_path.size() ? const_cast<char *>(config.qlog_path.c_str()) : nullptr,
+                                    .quic_qlog_path = config.qlog_path,
                                     .quic_priority_limit = config.priority_limit_bypass};
 
-  logger->info << "Starting client manager id " << std::to_string(client_mgr_id) << std::flush;
+  SPDLOG_LOGGER_INFO(logger, "Starting client manager id {0}", client_mgr_id);
 
   server =
     std::make_unique<quicr::Server>(relayInfo, std::move(tcfg), get_shared_ptr(), logger);
@@ -68,7 +68,7 @@ void ClientManager::onPublishIntent(const quicr::Namespace& quicr_namespace,
                                     const std::string& /* auth_token */,
                                     quicr::bytes&& /* e2e_token */) {
 
-  FLOG_INFO("onPublishIntent namespace: " << quicr_namespace);
+  SPDLOG_LOGGER_INFO(logger, "onPublishIntent namespace: {0}", std::string(quicr_namespace));
 
   _peer_queue.push({ .type = PeerObjectType::PUBLISH_INTENT, .source_peer_id = CLIENT_PEER_ID,
                      .nspace = quicr_namespace });
@@ -99,7 +99,7 @@ void ClientManager::onPublisherObject(
   if (not config.disable_dedup &&
       cache.exists(datagram.header.name, datagram.header.offset_and_fin)) {
     // duplicate, ignore
-    FLOG_DEBUG("Duplicate message Name: " << datagram.header.name);
+    SPDLOG_LOGGER_DEBUG(logger, "Duplicate message Name: {0}", std::string(datagram.header.name));
     return;
 
   } else {
@@ -135,11 +135,13 @@ void ClientManager::onSubscribePause(const quicr::Namespace& quicr_namespace,
                       const qtransport::DataContextId data_ctx_id,
                       const bool pause) {
 
-  FLOG_INFO("onSubscribe " << (pause ? "Pause" : "Resume")
-                           << " namespace: " << quicr_namespace
-                           << " subscriber_id: " << subscriber_id
-                           << " conn_id " << conn_id
-                           << " data_ctx_id: " << data_ctx_id);
+  SPDLOG_LOGGER_INFO(logger,
+                     "onSubscribe {0} namespace: {1} subscriber_id: {2} conn_id {3} data_ctx_id: {4}",
+                     (pause ? "Pause" : "Resume"),
+                     std::string(quicr_namespace),
+                     subscriber_id,
+                     conn_id,
+                     data_ctx_id);
 }
 
 void ClientManager::onSubscribe(
@@ -158,8 +160,12 @@ void ClientManager::onSubscribe(
     return;
   }
 
-  FLOG_INFO("onSubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id << " conn_id "
-                                      << conn_id << " data_ctx_id: " << data_ctx_id);
+  SPDLOG_LOGGER_INFO(logger,
+                     "onSubscribe namespace: {0} subscriber_id: {1} conn_id {2} data_ctx_id: {3}",
+                     std::string(quicr_namespace),
+                     subscriber_id,
+                     conn_id,
+                     data_ctx_id);
 
   ClientSubscriptions::Remote remote = {
       .client_mgr_id = client_mgr_id,
@@ -189,7 +195,8 @@ void ClientManager::onUnsubscribe(const quicr::Namespace &quicr_namespace,
                                   const uint64_t &subscriber_id,
                                   const std::string & /* auth_token */) {
 
-  FLOG_INFO("onUnsubscribe namespace: " << quicr_namespace << " subscriber_id: " << subscriber_id);
+  SPDLOG_LOGGER_INFO(
+    logger, "onUnsubscribe namespace: {0} subscriber_id: {1}", std::string(quicr_namespace), subscriber_id);
 
   server->subscriptionEnded(subscriber_id, quicr_namespace,
                             quicr::SubscribeResult::SubscribeStatus::Ok);

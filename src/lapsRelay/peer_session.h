@@ -11,7 +11,7 @@
 #include <thread>
 #include <transport/safe_queue.h>
 
-#include <cantina/logger.h>
+#include <spdlog/spdlog.h>
 
 #include "peer_common.h"
 #include "peer_protocol.h"
@@ -85,7 +85,7 @@ namespace laps {
                     const TransportConnId conn_id,
                     const Config& cfg,
                     const TransportRemote& peer_remote,
-                    safe_queue<PeerObject>& peer_queue,
+                    SafeQueue<PeerObject>& peer_queue,
                     Cache& cache,
                     ClientSubscriptions& subscriptions
 #ifndef LIBQUICR_WITHOUT_INFLUXDB
@@ -214,7 +214,7 @@ namespace laps {
         peerQueue& _peer_queue;
         Cache& _cache;
         ClientSubscriptions& _subscriptions;
-        cantina::LoggerPointer logger;
+        std::shared_ptr<spdlog::logger> logger;
 
         bool _is_inbound { false };               /// Indicates if the peer is server accepted (inbound) or client (outbound)
         bool _use_reliable { true };              /// Indicates if to use reliable/streams or datagram when publishing objects
@@ -227,8 +227,8 @@ namespace laps {
         double  latitude { 0 };                   /// 8 byte latitude value detailing the location of the local relay
 
         TransportConfig _transport_config {
-            .tls_cert_filename = const_cast<char *>(_config.tls_cert_filename.c_str()),
-            .tls_key_filename = const_cast<char *>(_config.tls_key_filename.c_str()),
+            .tls_cert_filename = _config.tls_cert_filename,
+            .tls_key_filename = _config.tls_key_filename,
             .time_queue_init_queue_size = _config.data_queue_size,
             .time_queue_max_duration = 1000,
             .time_queue_bucket_interval = 2,

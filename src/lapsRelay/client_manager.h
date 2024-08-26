@@ -86,7 +86,7 @@ class ClientManager : public quicr::ServerDelegate, public std::enable_shared_fr
 
 
 private:
-  cantina::LoggerPointer logger;
+  std::shared_ptr<spdlog::logger> logger;
   ClientSubscriptions &subscribeList;
   const Config &config;
   Cache &cache;

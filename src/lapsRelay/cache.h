@@ -10,7 +10,7 @@
 #include <sys/types.h>
 
 #include <quicr/quicr_common.h>
-#include <cantina/logger.h>
+#include <spdlog/spdlog.h>
 
 #include "config.h"
 
@@ -47,7 +47,7 @@ private:
   std::thread cache_mon_thr;
 
   const Config &config;
-  cantina::LoggerPointer logger;
+  std::shared_ptr<spdlog::logger> logger;
 
   uint CacheMaxBuffers;  // Max number of cache buffers
   uint CacheMapCapacity; // Max capacity for cache map
