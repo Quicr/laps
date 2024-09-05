@@ -33,21 +33,12 @@ Requires=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${INSTALL_DIR}/lapsRelay
+ExecStart=${INSTALL_DIR}/lapsRelay -d -e $(hostname)-$(hostid) -p 33435 -c ${INSTALL_DIR}/server-cert.pem -k ${INSTALL_DIR}/server-key.pem
 Nice=15
 Restart=always
 RestartSec=1s
 KillMode=process
 WorkingDirectory=/tmp
-Environment="LAPS_DISABLE_SPLITHZ=1"
-Environment="LAPS_TLS_CERT_FILENAME=${INSTALL_DIR}/server-cert.pem"
-Environment="LAPS_TLS_KEY_FILENAME=${INSTALL_DIR}/server-key.pem"
-Environment="LAPS_PEER_RELIABLE=1"
-Environment="LAPS_DEBUG=1"
-Environment="LAPS_PRI_LIMIT_BYPASS=0"
-Environment="LAPS_PEERS=relay.us-west-2.quicr.ctgpoc.com"
-Environment="LAPS_PEER_PORT=33438"
-Environment="LAPS_PEER_ID=$(hostname)-$(hostid)"
 
 #User=pi
 

@@ -28,8 +28,7 @@ ENV CXXFLAGS="-Wno-error=stringop-overflow"
 
 RUN make all
 
-RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
-    && cp  build/src/lapsTest/lapsTest  /usr/local/bin/.
+RUN cp  build/src/lapsRelay  /usr/local/bin/.
 
 WORKDIR /usr/local/cert
 RUN openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
@@ -41,7 +40,6 @@ FROM debian:11-slim
 RUN apt-get install -y libstdc++ bash
 
 COPY --from=builder /usr/local/bin/lapsRelay /usr/local/bin/.
-COPY --from=builder /usr/local/bin/lapsTest /usr/local/bin/.
 
 RUN addgroup laps
 RUN adduser --quiet --disabled-password --gecos "Laps User" --ingroup laps laps

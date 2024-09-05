@@ -25,8 +25,7 @@ ENV CXXFLAGS="-Wno-error=stringop-overflow -fpermissive -Wno-error=pedantic"
 
 RUN  make all
 
-RUN cp  build/src/lapsRelay/lapsRelay  /usr/local/bin/. \
-    && cp  build/src/lapsTest/lapsTest  /usr/local/bin/.
+RUN cp  build/src/lapsRelay  /usr/local/bin/.
 
 WORKDIR /usr/local/cert
 RUN openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
@@ -39,7 +38,6 @@ RUN apk add --no-cache libstdc++
 RUN apk add --no-cache bash tcsh
 
 COPY --from=builder /usr/local/bin/lapsRelay /usr/local/bin/.
-COPY --from=builder /usr/local/bin/lapsTest /usr/local/bin/.
 
 RUN addgroup -S laps
 RUN adduser -D -S -S -G laps laps
