@@ -2,9 +2,11 @@
 Language:      Cpp
 BasedOnStyle:  Mozilla
 
-# Overrides
+BreakAfterAttributes: Leave
 ColumnLimit: 120
 IndentWidth: 4
 NamespaceIndentation: All
 BraceWrapping:
   AfterFunction: false
+...
+

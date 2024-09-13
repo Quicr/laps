@@ -49,6 +49,16 @@ format:
 	find src -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
 	find test -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
 
+## lint: Lint code
+lint:
+	reuse lint
+
+## cert: Create cert in build dir
+cert:
+	@echo "Creating certificate in ${BUILD_DIR}/build/src"
+	@openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
+        -subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=test.m10x.org" \
+        -keyout ${BUILD_DIR}/src/server-key.pem -out ${BUILD_DIR}/src/server-cert.pem
 
 # NOTE: This will not work on Windows
 DOCKER_TAG := $(shell egrep "[ \t]+VERSION[ ]+[0-9]+\.[0-9]+\.[0-9]+" CMakeLists.txt | head -1 | sed -r 's/[ \t]+VERSION[ \t]+([0-9]+\.[0-9]+\.[0-9]+)/\1/')

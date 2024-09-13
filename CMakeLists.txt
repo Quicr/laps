@@ -5,7 +5,7 @@ option(LAPS_INSTALL "Install the laps Components" ON)
 
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -13,7 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.2.56
+        VERSION 0.5.2
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
@@ -42,17 +42,7 @@ add_subdirectory(dependencies)
 ###
 ### Build relay
 ###
-if(NOT LIBQUICR_WITHOUT_INFLUXDB)
-    include_directories(AFTER
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libquicr/dependencies/influxdb-cxx/include
-            ${CMAKE_CURRENT_BINARY_DIR}/dependencies/libquicr/dependencies/influxdb-cxx/src/)
-endif()
-add_subdirectory(src/lapsRelay)
-
-###
-### Build test app
-###
-add_subdirectory(src/lapsTest)
+add_subdirectory(src)
 
 ###
 ### Tests
