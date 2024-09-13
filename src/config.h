@@ -3,7 +3,7 @@
 #include "version_config.h"
 
 #include <list>
-#include <moq/config.h>
+#include <quicr/config.h>
 #include <spdlog/spdlog.h>
 
 namespace laps {
@@ -12,7 +12,7 @@ namespace laps {
       public:
         std::shared_ptr<spdlog::logger> logger_; // Local source logger reference
 
-        moq::ServerConfig server_config;
+        quicr::ServerConfig server_config;
 
         bool debug{ false }; /// Debug logging/code
         bool use_reset_wait_strategy{ false };
