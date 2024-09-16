@@ -365,7 +365,7 @@ class MyServer : public quicr::Server
         auto track_alias = ta_it->second;
 
         ta_conn_it->second.erase(ta_it);
-        if (!ta_conn_it->second.size()) {
+        if (ta_conn_it->second.empty()) {
             qserver_vars::subscribe_alias_sub_id.erase(ta_conn_it);
         }
 
@@ -382,7 +382,7 @@ class MyServer : public quicr::Server
 
         qserver_vars::subscribes[track_alias].erase(connection_handle);
         bool unsub_pub{ false };
-        if (!qserver_vars::subscribes[track_alias].size()) {
+        if (qserver_vars::subscribes[track_alias].empty()) {
             unsub_pub = true;
             qserver_vars::subscribes.erase(track_alias);
         }
@@ -390,11 +390,11 @@ class MyServer : public quicr::Server
         qserver_vars::subscribe_active[th.track_namespace_hash][th.track_name_hash].erase(
           qserver_vars::SubscribeWho{ connection_handle, subscribe_id, th.track_fullname_hash });
 
-        if (!qserver_vars::subscribe_active[th.track_namespace_hash][th.track_name_hash].size()) {
+        if (qserver_vars::subscribe_active[th.track_namespace_hash][th.track_name_hash].empty()) {
             qserver_vars::subscribe_active[th.track_namespace_hash].erase(th.track_name_hash);
         }
 
-        if (!qserver_vars::subscribe_active[th.track_namespace_hash].size()) {
+        if (qserver_vars::subscribe_active[th.track_namespace_hash].empty()) {
             qserver_vars::subscribe_active.erase(th.track_namespace_hash);
         }
 
