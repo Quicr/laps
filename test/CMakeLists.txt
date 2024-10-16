@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 add_executable(laps_test
-    main.cpp
+    main.cc
 )
 target_include_directories(laps_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
