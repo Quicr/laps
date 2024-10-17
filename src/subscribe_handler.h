@@ -12,10 +12,10 @@ namespace laps {
      * @brief  Subscribe track handler
      * @details Subscribe track handler used for the subscribe command line option.
      */
-    class LapsSubscribeTrackHandler : public quicr::SubscribeTrackHandler
+    class SubscribeTrackHandler : public quicr::SubscribeTrackHandler
     {
       public:
-        LapsSubscribeTrackHandler(const quicr::FullTrackName& full_track_name, LapsServer& server);
+        SubscribeTrackHandler(const quicr::FullTrackName& full_track_name, LapsServer& server);
         void ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data) override;
         void StatusChanged(Status status) override;
 

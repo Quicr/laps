@@ -8,14 +8,14 @@
 #include <quicr/subscribe_track_handler.h>
 
 namespace laps {
-    LapsSubscribeTrackHandler::LapsSubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
+    SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                                                          LapsServer& server)
-      : SubscribeTrackHandler(full_track_name)
+      : quicr::SubscribeTrackHandler(full_track_name)
       , server_(server)
     {
     }
 
-    void LapsSubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
+    void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
     {
         std::lock_guard<std::mutex> _(server_.state_.state_mutex);
 
@@ -35,7 +35,7 @@ namespace laps {
         for (auto& [conn_id, sphi] : sub_it->second) {
             if (sphi.publish_handler == nullptr) {
                 // Create the publish track handler and bind it on first object received
-                auto pub_track_h = std::make_shared<LapsPublishTrackHandler>(
+                auto pub_track_h = std::make_shared<PublishTrackHandler>(
                   sphi.track_full_name,
                   *object_headers.track_mode,
                   *object_headers.priority,
@@ -49,7 +49,7 @@ namespace laps {
         }
     }
 
-    void LapsSubscribeTrackHandler::StatusChanged(Status status)
+    void SubscribeTrackHandler::StatusChanged(Status status)
     {
         if (status == Status::kOk) {
             SPDLOG_INFO("Track alias: {0} is subscribed", GetTrackAlias().value());

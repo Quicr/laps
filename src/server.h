@@ -41,7 +41,7 @@ namespace laps {
       private:
         State& state_;
 
-        friend class LapsSubscribeTrackHandler;
-        friend class LapsPublishTrackHandler;
+        friend class SubscribeTrackHandler;
+        friend class PublishTrackHandler;
     };
 } // namespace laps

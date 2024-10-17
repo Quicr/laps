@@ -108,7 +108,7 @@ namespace laps {
                         const auto& sub_ftn = sub_info_it2->second.track_full_name;
 
                         // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
-                        auto sub_track_handler = std::make_shared<LapsSubscribeTrackHandler>(sub_ftn, *this);
+                        auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(sub_ftn, *this);
 
                         SubscribeTrack(connection_handle, sub_track_handler);
                         state_.pub_subscribes[a_who.track_alias][connection_handle] = sub_track_handler;
@@ -276,7 +276,7 @@ namespace laps {
                 tracks.insert(th.track_fullname_hash); // Add track alias to state
 
                 // TODO(tievens): Don't really like passing self to subscriber handler, see about fixing this
-                auto sub_track_h = std::make_shared<LapsSubscribeTrackHandler>(track_full_name, *this);
+                auto sub_track_h = std::make_shared<SubscribeTrackHandler>(track_full_name, *this);
                 SubscribeTrack(conn_h, sub_track_h);
                 state_.pub_subscribes[th.track_fullname_hash][conn_h] = sub_track_h;
             }

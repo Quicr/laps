@@ -5,7 +5,7 @@
 #include <set>
 
 namespace laps {
-    class LapsPublishTrackHandler;
+    class PublishTrackHandler;
 
     struct State
     {
@@ -26,7 +26,7 @@ namespace laps {
             quicr::FullTrackName track_full_name;
             quicr::messages::TrackAlias track_alias;
             quicr::messages::SubscribeId subscribe_id;
-            std::shared_ptr<LapsPublishTrackHandler> publish_handler;
+            std::shared_ptr<PublishTrackHandler> publish_handler;
         };
 
         /**

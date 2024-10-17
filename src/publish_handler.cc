@@ -9,7 +9,7 @@ namespace laps {
      * @brief Publish track handler
      * @details Publish track handler used for the publish command line option
      */
-    LapsPublishTrackHandler::LapsPublishTrackHandler(const quicr::FullTrackName& full_track_name,
+    PublishTrackHandler::PublishTrackHandler(const quicr::FullTrackName& full_track_name,
                                                      quicr::TrackMode track_mode,
                                                      uint8_t default_priority,
                                                      uint32_t default_ttl)
@@ -17,7 +17,7 @@ namespace laps {
     {
     }
 
-    void LapsPublishTrackHandler::StatusChanged(Status status)
+    void PublishTrackHandler::StatusChanged(Status status)
     {
         if (status == Status::kOk) {
             SPDLOG_INFO("Publish track alias {0} has subscribers", GetTrackAlias().value());
@@ -49,7 +49,7 @@ namespace laps {
         }
     }
 
-    void LapsPublishTrackHandler::MetricsSampled(const quicr::PublishTrackMetrics& metrics)
+    void PublishTrackHandler::MetricsSampled(const quicr::PublishTrackMetrics& metrics)
     {
         SPDLOG_DEBUG("Metrics track_alias: {0}"
                      " objects sent: {1}"
