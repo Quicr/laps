@@ -9,6 +9,9 @@ endif()
 add_executable(lapsRelay
         main.cc
         config.cc
+        server.cc
+        subscribe_handler.cc
+        publish_handler.cc
 )
 
 target_link_libraries(lapsRelay PRIVATE quicr)
