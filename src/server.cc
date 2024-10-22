@@ -55,6 +55,47 @@ namespace laps {
         }
     }
 
+    void LapsServer::PurgePublishState(quicr::ConnectionHandle connection_handle)
+    {
+        std::lock_guard<std::mutex> _(state_.state_mutex);
+
+        std::vector<quicr::messages::TrackAlias> track_aliases;
+        try {
+            for (const auto& [track_alias, _]: state_.pub_subscribes.at(connection_handle)) {
+                track_aliases.push_back(track_alias);
+            }
+
+            for (const auto& track_alias: track_aliases) {
+                state_.pub_subscribes.at(track_alias).erase(connection_handle);
+                SPDLOG_DEBUG("Purge publish state for track_alias: {0}", track_alias);
+                if (state_.pub_subscribes.at(track_alias).size() == 0) {
+                    state_.pub_subscribes.erase(track_alias);
+                }
+            }
+        } catch (std::out_of_range) {
+            // ignore
+        }
+
+        std::vector<quicr::TrackNamespaceHash> track_namespaces;
+        try {
+            for (const auto& [namespace_hash, ch]: state_.announce_active) {
+                if (ch.count(connection_handle) > 0) {
+                    track_namespaces.push_back(namespace_hash);
+                }
+            }
+
+            for (const auto& namespace_hash: track_namespaces) {
+                state_.announce_active.at(namespace_hash).erase(connection_handle);
+                SPDLOG_DEBUG("Purge publish state for namespace_hash: {0}", namespace_hash);
+                if (state_.announce_active.at(namespace_hash).size() == 0) {
+                    state_.announce_active.erase(namespace_hash);
+                }
+            }
+        } catch (std::out_of_range) {
+            // ignore
+        }
+
+    }
     void LapsServer::AnnounceReceived(quicr::ConnectionHandle connection_handle,
                                       const quicr::TrackNamespace& track_namespace,
                                       const quicr::PublishAnnounceAttributes&)
@@ -69,10 +110,11 @@ namespace laps {
         auto [anno_conn_it, is_new] = state_.announce_active[th.track_namespace_hash].try_emplace(connection_handle);
 
         if (!is_new) {
-            SPDLOG_INFO("Received announce from connection handle: {0} for namespace hash: {0} is duplicate, ignoring",
-                        connection_handle,
-                        th.track_namespace_hash);
-            return;
+            /*
+             * @note Connection handle maybe reused. This requires replacing an existing entry if it's duplicate
+             */
+            PurgePublishState(connection_handle);
+            state_.announce_active[th.track_namespace_hash].try_emplace(connection_handle);
         }
 
         AnnounceResponse announce_response;
@@ -139,28 +181,20 @@ namespace laps {
         }
 
         // Clean up subscribe states
+        std::vector<quicr::messages::SubscribeId> unsub_list;
         auto sub_track_alias_it = state_.subscribe_alias_sub_id.find(connection_handle);
         if (sub_track_alias_it != state_.subscribe_alias_sub_id.end()) {
-            for (auto& [sub_id, track_alias]: sub_track_alias_it->second) {
-                auto& subscribe_info = state_.subscribes[track_alias][connection_handle];
-                if (subscribe_info.publish_handler != nullptr) {
-                    auto th = quicr::TrackHash(subscribe_info.track_full_name);
-                    state_.subscribe_active[th.track_namespace_hash].erase(th.track_name_hash);
-                    if (state_.subscribe_active[th.track_namespace_hash].empty()) {
-                        state_.subscribe_active.erase(th.track_namespace_hash);
-                    }
-                }
-
-                state_.subscribes[track_alias].erase(connection_handle);
-                if (state_.subscribes[track_alias].empty()) {
-                    state_.subscribes.erase(track_alias);
-                }
+            for (auto& [sub_id, _]: sub_track_alias_it->second) {
+                unsub_list.push_back(sub_id);
             }
-
-            state_.subscribe_alias_sub_id.erase(sub_track_alias_it);
         }
 
-        // Clean up publish states
+        for (auto& sid: unsub_list) {
+            UnsubscribeReceived(connection_handle, sid);
+        }
+
+        // Cleanup publish states
+        PurgePublishState(connection_handle);
 
     }
 
