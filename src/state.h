@@ -21,6 +21,16 @@ namespace laps {
                            std::unordered_map<quicr::ConnectionHandle, std::set<quicr::messages::TrackAlias>>>
           announce_active;
 
+        /**
+         * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
+         *
+         * @example
+         *      track_delegate = pub_subscribes[track_alias][conn_id]
+         */
+        std::unordered_map<quicr::messages::TrackAlias,
+                           std::unordered_map<quicr::ConnectionHandle, std::shared_ptr<quicr::SubscribeTrackHandler>>>
+          pub_subscribes;
+
         struct SubscribePublishHandlerInfo
         {
             quicr::FullTrackName track_full_name;
@@ -80,14 +90,5 @@ namespace laps {
 
         std::unordered_map<uint64_t, std::unordered_map<uint64_t, std::set<SubscribeWho>>> subscribe_active;
 
-        /**
-         * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
-         *
-         * @example
-         *      track_delegate = pub_subscribes[track_alias][conn_id]
-         */
-        std::unordered_map<quicr::messages::TrackAlias,
-                           std::unordered_map<quicr::ConnectionHandle, std::shared_ptr<quicr::SubscribeTrackHandler>>>
-          pub_subscribes;
     };
 }

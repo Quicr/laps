@@ -45,6 +45,7 @@ namespace laps {
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(conn_id, sphi.subscribe_id, pub_track_h);
             }
+
             sphi.publish_handler->PublishObject(object_headers, data);
         }
     }

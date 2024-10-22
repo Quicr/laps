@@ -120,9 +120,48 @@ namespace laps {
 
     void LapsServer::ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status)
     {
-        if (status == ConnectionStatus::kConnected) {
-            SPDLOG_DEBUG("Connection ready connection_handle: {0} ", connection_handle);
+        switch (status) {
+            case ConnectionStatus::kConnected:
+                SPDLOG_DEBUG("Connection ready; connection_handle: {0} ", connection_handle);
+                return;
+            case ConnectionStatus::kConnecting:
+                return;
+
+            case ConnectionStatus::kNotConnected:
+                SPDLOG_DEBUG("Connection not connected; connection_handle: {0} ", connection_handle);
+                break;
+            case ConnectionStatus::kClosedByRemote:
+                SPDLOG_DEBUG("Connection closed by remote; connection_handle: {0} ", connection_handle);
+                break;
+            case ConnectionStatus::kIdleTimeout:
+                SPDLOG_DEBUG("Connection idle timeout; connection_handle: {0} ", connection_handle);
+                break;
         }
+
+        // Clean up subscribe states
+        auto sub_track_alias_it = state_.subscribe_alias_sub_id.find(connection_handle);
+        if (sub_track_alias_it != state_.subscribe_alias_sub_id.end()) {
+            for (auto& [sub_id, track_alias]: sub_track_alias_it->second) {
+                auto& subscribe_info = state_.subscribes[track_alias][connection_handle];
+                if (subscribe_info.publish_handler != nullptr) {
+                    auto th = quicr::TrackHash(subscribe_info.track_full_name);
+                    state_.subscribe_active[th.track_namespace_hash].erase(th.track_name_hash);
+                    if (state_.subscribe_active[th.track_namespace_hash].empty()) {
+                        state_.subscribe_active.erase(th.track_namespace_hash);
+                    }
+                }
+
+                state_.subscribes[track_alias].erase(connection_handle);
+                if (state_.subscribes[track_alias].empty()) {
+                    state_.subscribes.erase(track_alias);
+                }
+            }
+
+            state_.subscribe_alias_sub_id.erase(sub_track_alias_it);
+        }
+
+        // Clean up publish states
+
     }
 
     quicr::Server::ClientSetupResponse LapsServer::ClientSetupReceived(
@@ -167,15 +206,15 @@ namespace laps {
 
         auto track_h_it1 = state_.subscribes.find(track_alias);
         if (track_h_it1 == state_.subscribes.end()) {
-            SPDLOG_DEBUG("Unsubscribe unable to find track delegate for connection handle: {0} subscribe_id: {1}",
+            SPDLOG_DEBUG("Unsubscribe unable to find track handler for connection handle: {0} subscribe_id: {1}",
                          connection_handle,
                          subscribe_id);
             return;
         }
 
-        auto track_h_it2 = track_h_it1->second.find(subscribe_id);
+        auto track_h_it2 = track_h_it1->second.find(connection_handle);
         if (track_h_it2 == track_h_it1->second.end()) {
-            SPDLOG_DEBUG("Unsubscribe unable to find track delegate for connection handle: {0} subscribe_id: {1}",
+            SPDLOG_DEBUG("Unsubscribe unable to find track handler for connection handle: {0} subscribe_id: {1}",
                          connection_handle,
                          subscribe_id);
             return;
@@ -184,7 +223,7 @@ namespace laps {
         auto& track_h = track_h_it2->second.publish_handler;
 
         if (track_h == nullptr) {
-            SPDLOG_DEBUG("Unsubscribe unable to find track delegate for connection handle: {0} subscribe_id: {1}",
+            SPDLOG_DEBUG("Unsubscribe unable to find track handler for connection handle: {0} subscribe_id: {1}",
                         connection_handle,
                         subscribe_id);
             return;
@@ -230,6 +269,8 @@ namespace laps {
                     if (sub_track_h != nullptr) {
                         UnsubscribeTrack(pub_connection_handle, sub_track_h);
                     }
+
+                    // Clear publish track handlers for matching
                 }
             }
         }
