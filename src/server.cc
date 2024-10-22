@@ -278,7 +278,7 @@ namespace laps {
           State::SubscribeWho{ connection_handle, subscribe_id, th.track_fullname_hash });
         state_.subscribe_alias_sub_id[{connection_handle, subscribe_id}] = th.track_fullname_hash;
 
-        auto [sub_it, is_new] = state_.subscribes.try_emplace({ th.track_fullname_hash, connection_handle },
+        state_.subscribes.try_emplace({ th.track_fullname_hash, connection_handle },
           State::SubscribePublishHandlerInfo{ track_full_name, th.track_fullname_hash, subscribe_id, nullptr });
 
         // Subscribe to announcer if announcer is active
