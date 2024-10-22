@@ -17,8 +17,7 @@ namespace laps {
          * @example
          *      track_alias_set = announce_active[track_namespace_hash][connection_handle]
          */
-        std::map<std::pair<quicr::TrackNamespaceHash, quicr::ConnectionHandle>,
-                           std::set<quicr::messages::TrackAlias>>
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
           announce_active;
 
         /**
@@ -28,7 +27,7 @@ namespace laps {
          *      track_delegate = pub_subscribes[track_alias][conn_id]
          */
         std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>,
-                           std::shared_ptr<quicr::SubscribeTrackHandler>>
+                 std::shared_ptr<quicr::SubscribeTrackHandler>>
           pub_subscribes;
 
         struct SubscribePublishHandlerInfo
@@ -47,8 +46,7 @@ namespace laps {
          *
          * @example track_handler = subscribes[track_alias][connection_handle]
          */
-        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>,
-                           SubscribePublishHandlerInfo>
+        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>, SubscribePublishHandlerInfo>
           subscribes;
 
         /**
@@ -58,8 +56,7 @@ namespace laps {
          * @example
          *      track_alias = subscribe_alias_sub_id[conn_id][subscribe_id]
          */
-        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>,
-                           quicr::messages::TrackAlias>
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>, quicr::messages::TrackAlias>
           subscribe_alias_sub_id;
 
         /**
@@ -88,7 +85,6 @@ namespace laps {
             }
         };
 
-        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeWho>>
-          subscribe_active;
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeWho>> subscribe_active;
     };
 }
