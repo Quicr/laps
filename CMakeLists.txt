@@ -13,7 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.5.17
+        VERSION 0.5.18
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 

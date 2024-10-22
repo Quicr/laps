@@ -17,8 +17,8 @@ namespace laps {
          * @example
          *      track_alias_set = announce_active[track_namespace_hash][connection_handle]
          */
-        std::unordered_map<quicr::TrackNamespaceHash,
-                           std::unordered_map<quicr::ConnectionHandle, std::set<quicr::messages::TrackAlias>>>
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::ConnectionHandle>,
+                           std::set<quicr::messages::TrackAlias>>
           announce_active;
 
         /**
@@ -27,8 +27,8 @@ namespace laps {
          * @example
          *      track_delegate = pub_subscribes[track_alias][conn_id]
          */
-        std::unordered_map<quicr::messages::TrackAlias,
-                           std::unordered_map<quicr::ConnectionHandle, std::shared_ptr<quicr::SubscribeTrackHandler>>>
+        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>,
+                           std::shared_ptr<quicr::SubscribeTrackHandler>>
           pub_subscribes;
 
         struct SubscribePublishHandlerInfo
@@ -47,8 +47,8 @@ namespace laps {
          *
          * @example track_handler = subscribes[track_alias][connection_handle]
          */
-        std::unordered_map<quicr::messages::TrackAlias,
-                           std::unordered_map<quicr::ConnectionHandle, SubscribePublishHandlerInfo>>
+        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>,
+                           SubscribePublishHandlerInfo>
           subscribes;
 
         /**
@@ -58,8 +58,8 @@ namespace laps {
          * @example
          *      track_alias = subscribe_alias_sub_id[conn_id][subscribe_id]
          */
-        std::unordered_map<quicr::ConnectionHandle,
-                           std::unordered_map<quicr::messages::SubscribeId, quicr::messages::TrackAlias>>
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>,
+                           quicr::messages::TrackAlias>
           subscribe_alias_sub_id;
 
         /**
@@ -88,7 +88,7 @@ namespace laps {
             }
         };
 
-        std::unordered_map<uint64_t, std::unordered_map<uint64_t, std::set<SubscribeWho>>> subscribe_active;
-
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeWho>>
+          subscribe_active;
     };
 }

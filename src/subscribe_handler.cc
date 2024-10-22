@@ -8,8 +8,7 @@
 #include <quicr/subscribe_track_handler.h>
 
 namespace laps {
-    SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
-                                                         LapsServer& server)
+    SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name, LapsServer& server)
       : quicr::SubscribeTrackHandler(full_track_name)
       , server_(server)
     {
@@ -25,28 +24,28 @@ namespace laps {
             return;
         }
 
-        auto sub_it = server_.state_.subscribes.find(track_alias.value());
+        // Fanout object to subscribers
+        for (auto& [key, sub_info] : server_.state_.subscribes) {
+            const auto& sub_track_alias = key.first;
+            const auto& connection_handle = key.second;
 
-        if (sub_it == server_.state_.subscribes.end()) {
-            SPDLOG_INFO("No subscribes, not relaying data size: {0} ", data.size());
-            return;
-        }
+            if (track_alias.value() == sub_track_alias) { // Match object to subscriber track alias
 
-        for (auto& [conn_id, sphi] : sub_it->second) {
-            if (sphi.publish_handler == nullptr) {
-                // Create the publish track handler and bind it on first object received
-                auto pub_track_h = std::make_shared<PublishTrackHandler>(
-                  sphi.track_full_name,
-                  *object_headers.track_mode,
-                  *object_headers.priority,
-                  object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
-                sphi.publish_handler = pub_track_h;
+                if (sub_info.publish_handler == nullptr) {
+                    // Create the publish track handler and bind it on first object received
+                    auto pub_track_h =
+                      std::make_shared<PublishTrackHandler>(sub_info.track_full_name,
+                                                            *object_headers.track_mode,
+                                                            *object_headers.priority,
+                                                            object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
 
-                // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(conn_id, sphi.subscribe_id, pub_track_h);
+                    // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
+                    server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h);
+                    sub_info.publish_handler = pub_track_h;
+                }
+
+                sub_info.publish_handler->PublishObject(object_headers, data);
             }
-
-            sphi.publish_handler->PublishObject(object_headers, data);
         }
     }
 
