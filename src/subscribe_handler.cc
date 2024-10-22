@@ -78,7 +78,7 @@ namespace laps {
                 default:
                     break;
             }
-            SPDLOG_INFO("Track alias: {0} failed to subscribe reason: {1}", GetTrackAlias().value(), reason);
+            SPDLOG_DEBUG("Track alias: {0} subscribe status change reason: {1}", GetTrackAlias().value(), reason);
         }
     }
 }
