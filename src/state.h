@@ -15,11 +15,20 @@ namespace laps {
          * Map of subscribes (e.g., track alias) sent to announcements
          *
          * @example
-         *      track_alias_set = announce_active[track_namespace_hash][connection_handle]
+         *      track_alias_set = announce_active[track_namespace_hash, connection_handle]
          */
-        std::unordered_map<quicr::TrackNamespaceHash,
-                           std::unordered_map<quicr::ConnectionHandle, std::set<quicr::messages::TrackAlias>>>
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
           announce_active;
+
+        /**
+         * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
+         *
+         * @example
+         *      track_delegate = pub_subscribes[track_alias, connection handle]
+         */
+        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>,
+                 std::shared_ptr<quicr::SubscribeTrackHandler>>
+          pub_subscribes;
 
         struct SubscribePublishHandlerInfo
         {
@@ -35,10 +44,9 @@ namespace laps {
          * @note This indexing intentionally prohibits per connection having more
          *           than one subscribe to a full track name.
          *
-         * @example track_handler = subscribes[track_alias][connection_handle]
+         * @example track_handler = subscribes[track_alias, connection_handle]
          */
-        std::unordered_map<quicr::messages::TrackAlias,
-                           std::unordered_map<quicr::ConnectionHandle, SubscribePublishHandlerInfo>>
+        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>, SubscribePublishHandlerInfo>
           subscribes;
 
         /**
@@ -46,15 +54,14 @@ namespace laps {
          *      Used to lookup the track alias for a given subscribe ID
          *
          * @example
-         *      track_alias = subscribe_alias_sub_id[conn_id][subscribe_id]
+         *      track_alias = subscribe_alias_sub_id[connection handle, subscribe_id]
          */
-        std::unordered_map<quicr::ConnectionHandle,
-                           std::unordered_map<quicr::messages::SubscribeId, quicr::messages::TrackAlias>>
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>, quicr::messages::TrackAlias>
           subscribe_alias_sub_id;
 
         /**
          * Map of subscribes set by namespace and track name hash
-         *      Set<subscribe_who> = subscribe_active[track_namespace_hash][track_name_hash]
+         *      Set<subscribe_who> = subscribe_active[track_namespace_hash, track_name_hash]
          */
         struct SubscribeWho
         {
@@ -78,16 +85,6 @@ namespace laps {
             }
         };
 
-        std::unordered_map<uint64_t, std::unordered_map<uint64_t, std::set<SubscribeWho>>> subscribe_active;
-
-        /**
-         * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
-         *
-         * @example
-         *      track_delegate = pub_subscribes[track_alias][conn_id]
-         */
-        std::unordered_map<quicr::messages::TrackAlias,
-                           std::unordered_map<quicr::ConnectionHandle, std::shared_ptr<quicr::SubscribeTrackHandler>>>
-          pub_subscribes;
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeWho>> subscribe_active;
     };
 }

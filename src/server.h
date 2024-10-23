@@ -39,6 +39,8 @@ namespace laps {
                             const quicr::ConnectionMetrics& metrics) override;
 
       private:
+        void PurgePublishState(quicr::ConnectionHandle connection_handle);
+
         State& state_;
 
         friend class SubscribeTrackHandler;
