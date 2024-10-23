@@ -109,9 +109,16 @@ namespace laps {
         auto& anno_tracks = state_.announce_active[{ th.track_namespace_hash, connection_handle }];
 
         // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
-        for (const auto& [key, who] : state_.subscribe_active)
-            // Find any subscribe that matches the announce namespace (sans the name)
-            if (key.first == th.track_namespace_hash && who.size()) { // Have subscribes
+        // for (const auto& [key, who] : state_.subscribe_active)
+        for (auto it = state_.subscribe_active.lower_bound({ th.track_namespace_hash, 0 });
+             it != state_.subscribe_active.end();
+             it++) {
+            const auto& [key, who] = *it;
+
+            if (key.first != th.track_namespace_hash)
+                break;
+
+            if (who.size()) { // Have subscribes
                 auto& a_who = *who.begin();
                 if (anno_tracks.find(a_who.track_alias) == anno_tracks.end()) {
                     SPDLOG_INFO("Sending subscribe to announcer connection handle: {0} subscribe track_alias: {1}",
@@ -134,6 +141,7 @@ namespace laps {
                     state_.pub_subscribes[{ a_who.track_alias, connection_handle }] = sub_track_handler;
                 }
             }
+        }
     }
 
     void LapsServer::ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status)
@@ -158,10 +166,14 @@ namespace laps {
 
         // Clean up subscribe states
         std::vector<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>> unsub_list;
-        for (const auto& [key, _] : state_.subscribe_alias_sub_id) {
-            if (key.first == connection_handle) {
-                unsub_list.push_back(key);
-            }
+        for (auto it = state_.subscribe_alias_sub_id.lower_bound({ connection_handle, 0 });
+             it != state_.subscribe_alias_sub_id.end();
+             it++) {
+            const auto& [key, _] = *it;
+            if (key.first != connection_handle)
+                break;
+
+            unsub_list.push_back(key);
         }
 
         for (auto& key : unsub_list) {
@@ -230,8 +242,8 @@ namespace laps {
 
         // Are there any other subscribers?
         bool unsub_pub{ true };
-        for (const auto& [key, _] : state_.subscribes) {
-            if (key.first == track_alias) {
+        for (auto it = state_.subscribes.lower_bound({ track_alias, 0 }); it != state_.subscribes.end(); ++it) {
+            if (it->first.first == track_alias) {
                 unsub_pub = false;
                 break;
             }
@@ -241,15 +253,20 @@ namespace laps {
             SPDLOG_INFO("No subscribers left, unsubscribe publisher track_alias: {0}", track_alias);
 
             std::vector<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>> remove_sub_pub;
-            for (const auto& [key, sub_to_pub_handler] : state_.pub_subscribes) {
-                if (key.first == th.track_fullname_hash) {
-                    SPDLOG_INFO("Unsubscribe to announcer conn_id: {0} subscribe track_alias: {1}",
-                                key.second,
-                                th.track_fullname_hash);
+            for (auto it = state_.pub_subscribes.lower_bound({ th.track_namespace_hash, 0 });
+                 it != state_.pub_subscribes.end();
+                 ++it) {
+                const auto& [key, sub_to_pub_handler] = *it;
 
-                    UnsubscribeTrack(key.second, sub_to_pub_handler);
-                    remove_sub_pub.push_back(key);
-                }
+                if (key.first != th.track_fullname_hash)
+                    break;
+
+                SPDLOG_INFO("Unsubscribe to announcer conn_id: {0} subscribe track_alias: {1}",
+                            key.second,
+                            th.track_fullname_hash);
+
+                UnsubscribeTrack(key.second, sub_to_pub_handler);
+                remove_sub_pub.push_back(key);
             }
 
             for (const auto& key : remove_sub_pub) {
@@ -271,29 +288,35 @@ namespace laps {
                     subscribe_id,
                     th.track_fullname_hash);
 
-        state_.subscribe_alias_sub_id[{connection_handle, subscribe_id}] = th.track_fullname_hash;
+        state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
         // record subscribe as active from this subscriber
-        state_.subscribe_active[{th.track_namespace_hash, th.track_name_hash}].emplace(
+        state_.subscribe_active[{ th.track_namespace_hash, th.track_name_hash }].emplace(
           State::SubscribeWho{ connection_handle, subscribe_id, th.track_fullname_hash });
-        state_.subscribe_alias_sub_id[{connection_handle, subscribe_id}] = th.track_fullname_hash;
+        state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
-        state_.subscribes.try_emplace({ th.track_fullname_hash, connection_handle },
+        state_.subscribes.try_emplace(
+          { th.track_fullname_hash, connection_handle },
           State::SubscribePublishHandlerInfo{ track_full_name, th.track_fullname_hash, subscribe_id, nullptr });
 
         // Subscribe to announcer if announcer is active
-        for (auto& [key, track_aliases]: state_.announce_active) {
-            if (key.first == th.track_namespace_hash) {
-                SPDLOG_INFO("Sending subscribe to announcer connection handler: {0} subscribe track_alias: {1}",
-                            key.second,
-                            th.track_fullname_hash);
+        for (auto it = state_.announce_active.lower_bound({ th.track_namespace_hash, 0 });
+             it != state_.announce_active.end();
+             ++it) {
+            auto& [key, track_aliases] = *it;
 
-                track_aliases.insert(th.track_fullname_hash);   // Add track alias to state
+            if (key.first != th.track_namespace_hash)
+                break;
 
-                auto sub_track_h = std::make_shared<SubscribeTrackHandler>(track_full_name, *this);
-                SubscribeTrack(key.second, sub_track_h);
-                state_.pub_subscribes[{th.track_fullname_hash, key.second}] = sub_track_h;
-            }
+            SPDLOG_INFO("Sending subscribe to announcer connection handler: {0} subscribe track_alias: {1}",
+                        key.second,
+                        th.track_fullname_hash);
+
+            track_aliases.insert(th.track_fullname_hash); // Add track alias to state
+
+            auto sub_track_h = std::make_shared<SubscribeTrackHandler>(track_full_name, *this);
+            SubscribeTrack(key.second, sub_track_h);
+            state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
         }
     }
 

@@ -25,27 +25,30 @@ namespace laps {
         }
 
         // Fanout object to subscribers
-        for (auto& [key, sub_info] : server_.state_.subscribes) {
+        for (auto it = server_.state_.subscribes.lower_bound({ track_alias.value(), 0 });
+             it != server_.state_.subscribes.end();
+             ++it) {
+            auto& [key, sub_info] = *it;
             const auto& sub_track_alias = key.first;
             const auto& connection_handle = key.second;
 
-            if (track_alias.value() == sub_track_alias) { // Match object to subscriber track alias
+            if (sub_track_alias != track_alias.value())
+                break;
 
-                if (sub_info.publish_handler == nullptr) {
-                    // Create the publish track handler and bind it on first object received
-                    auto pub_track_h =
-                      std::make_shared<PublishTrackHandler>(sub_info.track_full_name,
-                                                            *object_headers.track_mode,
-                                                            *object_headers.priority,
-                                                            object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
+            if (sub_info.publish_handler == nullptr) {
+                // Create the publish track handler and bind it on first object received
+                auto pub_track_h =
+                  std::make_shared<PublishTrackHandler>(sub_info.track_full_name,
+                                                        *object_headers.track_mode,
+                                                        *object_headers.priority,
+                                                        object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
 
-                    // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                    server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h);
-                    sub_info.publish_handler = pub_track_h;
-                }
-
-                sub_info.publish_handler->PublishObject(object_headers, data);
+                // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
+                server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h);
+                sub_info.publish_handler = pub_track_h;
             }
+
+            sub_info.publish_handler->PublishObject(object_headers, data);
         }
     }
 
