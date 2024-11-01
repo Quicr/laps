@@ -1,5 +1,7 @@
 #pragma once
 
+#include "peering/node_info.h"
+#include "spdlog/sinks/stdout_color_sinks-inl.h"
 #include "version_config.h"
 
 #include <list>
@@ -7,10 +9,17 @@
 #include <spdlog/spdlog.h>
 
 namespace laps {
+#define LOGGER config_.logger_
+    constexpr uint16_t kDefaultClientPort = 33435;
+    constexpr uint16_t kDefaultPeerPort = 33434;
+    constexpr uint64_t kDefaultPeerCheckIntervalMs = 5'000;
+    constexpr uint32_t kDefaultPeerInitQueueSize = 5'000;
+    constexpr uint32_t kDefaultPeerTtlExpiryMs = 5'000;
+
     class Config
     {
       public:
-        std::shared_ptr<spdlog::logger> logger_; // Local source logger reference
+        std::shared_ptr<spdlog::logger> logger_ = spdlog::stderr_color_mt("LAPS");
 
         quicr::ServerConfig server_config;
 
@@ -22,11 +31,18 @@ namespace laps {
         std::string tls_key_filename_;
         std::string qlog_path_;
 
-        uint16_t data_queue_size_;
-        uint16_t time_queue_ttl_default_;
-        uint16_t rx_queue_size_;
-        uint16_t cwin_min_kb_{ 128 }; /// QUIC CWIN minimum KB size
-        uint8_t priority_limit_bypass_{ 0 };
+        peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
+
+        struct Peering
+        {
+            uint16_t listening_port;                             /// Peer listening port
+            std::vector<std::pair<std::string, uint16_t>> peers; /// Peer host/ip and port
+
+            uint64_t check_interval_ms{ kDefaultPeerCheckIntervalMs }; /// Peer check interval in milliseconds
+            uint32_t init_queue_size{ kDefaultPeerInitQueueSize };
+            uint32_t max_ttl_expiry_ms{ kDefaultPeerTtlExpiryMs };
+
+        } peering;
 
         // constructor
         Config();

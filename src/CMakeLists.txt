@@ -12,6 +12,14 @@ add_executable(lapsRelay
         server.cc
         subscribe_handler.cc
         publish_handler.cc
+        peering/connect.cc
+        peering/connect_response.cc
+        peering/subscribe_info.cc
+        peering/announce_info.cc
+        peering/node_info.cc
+        peering/peer_manager.cc
+        peering/peer_session.cc
+        peering/info_base.cc
 )
 
 target_link_libraries(lapsRelay PRIVATE quicr)
