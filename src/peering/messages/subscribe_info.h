@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #pragma once
 
-#include "common.h"
+#include "peering/common.h"
 #include "node_info.h"
 #include <set>
 

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
-#include "../state.h"
+#include "state.h"
 #include <chrono>
 #include <sstream>
 

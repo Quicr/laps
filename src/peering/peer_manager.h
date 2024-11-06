@@ -4,11 +4,12 @@
 
 #include <map>
 #include <quicr/detail/quic_transport.h>
+#include <quicr/detail/safe_queue.h>
 #include <thread>
 #include <vector>
 
-#include "../config.h"
-#include "../state.h"
+#include "config.h"
+#include "state.h"
 #include "info_base.h"
 #include "peer_session.h"
 
@@ -26,13 +27,15 @@ namespace laps::peering {
         ~PeerManager();
 
         // -------------------------------------------------------------------------------
-        // Methods used by peer session to feedback to manager
+        // Methods used by peer session and client manager to feedback/update manager
         // -------------------------------------------------------------------------------
 
         void NodeReceived(PeerSessionId peer_session_id, const NodeInfo& node_info, bool remove);
         void SessionChanged(PeerSessionId peer_session_id,
                             PeerSession::StatusValue status,
                             const NodeInfo& remote_node_info);
+
+        void
 
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks

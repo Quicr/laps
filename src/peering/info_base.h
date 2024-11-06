@@ -5,7 +5,7 @@
 
 #include "common.h"
 #include "peer_session.h"
-#include "subscribe_info.h"
+#include "peering/messages/subscribe_info.h"
 
 #include <map>
 #include <quicr/detail/messages.h>

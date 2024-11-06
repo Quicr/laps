@@ -18,7 +18,7 @@ project(laps
         LANGUAGES CXX)
 
 configure_file( version_config.h.in ${CMAKE_BINARY_DIR}/generated/version_config.h )
-include_directories( ${CMAKE_BINARY_DIR}/generated/ )
+include_directories( ${CMAKE_BINARY_DIR}/generated/ ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 ###
 ### Global Config

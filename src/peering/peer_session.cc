@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_session.h"
 #include "common.h"
-#include "connect.h"
-#include "connect_response.h"
-#include "node_info.h"
+#include "peering/messages/connect.h"
+#include "peering/messages/connect_response.h"
+#include "peering/messages/node_info.h"
 #include "peer_manager.h"
-#include "subscribe_info.h"
+#include "peering/messages/subscribe_info.h"
 
 #include <sstream>
 

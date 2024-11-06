@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #pragma once
 
-#include "common.h"
+#include "peering/common.h"
 #include <sstream>
 
 namespace laps::peering {
@@ -22,7 +22,7 @@ namespace laps::peering {
      *      **Scheme:** <high value>:<low value>
      *          The colon is **REQUIRED**
      *
-     *      <high value> and <low value> can be repsended as follows:
+     *      <high value> and <low value> can be represented as follows:
      *      - Single unsigned 32 bit number
      *      - Dotted notation of 16 bits, such as <uint16_t>.<uint16_t>
      *

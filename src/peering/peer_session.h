@@ -6,9 +6,9 @@
 #include <optional>
 #include <quicr/detail/quic_transport.h>
 
-#include "../config.h"
-#include "connect.h"
-#include "node_info.h"
+#include "config.h"
+#include "peering/messages/connect.h"
+#include "peering/messages/node_info.h"
 
 namespace laps::peering {
     class PeerManager;
