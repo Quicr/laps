@@ -66,6 +66,7 @@ flowchart TD
 
 Data peering is used to forward data objects in a [pipeline fashion](#pipelining). Data peering can operate in
 one-way or two-way modes. In two-way mode, data peering will forward subscribes matching the connection. 
+Data peering mode is indicated in the `connect` and `connect_responsse` messages. 
 
 ```mermaid
 ---
@@ -329,15 +330,16 @@ select the path via `1:6` with a path length of `2` and sum(sRTT) of less than `
 
 MoQT announce of namespace tuple and name are advertised in `announce_info` messages. Only the hash of each namespace
 item and name are sent. `announce_info` is advertised to all peers. Loop prevention is performed by not forwarding 
-`announce_info` messages that have already been seen.  Withdraw of `announce_info` is sent to all peers to remove
-an entry upon MoQT unannounce.  
+`announce_info` messages that have already been seen.  
+
+Withdraw of `announce_info` is sent to all peers to remove an entry upon MoQT unannounce.  
 
 Announce Information (`announce_info`) contains the following:
 
-| Field          | Description                                                                                 |
-|----------------|---------------------------------------------------------------------------------------------|
-| FullNameHashes | Array of the **namespace tuple** hashes and hash of **name**. Only 64bit hashes are encoded |
-| source_node_id | The node ID that received the MoQT announce                                                 |
+| Field          | Description                                                                                             |
+|----------------|---------------------------------------------------------------------------------------------------------|
+| FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64bit hashes are encoded. |
+| source_node_id | The node ID that received the MoQT announce                                                             |
 
 
 ### Subscriber Information
@@ -345,22 +347,177 @@ Announce Information (`announce_info`) contains the following:
 MoQT subscribe namespace tuple and name are advertised in `subscribe_info` messages. ONly the hash of each namespace
 item and name are sent. `subscribe_info` is advertised to the peering session that is the best path to reach
 the source node of [matching announce](#matching-subscribes-to-announcements) info. Loop prevention is performed by not
-forwarding `subscribe_info` messages that have already been seen. Withdraw of `subscribe_info` is sent by the node that
-had the MoQT subscribe (source node).  It is sent 
+forwarding `subscribe_info` messages that have already been seen. 
+
+Withdraw of `subscribe_info` is sent by the node that received the MoQT unsubscribe. Changes to the best source
+node and peer session may change at any time, resulting subscribes being advertised via some nodes that may
+not see the withdrawal when the paths have changed. To mitigate this situation, `subscribe_info` is advertised
+to all peers, similar in the same fashion as [announce_info](#announcement-information). 
+
+Subscribe information (`subscribe_info`) contains the following: 
+
+| Field          | Description                                                                                 |
+|----------------|---------------------------------------------------------------------------------------------|
+| FullNameHashes | Array of the **namespace tuple** hashes and hash of **name**. Only 64bit hashes are encoded |
+| source_node_id | The node ID that received the MoQT announce                                                 |
 
 ## Connection Establishment
 
+Peers can be established by either side. Only one peer connection can be used for control peering. If multiple
+parallel connections are established, the first connection made will be used for control peering bi-directionally. 
+Data peering can be used over the other connections.  The mode of the peering session indicates control verses
+data or both. If data peer, the data mode can be one-way or two-way.  If two-way, return data will be sent
+via the established peering connection. This is to support NAT and firewall use-cases. 
+
+A race condition exists if peer connections are initiated by both relays at the same time. In data forwarding, both
+connections can be used. For control, the peer that is established first wins and if they both are established at
+the same time, the peer that has the lowest Node ID wins. The result is that only one peering connection between
+two Nodes will be used for control information base messages. 
+
+The control peering connection **MUST** remain established. Upon termination, all states associated to that peer
+session will be removed. For example, all nodes learned/used via this session and all announces/subscribes via
+this session will be removed. 
+
 ## Selection Algorithm
 
-## Source Routing
+The selection algorithm will evolve over time to include more granular metrics on load, usage, best via relays for
+aggregation, and administrative/business policy constraints,... 
+
+At this time the below is implemented to select the best peering session to use. 
+
+1. Prefer the shortest path len (number of transit hops) 
+2. Prefer the lowest sum of sRTT for all paths and the sRTT of the peering session itself  
+
+## Data Forwarding
+
+Data is forwarded using a data header that is included in every datagram message and start of every QUIC stream. 
+QUIC streams enable pipeline support where data is forwarded bytes-in to \[fan-out\] bytes-out.  Pipeline forwarding
+reduces the end-to-end latency and jitter on data between publisher edge relay to all subscriber edge/stub relays.  
+
+### Source Routing
+
+Data forwarding is source routed in a similar fashion as described in [Segment Routing Architecture](https://www.rfc-editor.org/rfc/rfc8402.html).
+Data forwarding in MoQT is designed to support fan-out of one or more publishers to one or more subscribers. This
+is different from IP forwarding (point to point). Building a stack of labels for all target
+nodes could grow into the thousands with a large number of subscribers spanning thousands of edge relays. This would
+not scale to send the set of node IDs in every datagram frame or even start of every QUIC stream, considering
+QUIC streams may change often due to group/subgroup changes. 
+
+Unlike segment routing where it utilizes a stack of labels/sids, this protocol utilizes 
+a **forwarding node set (FNS)** that **describes the set of subscriber edge relay node IDs that
+need to receive the data**. It does **not describe** the path that the data will traverse.
+FNS is exchanged via the peer session that will receive the data using the control stream via that
+same peer session. Utilizing the control bidir stream within the peer session ensures scope of the FNS
+to be within the peer session to support parallel peer sessions and control information based peering
+that is not using the same data path. Each FNS will be assigned an FNS ID that is unique to the session.
+The sender generates the FNS ID. 
+
+The FNS ID is an `unsigned 32bit` integer that is a monotonic series increasing by one.
+The ID starts at ONE and can wrap to ONE as needed. Zero is reserved to indicate no ID.   
+
+Upon STREAM closure, the ID is removed from state and is no longer valid. No withdrawal is required to remove/cleanup
+state of an FNS. In the case of datagram, there is no closure. To support cleanup when using datagram, the state of FNS
+is expired after a peer session negotiated FNS idle timeout. A new FNS needs to be advertised if there has been no 
+datagram frames within the idle timeout. As long as there are frames being sent, the FNS is still valid. 
+States are peer scoped and will be removed upon peer session close. 
+
+The design of forwarding node sets is to be fast and lightweight with little control signaling involvement to maintain
+state. Node sets can change often based on node (e.g., relay) churn with peering sessions and subscribers. This
+will result in new FNS being advertised. In effort to reduce delays, the set is updated by indicating the FSN
+that a new FNS replaces. 
+
+FNS information message has the following fields:
+
+| Field           | Description                                                               |
+|-----------------|---------------------------------------------------------------------------|
+| FNS ID          | FNS ID of this entry                                                      |
+| Replaces FNS ID | Zero indicates no repalce                                                 |
+| Target Node Set | Target node ID set. Array of all nodes that should be forwarded this data |
+
+The target node set is generated based on the [Best Node Information](#node-information) via the peering session. 
+For example, when subscribes are received by the publisher relay (aka origin relay) the subscriber information
+will indicate source nodes of where that subscribe originated. This node id will be added to a set that
+is relative to the peering session that reaches that node based on the [selection algorithm](#selection-algorithm)
+This will result in different sets based on selection of which peering session reaches best the edge nodes that need
+to receive the data. In large scale, multiple data peering sessions will be utilized, so the sets will be 
+a subset of total number of subscriber edge nodes.  STUBS are not included.  Only Edge relays are added to 
+this set. 
+
+```mermaid
+---
+title: Source Routing Data Forwarding
+---
+flowchart TD
+    P([Publisher]) -- MoQT Data Object --> OE[Origin 101.2:10]
+    OE -- " FNSid: 1=[100.2:1, 100.2:2, 103.2:1] " --> V1[Via 100.1:1]
+
+    subgraph US-WEST
+        V1 -- " FNSid: 18=[100.2:1] " --> w1[Edge 100.2:1]
+        w1 -- MoQT Data Object --> wS1([Subscriber 1])
+        w1 -- MoQT Data Object --> wS2([Subscriber 2])
+        V1 -- " FNSid: 27=[100.2:2] " --> w2[Edge 100.2:2]
+        w2 -- MoQT Data Object --> wS3([Subscriber 3])
+        w2 -- MoQT Data Object --> wS4([Subscriber 4])
+    end
+    subgraph US-EAST
+        V1 -- " FNSid: 99=[103.2:1] " --> e1[Edge 103.2:1]
+        e1 -- MoQT Data Object --> eS3([Subscriber 1])
+        e1 -- MoQT Data Object --> eS4([Subscriber 2])
+
+    end
+```
+
+### Start of Data Header
+
+| Field            | Description                                                                                                                          |
+|------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| FSN ID           | unsigned 32bit unique forwarding node set ID within the session scope that identifies which target nodes the data should be sent to. |
+
+> [!NOTE]
+> TODO will add more fields as needed
+
+The FNS ID is changed hop by hop, but it uses a fixed 32 bit value supporting fast offset based changing of the value
+with datagram messages. QUIC streams only have this header on start of QUIC stream. Only on new QUIC stream is the
+start of data header included.
+
+### Supporting MoQT data Objects in pipeline forwarding
+
+A complication with pipeline forwarding is that the start and end of an object are not known by the intermediate
+nodes when relaying the data via QUIC streams. Datagram is moot as each datagram frame is the complete object.
+Only the receiving edge relay needs to know the start/end of MoQT QUIC streamed data objects so the data be cached and
+sent correctly to the subscriber(s).  To support this with QUIC streams, an additional header for each object is
+used (QUIC streams only). All MoQT data via QUIC streams is sent using the below header to wrap the data object. 
+
+| Field          | Description                                                                           |
+|----------------|---------------------------------------------------------------------------------------|
+| payload length | QUIC variable length integer length value that indicates the payload length to follow |
+| payload        | Payload bytes based on the length indicated                                           |
+
+
+### Matching Subscribes to Announcements
+
+Subscribes are delivered via the control information base forwarding to the publisher edge relay. Matching
+the announce to subscribe is performed by matching the namespace tuple of hashes and name in order. If a match is made,
+the subscribe is sent via the peering session that would be best to reach the source node of the publisher.
 
 ### Optimizing Peering using MoQT GOAWAY
 
-## Matching Subscribes to Announcements
+In large scale deployments, the usage of [source routing data forwarding](#source-routing) can result in large sets
+of target edge nodes that have subscribers to receive data. This can be suboptimal if every subscriber was on
+a different edge relay, especially when in the same region. This could happen due to network load balances, 
+including anycast, where subscriber clients are distributed to one of hundreds of relays within the same region. 
+It is desirable to align subscribers of the same content to use the same relays, providing load/capacity is available.
+MoQT provides a mechanism to redirect a client connection to another relay. This method is to use a GOWAY with
+a new connect URL.  This protocol uses the GOAWAY (aka redirect) to redirect client connections to a nearby relay that
+has the same subscriptions. 
 
-## Pipelining
+Edge relays are stateless, but they do have the control information bases to look this up received
+subscription information from other relays and node information to intelligently balance/move clients to
+other relays that have the same subscribes.  
 
 ## Message Flows
+
+Various message flows
 
 ### Connection Establishment 
 
