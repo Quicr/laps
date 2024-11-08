@@ -4,8 +4,8 @@
 #pragma once
 
 #include <optional>
-#include "common.h"
-#include "errors.h"
+#include "peering/common.h"
+#include "peering/errors.h"
 
 #include "node_info.h"
 

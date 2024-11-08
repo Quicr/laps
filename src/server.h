@@ -1,6 +1,8 @@
 #pragma once
 
 #include "state.h"
+
+#include <peering/peer_manager.h>
 #include <quicr/server.h>
 
 namespace laps {
@@ -11,7 +13,7 @@ namespace laps {
     class LapsServer : public quicr::Server
     {
       public:
-        LapsServer(State& state, const quicr::ServerConfig& cfg);
+        LapsServer(State& state, const quicr::ServerConfig& cfg, peering::PeerManager& peer_manager);
 
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;
@@ -42,6 +44,7 @@ namespace laps {
         void PurgePublishState(quicr::ConnectionHandle connection_handle);
 
         State& state_;
+        peering::PeerManager& peer_manager_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

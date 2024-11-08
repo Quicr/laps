@@ -138,15 +138,17 @@ main(int argc, char* argv[])
 
     quicr::ServerConfig config = InitConfig(result, cfg);
 
+    std::shared_ptr<peering::InfoBase> forwarding_info = std::make_shared<peering::InfoBase>();
+    peering::PeerManager peer_manager(cfg, state, forwarding_info);
+
     try {
-        auto server = std::make_shared<LapsServer>(state, config);
+        auto server = std::make_shared<LapsServer>(state, config, peer_manager);
         if (server->Start() != quicr::Transport::Status::kReady) {
             SPDLOG_ERROR("Server failed to start");
             exit(-2);
         }
 
-        std::shared_ptr<peering::InfoBase> forwarding_info = std::make_shared<peering::InfoBase>();
-        peering::PeerManager peer_manager(cfg, state, forwarding_info);
+
 
         // Wait until told to terminate
         gvars::cv.wait(lock, [&]() { return gvars::terminate; });

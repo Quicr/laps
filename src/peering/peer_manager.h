@@ -6,12 +6,11 @@
 #include <quicr/detail/quic_transport.h>
 #include <quicr/detail/safe_queue.h>
 #include <thread>
-#include <vector>
 
 #include "config.h"
-#include "state.h"
 #include "info_base.h"
 #include "peer_session.h"
+#include "state.h"
 
 namespace laps::peering {
     /**
@@ -30,12 +29,31 @@ namespace laps::peering {
         // Methods used by peer session and client manager to feedback/update manager
         // -------------------------------------------------------------------------------
 
-        void NodeReceived(PeerSessionId peer_session_id, const NodeInfo& node_info, bool remove);
+        void NodeReceived(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw);
+        void SubscribeInfoReceived(PeerSessionId peer_session_id, const SubscribeInfo& subscribe_info, bool withdraw);
+        void AnnounceInfoReceived(PeerSessionId peer_session_id, const AnnounceInfo& announce_info, bool withdraw);
+
         void SessionChanged(PeerSessionId peer_session_id,
                             PeerSession::StatusValue status,
                             const NodeInfo& remote_node_info);
 
-        void
+        void ClientAnnounce(const quicr::FullTrackName& full_track_name,
+                            const quicr::PublishAnnounceAttributes&,
+                            bool withdraw = false);
+
+        void ClientUnannounce(const quicr::FullTrackName& full_track_name)
+        {
+            ClientAnnounce(full_track_name, {}, true);
+        }
+
+        void ClientSubscribe(const quicr::FullTrackName& track_full_name,
+                             const quicr::SubscribeAttributes&,
+                             bool withdraw = false);
+
+        void ClientUnsubscribe(const quicr::FullTrackName& track_full_name)
+        {
+            ClientSubscribe(track_full_name, {}, true);
+        }
 
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
@@ -72,8 +90,8 @@ namespace laps::peering {
          */
         void CreatePeerSession(const quicr::TransportRemote& peer_config);
 
-        void PropagateNodeInfo(const NodeInfo& node_info);
-        void PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info);
+        void PropagateNodeInfo(const NodeInfo& node_info, bool withdraw=false);
+        void PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw=false);
         std::shared_ptr<PeerSession> GetPeerSession(PeerSessionId peer_session_id);
 
       private:

@@ -11,26 +11,89 @@ namespace laps::peering {
     // Methods used by peer session to feedback info and actions
     // ------------------------------------------------------------
 
-    void PeerManager::NodeReceived(PeerSessionId peer_session_id, const NodeInfo& node_info, bool remove)
-    {
-        SPDLOG_LOGGER_INFO(config_.logger_,
-                           "Node received id: {} contact: {} should delete = {}",
+    void PeerManager::NodeReceived(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw)
+    try {
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "Node peer_session_id: {} received id: {} contact: {} should delete = {}",
+                           peer_session_id,
                            node_info.id,
                            node_info.contact,
-                           remove);
+                           withdraw);
 
-        try {
-            auto peer_session = GetPeerSession(peer_session_id);
+        auto peer_session = GetPeerSession(peer_session_id);
 
+        if (not withdraw) {
             if (info_base_->AddNode(peer_session, node_info)) {
                 // Add peer to path before advertising node
                 auto adv_node_info = node_info;
                 adv_node_info.path.push_back({ adv_node_info.id, peer_session->metrics_.srtt_us });
                 PropagateNodeInfo(adv_node_info);
             }
-        } catch (const std::exception&) {
-            // ignore
+        } else {
+            info_base_->RemoveNode(peer_session_id, node_info.id);
         }
+    } catch (const std::exception&) {
+        // ignore
+    }
+
+    void PeerManager::SubscribeInfoReceived(PeerSessionId peer_session_id,
+                                            const SubscribeInfo& subscribe_info,
+                                            bool withdraw)
+    try {
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "Subscribe info received peer_session_id: {} id: {} withdraw: {}",
+                           peer_session_id,
+                           subscribe_info.id,
+                           withdraw);
+
+        auto peer_session = GetPeerSession(peer_session_id);
+        if (not withdraw && !info_base_->AddSubscribe(subscribe_info)) {
+                // Don't send to other peers if we have seen this before (loop)
+                return;
+        }
+
+        for (const auto& sess : client_peer_sessions_) {
+            if (peer_session_id != sess.first)
+                sess.second->SendSubscribeInfo(subscribe_info, withdraw);
+        }
+
+        for (const auto& sess : server_peer_sessions_) {
+            if (peer_session_id != sess.first)
+                sess.second->SendSubscribeInfo(subscribe_info, withdraw);
+        }
+
+    } catch (const std::exception&) {
+        // ignore
+    }
+
+    void PeerManager::AnnounceInfoReceived(PeerSessionId peer_session_id,
+                                           const AnnounceInfo& announce_info,
+                                           bool withdraw)
+    try {
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "Announce info received peer_session_id: {} hash: {} withdraw: {}",
+                           peer_session_id,
+                           announce_info.full_name.hash,
+                           withdraw);
+
+        auto peer_session = GetPeerSession(peer_session_id);
+        if (not withdraw && !info_base_->AddAnnounce(announce_info)) {
+            // Don't send to other peers if we have seen this before (loop)
+            return;
+        }
+
+        for (const auto& sess : client_peer_sessions_) {
+            if (peer_session_id != sess.first)
+                sess.second->SendAnnounceInfo(announce_info, withdraw);
+        }
+
+        for (const auto& sess : server_peer_sessions_) {
+            if (peer_session_id != sess.first)
+                sess.second->SendAnnounceInfo(announce_info, withdraw);
+        }
+
+    } catch (const std::exception&) {
+        // ignore
     }
 
     void PeerManager::SessionChanged(PeerSessionId peer_session_id,
@@ -59,8 +122,69 @@ namespace laps::peering {
                 SPDLOG_LOGGER_INFO(LOGGER, "Peer session not connected peer_session_id: {}", peer_session_id);
 
                 if (!stop_)
-                    info_base_->RemoveNodes(peer_session_id);
+                    info_base_->PurgePeerSessionInfo(peer_session_id);
                 break;
+        }
+    }
+
+    void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
+                                      const quicr::SubscribeAttributes&,
+                                      bool withdraw)
+    {
+        quicr::TrackHash th(track_full_name);
+
+        SubscribeInfo si;
+
+        si.id = th.track_fullname_hash;
+        si.full_name.namespace_tuples.reserve(track_full_name.name_space.GetHashes().size());
+
+        for (const auto ns_item : track_full_name.name_space.GetHashes()) {
+            si.full_name.namespace_tuples.push_back(ns_item);
+        }
+
+        si.full_name.name = th.track_name_hash;
+        si.full_name.hash = th.track_fullname_hash;
+
+        for (const auto& sess : client_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe to id: {} peer_session_id: {}", si.id, sess.first);
+            si.source_node_id = sess.second->node_info_.id;
+            sess.second->SendSubscribeInfo(si, withdraw);
+        }
+
+        for (const auto& sess : server_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe to id: {} peer_session_id: {}", si.id, sess.first);
+            si.source_node_id = sess.second->node_info_.id;
+            sess.second->SendSubscribeInfo(si, withdraw);
+        }
+    }
+
+    void PeerManager::ClientAnnounce(const quicr::FullTrackName& track_full_name,
+                                     const quicr::PublishAnnounceAttributes&,
+                                     bool withdraw)
+    {
+        quicr::TrackHash th(track_full_name);
+
+        AnnounceInfo ai;
+
+        ai.full_name.hash = th.track_fullname_hash;
+        ai.full_name.namespace_tuples.reserve(track_full_name.name_space.GetHashes().size());
+
+        for (const auto ns_item : track_full_name.name_space.GetHashes()) {
+            ai.full_name.namespace_tuples.push_back(ns_item);
+        }
+
+        ai.full_name.name = th.track_name_hash;
+
+        for (const auto& sess : client_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
+            ai.source_node_id = sess.second->node_info_.id;
+            sess.second->SendAnnounceInfo(ai, withdraw);
+        }
+
+        for (const auto& sess : server_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
+            ai.source_node_id = sess.second->node_info_.id;
+            sess.second->SendAnnounceInfo(ai, withdraw);
         }
     }
 
@@ -123,27 +247,26 @@ namespace laps::peering {
         SPDLOG_LOGGER_INFO(LOGGER, "Closed peer manager stopped");
     }
 
-    void PeerManager::PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info)
+    void PeerManager::PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw)
     {
         std::lock_guard _(mutex_);
 
         auto server_it = server_peer_sessions_.find(peer_session_id);
         if (server_it != server_peer_sessions_.end()) {
             if (server_it->second->remote_node_info_.id != node_info.id)
-                server_it->second->SendNodeInfo(node_info);
+                server_it->second->SendNodeInfo(node_info, withdraw);
             return;
         }
-
 
         auto client_it = client_peer_sessions_.find(peer_session_id);
         if (client_it != client_peer_sessions_.end()) {
             if (client_it->second->remote_node_info_.id != node_info.id)
-                client_it->second->SendNodeInfo(node_info);
+                client_it->second->SendNodeInfo(node_info, withdraw);
             return;
         }
     }
 
-    void PeerManager::PropagateNodeInfo(const NodeInfo& node_info)
+    void PeerManager::PropagateNodeInfo(const NodeInfo& node_info, bool withdraw)
     {
         auto skip_node = [](const NodeInfo& node_a, const NodeInfo& node_b) -> bool {
             if (node_a.id == node_b.id)
@@ -165,28 +288,30 @@ namespace laps::peering {
             if (skip_node(node_info, peer_session->remote_node_info_))
                 continue;
 
-            peer_session->SendNodeInfo(node_info);
+            peer_session->SendNodeInfo(node_info, withdraw);
 
             SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Sending node info; id: {} contact: {} --> remote id: {} contact: {}",
+                                "Sending node info; id: {} contact: {} --> remote id: {} contact: {} withdraw: {}",
                                 node_info.id,
                                 node_info.contact,
                                 peer_session->remote_node_info_.id,
-                                peer_session->remote_node_info_.contact);
+                                peer_session->remote_node_info_.contact,
+                                withdraw);
         }
 
         for (auto& [_, peer_session] : server_peer_sessions_) {
             if (skip_node(node_info, peer_session->remote_node_info_))
                 continue;
 
-            peer_session->SendNodeInfo(node_info);
+            peer_session->SendNodeInfo(node_info, withdraw);
 
             SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Sending node info; id: {} contact: {} --> remote id: {} --> contact: {}",
+                                "Sending node info; id: {} contact: {} --> remote id: {} --> contact: {} withdraw: {}",
                                 node_info.id,
                                 node_info.contact,
                                 peer_session->remote_node_info_.id,
-                                peer_session->remote_node_info_.contact);
+                                peer_session->remote_node_info_.contact,
+                                withdraw);
         }
     }
 
@@ -304,8 +429,8 @@ namespace laps::peering {
             SPDLOG_LOGGER_INFO(LOGGER, "New server accepted peer, conn_id: {0}", conn_id);
 
             quicr::TransportRemote peer = remote;
-            auto [iter, inserted] =
-              server_peer_sessions_.try_emplace(conn_id, std::make_shared<PeerSession>(true, conn_id, config_, node_info_, std::move(peer), *this));
+            auto [iter, inserted] = server_peer_sessions_.try_emplace(
+              conn_id, std::make_shared<PeerSession>(true, conn_id, config_, node_info_, std::move(peer), *this));
 
             peer_iter = iter;
 

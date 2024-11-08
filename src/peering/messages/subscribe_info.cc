@@ -36,6 +36,8 @@ namespace laps::peering {
         }
 
         full_name.name = ValueOf<uint64_t>({ it, it + 8 });
+
+        full_name.ComputeFullNameHash();
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeInfo& subscribe_info)
@@ -59,21 +61,21 @@ namespace laps::peering {
         return data;
     }
 
-    std::vector<uint8_t> SubscribeInfo::Serialize(bool include_common_header) const
+    std::vector<uint8_t> SubscribeInfo::Serialize(bool include_common_header, bool withdraw) const
     {
         std::vector<uint8_t> data;
 
         if (include_common_header) {
             data.reserve(kCommonHeadersSize + SizeBytes());
             data.push_back(kProtocolVersion);
-            uint16_t type = static_cast<uint16_t>(MsgType::kSubscribeInfoAdvertised);
+            uint16_t type =
+              static_cast<uint16_t>(withdraw ? MsgType::kSubscribeInfoWithdrawn : MsgType::kSubscribeInfoAdvertised);
             auto type_bytes = BytesOf(type);
             data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
             auto ni_size = SizeBytes();
             auto data_len_bytes = BytesOf(ni_size);
             data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
-        }
-        else {
+        } else {
             data.reserve(SizeBytes());
         }
 

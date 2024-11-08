@@ -10,9 +10,10 @@
 #include "subscribe_handler.h"
 
 namespace laps {
-    LapsServer::LapsServer(State& state, const quicr::ServerConfig& cfg)
+    LapsServer::LapsServer(State& state, const quicr::ServerConfig& cfg, peering::PeerManager& peer_manager)
       : quicr::Server(cfg)
       , state_(state)
+      , peer_manager_(peer_manager)
     {
     }
 
@@ -47,6 +48,7 @@ namespace laps {
         }
 
         state_.announce_active.erase({ th.track_namespace_hash, connection_handle });
+        peer_manager_.ClientUnannounce({ track_namespace, {}, th.track_fullname_hash });
     }
 
     void LapsServer::PurgePublishState(quicr::ConnectionHandle connection_handle)
@@ -82,7 +84,7 @@ namespace laps {
     }
     void LapsServer::AnnounceReceived(quicr::ConnectionHandle connection_handle,
                                       const quicr::TrackNamespace& track_namespace,
-                                      const quicr::PublishAnnounceAttributes&)
+                                      const quicr::PublishAnnounceAttributes& attrs)
     {
         auto th = quicr::TrackHash({ track_namespace, {}, std::nullopt });
 
@@ -91,15 +93,14 @@ namespace laps {
                     th.track_namespace_hash);
 
         // Add to state if not exist
-        auto [anno_conn_it, is_new] =
-          state_.announce_active.try_emplace({ th.track_namespace_hash, connection_handle });
-
-        if (!is_new) {
+        auto it = state_.announce_active.find({ th.track_namespace_hash, connection_handle });
+        if (it != state_.announce_active.end()) {
             /*
              * @note Connection handle maybe reused. This requires replacing an existing entry if it's duplicate
              */
             PurgePublishState(connection_handle);
-            state_.announce_active.try_emplace({ th.track_namespace_hash, connection_handle });
+        } else {
+            peer_manager_.ClientAnnounce({ track_namespace, {}, th.track_fullname_hash }, attrs, false);
         }
 
         AnnounceResponse announce_response;
@@ -221,6 +222,7 @@ namespace laps {
             return;
         }
 
+        auto ftn = sub_it->second.track_full_name;
         auto th = quicr::TrackHash(sub_it->second.track_full_name);
 
         state_.subscribes.erase(sub_it);
@@ -243,6 +245,8 @@ namespace laps {
 
         if (unsub_pub) {
             SPDLOG_INFO("No subscribers left, unsubscribe publisher track_alias: {0}", track_alias);
+
+            peer_manager_.ClientUnsubscribe(ftn);
 
             std::vector<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>> remove_sub_pub;
             for (auto it = state_.pub_subscribes.lower_bound({ th.track_namespace_hash, 0 });
@@ -288,10 +292,14 @@ namespace laps {
           State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
         state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
-        state_.subscribes.try_emplace(
+        const auto [_, is_new] = state_.subscribes.try_emplace(
           { th.track_fullname_hash, connection_handle },
           State::SubscribePublishHandlerInfo{
             track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, nullptr });
+
+        if (is_new) {
+            peer_manager_.ClientSubscribe(track_full_name, attrs, false);
+        }
 
         // Subscribe to announcer if announcer is active
         for (auto it = state_.announce_active.lower_bound({ th.track_namespace_hash, 0 });

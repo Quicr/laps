@@ -24,8 +24,8 @@ namespace laps::peering {
 
         struct NodeItem
         {
-          std::weak_ptr<PeerSession> peer_session;
-          NodeInfo node_info;
+            std::weak_ptr<PeerSession> peer_session;
+            NodeInfo node_info;
         };
 
         /**
@@ -43,9 +43,39 @@ namespace laps::peering {
         void RemoveNode(PeerSessionId peer_session_id, NodeIdValueType node_id);
 
         /**
-         * @brief Removes all nodes associated to the peer session id
+         * @brief Purge peer session information
          */
-        void RemoveNodes(PeerSessionId peer_session_id);
+        void PurgePeerSessionInfo(PeerSessionId peer_session_id);
+
+        /**
+         * @brief Add or update subscribe in the info base
+         * @details This will add or update a subscribe in the info base.
+         *
+         * @returns True if subscribe is new
+         */
+        bool AddSubscribe(const SubscribeInfo& subscribe_info);
+
+        /**
+         * @brief Remove subscribe from the info base
+         *
+         * @returns True if the subscribe was removed
+         */
+        bool RemoveSubscribe(const SubscribeInfo& subscribe_info);
+
+        /**
+         * @brief Add or update announce in the info base
+         * @details This will add or update a announce in the info base.
+         *
+         * @returns True if subscribe is new
+         */
+        bool AddAnnounce(const AnnounceInfo& announce_info);
+
+        /**
+         * @brief Remove announce from the info base
+         *
+         * @returns True if the announce was removed
+         */
+        bool RemoveAnnounce(const AnnounceInfo& announce_info);
 
         /**
          * @brief Gets the best peer session for given node id
@@ -76,15 +106,18 @@ namespace laps::peering {
          *    peering session.
          */
         std::unordered_map<NodeIdValueType, std::weak_ptr<PeerSession>> nodes_best_;
-        //std::map<quicr::messages::TrackAlias, std::set<decltype(nodes_best_)::mapped_type&>> subscribes;
-        std::map<quicr::messages::TrackAlias, std::set<NodeIdValueType>> subscribes;
+        // std::map<quicr::messages::TrackAlias, std::set<decltype(nodes_best_)::mapped_type&>> subscribes+;
+        std::map<SubscribeId, std::set<NodeIdValueType>> subscribes_;
 
-          /**
-           * @brief Nodes by peer session id
-           * @details This map is updated whenever nodes_ is updated. It's used when cleaning up the other node tables
-           *   on peer disconnect/cleanup.
-           */
-          std::map<PeerSessionId, std::set<NodeIdValueType>> nodes_by_peer_session_;
+        /// Key is the full name hash of the announce (hash of tuple and name), value is the source node ID
+        std::map<HashType, std::set<NodeIdValueType>> announces_;
+
+        /**
+         * @brief Nodes by peer session id
+         * @details This map is updated whenever nodes_ is updated. It's used when cleaning up the other node tables
+         *   on peer disconnect/cleanup.
+         */
+        std::map<PeerSessionId, std::set<NodeIdValueType>> nodes_by_peer_session_;
         std::mutex mutex_;
 
       private:

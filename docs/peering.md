@@ -386,7 +386,7 @@ Announce Information (`announce_info`) contains the following:
 
 ### Subscriber Information
 
-MoQT subscribe namespace tuple and name are advertised in `subscribe_info` messages. ONly the hash of each namespace
+MoQT subscribe namespace tuple and name are advertised in `subscribe_info` messages. Only the hash of each namespace
 item and name are sent. `subscribe_info` is advertised to the peering session that is the best path to reach
 the source node of [matching announce](#matching-subscribes-to-announcements) info. Loop prevention is performed by not
 forwarding `subscribe_info` messages that have already been seen. 

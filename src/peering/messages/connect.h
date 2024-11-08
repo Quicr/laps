@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "common.h"
+#include "peering/common.h"
 
 #include "node_info.h"
 

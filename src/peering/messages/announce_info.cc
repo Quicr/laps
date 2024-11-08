@@ -32,41 +32,43 @@ namespace laps::peering {
         }
 
         full_name.name = ValueOf<uint64_t>({ it, it + 8 });
+
+        full_name.ComputeFullNameHash();
     }
 
-    std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const AnnounceInfo& subscribe_info)
+    std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const AnnounceInfo& announce_info)
     {
-        auto src_node_bytes = BytesOf(subscribe_info.source_node_id);
+        auto src_node_bytes = BytesOf(announce_info.source_node_id);
         data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
 
-        data.push_back(static_cast<uint8_t>(subscribe_info.full_name.namespace_tuples.size()));
+        data.push_back(static_cast<uint8_t>(announce_info.full_name.namespace_tuples.size()));
 
-        for (uint8_t i = 0; i < subscribe_info.full_name.namespace_tuples.size(); i++) {
-            auto ns_item_bytes = BytesOf(subscribe_info.full_name.namespace_tuples[i]);
+        for (uint8_t i = 0; i < announce_info.full_name.namespace_tuples.size(); i++) {
+            auto ns_item_bytes = BytesOf(announce_info.full_name.namespace_tuples[i]);
             data.insert(data.end(), ns_item_bytes.rbegin(), ns_item_bytes.rend());
         }
 
-        auto name_bytes = BytesOf(subscribe_info.full_name.name);
+        auto name_bytes = BytesOf(announce_info.full_name.name);
         data.insert(data.end(), name_bytes.rbegin(), name_bytes.rend());
 
         return data;
     }
 
-    std::vector<uint8_t> AnnounceInfo::Serialize(bool include_common_header) const
+    std::vector<uint8_t> AnnounceInfo::Serialize(bool include_common_header, bool withdraw) const
     {
         std::vector<uint8_t> data;
 
         if (include_common_header) {
             data.reserve(kCommonHeadersSize + SizeBytes());
             data.push_back(kProtocolVersion);
-            uint16_t type = static_cast<uint16_t>(MsgType::kAnnounceInfoAdvertised);
+            uint16_t type =
+              static_cast<uint16_t>(withdraw ? MsgType::kAnnounceInfoWithdrawn : MsgType::kAnnounceInfoAdvertised);
             auto type_bytes = BytesOf(type);
             data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
             auto ni_size = SizeBytes();
             auto data_len_bytes = BytesOf(ni_size);
             data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
-        }
-        else {
+        } else {
             data.reserve(SizeBytes());
         }
 

@@ -70,10 +70,24 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
 
-    void PeerSession::SendNodeInfo(const NodeInfo& node_info)
+    void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
+    {
+        SPDLOG_LOGGER_DEBUG(
+          LOGGER, "Sending announce info id: {} source_node_id: {} withdraw: {}", announce_info.full_name.hash, announce_info.source_node_id, withdraw);
+        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, announce_info.Serialize(true, withdraw), 0, 1000);
+    }
+
+
+    void PeerSession::SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw)
+    {
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe info id: {} source_ndoe_id: {} withdraw: {}", subscribe_info.id, subscribe_info.source_node_id, withdraw);
+        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, subscribe_info.Serialize(true, withdraw), 0, 1000);
+    }
+
+    void PeerSession::SendNodeInfo(const NodeInfo& node_info, bool withdraw)
     {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending node info id: {}", node_info.id);
-        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, node_info.Serialize(true), 0, 1000);
+        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, node_info.Serialize(true, withdraw), 0, 1000);
     }
 
     void PeerSession::SendConnect()
@@ -217,6 +231,37 @@ namespace laps::peering {
                             manager_.NodeReceived(GetSessionId(), node_info, false);
                             break;
                         }
+
+                        case MsgType::kNodeInfoWithdrawn: {
+                            NodeInfo node_info(msg_bytes);
+                            manager_.NodeReceived(GetSessionId(), node_info, true);
+                            break;
+                        }
+
+                        case MsgType::kSubscribeInfoAdvertised: {
+                            SubscribeInfo subscribe_info(msg_bytes);
+                            manager_.SubscribeInfoReceived(GetSessionId(), subscribe_info, false);
+                            break;
+                        }
+
+                        case MsgType::kSubscribeInfoWithdrawn: {
+                            SubscribeInfo subscribe_info(msg_bytes);
+                            manager_.SubscribeInfoReceived(GetSessionId(), subscribe_info, true);
+                            break;
+                        }
+
+                        case MsgType::kAnnounceInfoAdvertised: {
+                            AnnounceInfo announce_info(msg_bytes);
+                            manager_.AnnounceInfoReceived(GetSessionId(), announce_info, false);
+                            break;
+                        }
+
+                        case MsgType::kAnnounceInfoWithdrawn: {
+                            AnnounceInfo announce_info(msg_bytes);
+                            manager_.AnnounceInfoReceived(GetSessionId(), announce_info, true);
+                            break;
+                        }
+
 
                         default: {
                             SPDLOG_LOGGER_DEBUG(config_.logger_, "Invalid message type {}", static_cast<int>(type));

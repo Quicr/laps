@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #pragma once
 
-#include "peering/common.h"
 #include "node_info.h"
+#include "peering/common.h"
 #include <set>
 
 #include <quicr/track_name.h>
@@ -20,7 +20,7 @@ namespace laps::peering {
     class SubscribeInfo
     {
       public:
-        SubscribeId id;                 ///< Globally unique track ID
+        SubscribeId id;                 ///< Globally unique track ID (aka track alias)
         NodeIdValueType source_node_id; ///< Id of the originating source node
 
         FullNameHash full_name; ///< Full name hash
@@ -28,7 +28,7 @@ namespace laps::peering {
         /**
          * @brief Encode node object into bytes that can be written on the wire
          */
-        std::vector<uint8_t> Serialize(bool include_common_header) const;
+        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
 
         SubscribeInfo() = default;
         SubscribeInfo(SubscribeId, NodeIdValueType source_node_id, const FullNameHash& full_name);

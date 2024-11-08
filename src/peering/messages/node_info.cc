@@ -7,8 +7,8 @@ namespace laps::peering {
 
     uint64_t NodeInfo::SumSrtt() const
     {
-        uint64_t sum {0};
-        for (const auto& item: path) {
+        uint64_t sum{ 0 };
+        for (const auto& item : path) {
             sum += item.srtt_us;
         }
 
@@ -17,8 +17,8 @@ namespace laps::peering {
 
     uint32_t NodeInfo::SizeBytes() const
     {
-        return sizeof(id) + sizeof(type) + quicr::UintVar(contact.size()).Size() + contact.size() + sizeof(longitude) + sizeof(latitude) +
-               (path.size() * sizeof(NodePathItem));
+        return sizeof(id) + sizeof(type) + quicr::UintVar(contact.size()).Size() + contact.size() + sizeof(longitude) +
+               sizeof(latitude) + (path.size() * sizeof(NodePathItem));
     }
 
     NodeInfo::NodeInfo(Span<uint8_t const> serialized_data)
@@ -75,21 +75,20 @@ namespace laps::peering {
         return data;
     }
 
-    std::vector<uint8_t> NodeInfo::Serialize(bool include_common_header) const
+    std::vector<uint8_t> NodeInfo::Serialize(bool include_common_header, bool withdraw) const
     {
         std::vector<uint8_t> data;
 
         if (include_common_header) {
             data.reserve(kCommonHeadersSize + SizeBytes());
             data.push_back(kProtocolVersion);
-            uint16_t type = static_cast<uint16_t>(MsgType::kNodeInfoAdvertise);
+            uint16_t type = static_cast<uint16_t>(withdraw ? MsgType::kNodeInfoWithdrawn : MsgType::kNodeInfoAdvertise);
             auto type_bytes = BytesOf(type);
             data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
             auto ni_size = SizeBytes();
             auto data_len_bytes = BytesOf(ni_size);
             data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
-        }
-        else {
+        } else {
             data.reserve(SizeBytes());
         }
 

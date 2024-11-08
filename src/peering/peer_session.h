@@ -7,6 +7,8 @@
 #include <quicr/detail/quic_transport.h>
 
 #include "config.h"
+#include "messages/announce_info.h"
+#include "messages/subscribe_info.h"
 #include "peering/messages/connect.h"
 #include "peering/messages/node_info.h"
 
@@ -32,7 +34,7 @@ namespace laps::peering {
 
         PeerSession() = delete;
 
-     // --------------------------------------------------------------------------------------------
+        // --------------------------------------------------------------------------------------------
         // public methods
         // --------------------------------------------------------------------------------------------
 
@@ -77,7 +79,9 @@ namespace laps::peering {
          */
         PeerSessionId GetSessionId() const { return t_conn_id_; }
 
-        void SendNodeInfo(const NodeInfo& node_info);
+        void SendNodeInfo(const NodeInfo& node_info, bool withdraw = false);
+        void SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw = false);
+        void SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw = false);
 
         /*
          * Delegate functions mainly for Outgoing but does include incoming

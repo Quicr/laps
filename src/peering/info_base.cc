@@ -42,7 +42,7 @@ namespace laps::peering {
         }
     }
 
-    void InfoBase::RemoveNodes(PeerSessionId peer_session_id)
+    void InfoBase::PurgePeerSessionInfo(PeerSessionId peer_session_id)
     {
         std::vector<NodeIdValueType> node_ids;
         node_ids.reserve(10);
@@ -61,6 +61,67 @@ namespace laps::peering {
 
             nodes_by_peer_session_.erase(ids_it);
         }
+
+        // TODO: Remove subscribes
+        // TODO: Remove announces
+    }
+
+    bool InfoBase::AddSubscribe(const SubscribeInfo& subscribe_info)
+    {
+        std::lock_guard _(mutex_);
+
+        auto it = subscribes_.find(subscribe_info.id);
+        if (it == subscribes_.end()) {
+            subscribes_[subscribe_info.id].emplace(subscribe_info.source_node_id);
+            return true;
+        }
+
+        const auto [__, is_new] = it->second.emplace(subscribe_info.source_node_id);
+        return is_new;
+    }
+
+    bool InfoBase::RemoveSubscribe(const SubscribeInfo& subscribe_info)
+    {
+        std::lock_guard _(mutex_);
+
+        auto it = subscribes_.find(subscribe_info.id);
+
+        if (it == subscribes_.end()) {
+            if (it->second.erase(subscribe_info.source_node_id)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool InfoBase::AddAnnounce(const AnnounceInfo& announce_info)
+    {
+        std::lock_guard _(mutex_);
+
+        auto it = announces_.find(announce_info.full_name.hash);
+        if (it == announces_.end()) {
+            announces_[announce_info.full_name.hash].emplace(announce_info.source_node_id);
+            return true;
+        }
+
+        const auto [__, is_new] = it->second.emplace(announce_info.source_node_id);
+        return is_new;
+    }
+
+    bool InfoBase::RemoveAnnounce(const AnnounceInfo& announce_info)
+    {
+        std::lock_guard _(mutex_);
+
+        auto it = subscribes_.find(announce_info.full_name.hash);
+
+        if (it == subscribes_.end()) {
+            if (it->second.erase(announce_info.source_node_id)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     PeerSession& InfoBase::GetBestPeerSession(NodeIdValueType node_id)
