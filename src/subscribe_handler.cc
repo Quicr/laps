@@ -8,8 +8,11 @@
 #include <quicr/subscribe_track_handler.h>
 
 namespace laps {
-    SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name, LapsServer& server)
-      : quicr::SubscribeTrackHandler(full_track_name)
+    SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
+                                                 quicr::messages::ObjectPriority priority,
+                                                 quicr::messages::GroupOrder group_order,
+                                                 LapsServer& server)
+      : quicr::SubscribeTrackHandler(full_track_name, priority, group_order)
       , server_(server)
     {
     }
@@ -40,7 +43,7 @@ namespace laps {
                 auto pub_track_h =
                   std::make_shared<PublishTrackHandler>(sub_info.track_full_name,
                                                         *object_headers.track_mode,
-                                                        *object_headers.priority,
+                                                        sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
                                                         object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
