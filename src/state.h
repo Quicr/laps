@@ -35,6 +35,8 @@ namespace laps {
             quicr::FullTrackName track_full_name;
             quicr::messages::TrackAlias track_alias;
             quicr::messages::SubscribeId subscribe_id;
+            uint8_t priority;
+            quicr::messages::GroupOrder group_order;
             std::shared_ptr<PublishTrackHandler> publish_handler;
         };
 
@@ -71,7 +73,8 @@ namespace laps {
 
             bool operator<(const SubscribeInfo& other) const
             {
-                return connection_handle < other.connection_handle && subscribe_id < other.subscribe_id;
+                return connection_handle < other.connection_handle ||
+                       (connection_handle == other.connection_handle && subscribe_id < other.subscribe_id);
             }
 
             bool operator==(const SubscribeInfo& other) const
@@ -81,7 +84,8 @@ namespace laps {
 
             bool operator>(const SubscribeInfo& other) const
             {
-                return connection_handle > other.connection_handle && subscribe_id > other.subscribe_id;
+                return connection_handle > other.connection_handle ||
+                       (connection_handle == other.connection_handle && subscribe_id > other.subscribe_id);
             }
         };
 

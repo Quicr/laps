@@ -135,7 +135,8 @@ namespace laps {
                     const auto& sub_ftn = sub_info_it->second.track_full_name;
 
                     // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
-                    auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(sub_ftn, *this);
+                    auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
+                      sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this);
 
                     SubscribeTrack(connection_handle, sub_track_handler);
                     state_.pub_subscribes[{ a_who.track_alias, connection_handle }] = sub_track_handler;
@@ -220,16 +221,7 @@ namespace laps {
             return;
         }
 
-        auto& track_h = sub_it->second.publish_handler;
-
-        if (track_h == nullptr) {
-            SPDLOG_DEBUG("Unsubscribe unable to find track handler for connection handle: {0} subscribe_id: {1}",
-                         connection_handle,
-                         subscribe_id);
-            return;
-        }
-
-        auto th = quicr::TrackHash(track_h->GetFullTrackName());
+        auto th = quicr::TrackHash(sub_it->second.track_full_name);
 
         state_.subscribes.erase(sub_it);
 
@@ -279,14 +271,15 @@ namespace laps {
                                        uint64_t subscribe_id,
                                        [[maybe_unused]] uint64_t proposed_track_alias,
                                        const quicr::FullTrackName& track_full_name,
-                                       const quicr::SubscribeAttributes&)
+                                       const quicr::SubscribeAttributes& attrs)
     {
         auto th = quicr::TrackHash(track_full_name);
 
-        SPDLOG_INFO("New subscribe connection handle: {0} subscribe_id: {1} track alias: {2}",
+        SPDLOG_INFO("New subscribe connection handle: {0} subscribe_id: {1} track alias: {2} priority: {3}",
                     connection_handle,
                     subscribe_id,
-                    th.track_fullname_hash);
+                    th.track_fullname_hash,
+                    attrs.priority);
 
         state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
@@ -297,7 +290,8 @@ namespace laps {
 
         state_.subscribes.try_emplace(
           { th.track_fullname_hash, connection_handle },
-          State::SubscribePublishHandlerInfo{ track_full_name, th.track_fullname_hash, subscribe_id, nullptr });
+          State::SubscribePublishHandlerInfo{
+            track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, nullptr });
 
         // Subscribe to announcer if announcer is active
         for (auto it = state_.announce_active.lower_bound({ th.track_namespace_hash, 0 });
@@ -314,7 +308,11 @@ namespace laps {
 
             track_aliases.insert(th.track_fullname_hash); // Add track alias to state
 
-            auto sub_track_h = std::make_shared<SubscribeTrackHandler>(track_full_name, *this);
+            auto sub_track_h =
+              std::make_shared<SubscribeTrackHandler>(track_full_name,
+                                                      0 /* use zero to indicate to use publisher priority */,
+                                                      quicr::messages::GroupOrder::kAscending,
+                                                      *this);
             SubscribeTrack(key.second, sub_track_h);
             state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
         }
