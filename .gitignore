@@ -38,7 +38,7 @@ build*
 
 # IDEA
 .idea
-cmake-build-debug
+cmake-build-*
 
 # Editor files/directories
 /.vscode
