@@ -10,7 +10,7 @@ CLANG_FORMAT=clang-format -i
 
 PROJECTNAME := laps
 
-.PHONY: all clean cclean format
+.PHONY: all clean cclean format docs
 
 # -----------------------------------------
 # Help/other targets
@@ -44,10 +44,16 @@ clean:
 cclean:
 	rm -rf ${BUILD_DIR}
 
+## docs: Make docs
+docs:
+	 @echo "Creating docs/peering.pdf"
+	 @pandoc docs/peering.md -f markdown -V geometry:landscape --toc=true -o docs/peering.pdf --filter=mermaid-filter
+
 ## format: Format c/c++ code
 format:
 	find src -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
 	find test -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
+
 
 ## lint: Lint code
 lint:

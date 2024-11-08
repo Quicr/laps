@@ -1,9 +1,12 @@
 # LAPS Peering Protocol and Architecture
 
-Peering is between relays. Either side can establish a peering connection.
+LAPS peering architecture enables peering between relays supporting granular traffic engineering and optimizations. 
+Peering can be simple mesh style or it can be more complex with on-demand peering sessions with the ability to
+control and enforce various constraints. Peering includes a node topology that enables the ability to select
+based on constraints, load, bandwidth, and other important traffic steering metrics.
 
-Relay to relay connectivity implements custom peering protocol to interconnect a global network of relays supporting
-scale into hundreds of millions of active tracks with any combination of publishers and subscribers.
+Peering scales to a global network of relays supporting scale into hundreds of millions of active
+tracks with any combination of publishers and subscribers.
 
 The high level topology looks like the following:
 ```mermaid
@@ -33,9 +36,9 @@ Peering connections operate in one of three modes.
 ### (1) Control Peering
 
 In this mode, only control messages are exchanged. Mostly [Information Base](#information-bases) messages are exchanged
-in this mode. This mode allows a single connection serve control plane functions without requiring the control signaling
-to follow *possible* data forwarding. Control signaling doesn't often need more than a single plus redudnant connection
-for HA, while [data peering](#2-data-peering) messages can benefit from having more than one QUIC connection to scale
+in this mode. This mode allows a single connection for control plane functions without requiring the control signaling
+to follow data forwarding paths. Control signaling does not often need more than a single (can include redundant
+connection for HA) while [data peering](#2-data-peering) messages can benefit from having more than one QUIC connection to scale
 data forwarding.
 
 ```mermaid
@@ -65,12 +68,18 @@ flowchart TD
 ### (2) Data Peering
 
 Data peering is used to forward data objects in a [pipeline fashion](#pipelining). Data peering can operate in
-one-way or two-way modes. In two-way mode, data peering will forward subscribes matching the connection. 
+**one-way** or **two-way** modes. 
+
+In two-way mode, data peering will reuse the connection to send data back to the peer. This is to
+support NAT and/or firewall constraints. 
+
+In one-way mode, the peer is used only for receiving data. 
+
 Data peering mode is indicated in the `connect` and `connect_responsse` messages. 
 
 ```mermaid
 ---
-title: Multiple Connections between Relays
+title: Data Peer Multiple Connections between Relays
 ---
 flowchart LR
     E1[Edge 1] -- "one-way 1" --> E2[Edge 2]
@@ -86,6 +95,21 @@ flowchart LR
 When multiple parallel connections are used, only a single peer **MUST** be used in this mode. The peer can opperate
 in one-way or two-way modes. 
 
+```mermaid
+---
+title: Control & Data Peer Multiple Connections between Relays
+---
+flowchart LR
+    E1[Edge 1] -- "one-way 1 (CONTROL)" --> E2[Edge 2]
+    E1 -- "one-way 2" --> E2
+    E2 -- "one-way" --> E1
+    E1 <-- "two-way (CONTROL)" --> E3[Edge 3]
+```
+
+Control peering is always bidirectional and uses the same peering session between two nodes. 
+
+
+
 ## Relay types
 
 The type of relay is configured when the relay is started, normally via commandline argument or configuration file.
@@ -97,9 +121,11 @@ Relays are classified into the following three categories.
 ### (1) Via
 
 A Via relay is used by Edge relays to forward data between other Edge relays. A Via relay is an intermediate relay that
-does not participate in various [Information Base](#information-bases) exchanges.
+does not participate in various [Information Base](#information-bases) exchanges. It still participates in node information base
+exchange. 
 
-A Via relay:
+**A Via relay:**
+
 * Does not need to be part of the `announce` and `subscribe` advertisements and withdrawals selection
   for data-plane forwarding
 * It participates in the `node` advertisements and withdrawals to maintain reachability information to all nodes.
@@ -144,7 +170,7 @@ flowchart TD
     end
 
     subgraph London/UK
-        vNY --> lV[Via Relay]
+        vNY ----> lV[Via Relay]
         lV --> vLe1[Edge 1]
         vLe1 --> lS3([Subscriber 3])
         vLe1 --> lS2([Subscriber 2])
@@ -185,17 +211,17 @@ and peering connections.
 ---
 title: Edge relay behind Load Balancer (e.g., Anycast)
 ---
-flowchart TD
-    P([Publisher]) --> LB((NLB/Anycast))
-    S([Subscriber]) --> LB
-    OE[Other Edge Relay] --> LB
-    V[Via Relay] --> LB
-
+flowchart TB
+  
     subgraph Load Balanced
         LB --> E1[Edge Relay 1]
         LB --> E2[Edge Relay 2]
         LB --> E3[Edge Relay 3]
     end
+    
+    P([Publisher]) --> LB((NLB/Anycast))
+    S([Subscriber]) --> LB
+
 ```
 
 ### (3) Stub
@@ -222,6 +248,22 @@ Stub relays have the following uses, feature capabilities and restrictions:
 * The Edge relay that the Stub connects to will forward announces and subscribes by marking itself as the source
   node. Stubs are transparent and stateless. Only the Edge relay is aware of the Stub.  Other Edge and Via relays
   are unaware of Stub relays.
+
+
+```mermaid
+---
+title: STUB to Edge
+---
+flowchart TD
+    STUB(STUB) --> LB((NLB/Anycast))
+    STUB <-. Two-Way Data\nand Control .-> E
+
+    subgraph Load Balanced
+        LB --> E[Edge Relay N]
+    end
+    
+    
+```
 
 
 ## Information Bases
@@ -398,14 +440,15 @@ reduces the end-to-end latency and jitter on data between publisher edge relay t
 
 Data forwarding is source routed in a similar fashion as described in [Segment Routing Architecture](https://www.rfc-editor.org/rfc/rfc8402.html).
 Data forwarding in MoQT is designed to support fan-out of one or more publishers to one or more subscribers. This
-is different from IP forwarding (point to point). Building a stack of labels for all target
-nodes could grow into the thousands with a large number of subscribers spanning thousands of edge relays. This would
-not scale to send the set of node IDs in every datagram frame or even start of every QUIC stream, considering
-QUIC streams may change often due to group/subgroup changes. 
+is different from IP forwarding (point to point) in terms of the stack size of labels. Building a stack of labels
+for all target nodes could grow into the thousands with a large number of subscribers spanning thousands
+of edge relays. This would not scale to send the set of node IDs in every datagram frame or even start of every QUIC
+stream, considering QUIC streams may change often due to group/subgroup changes. 
 
 Unlike segment routing where it utilizes a stack of labels/sids, this protocol utilizes 
 a **forwarding node set (FNS)** that **describes the set of subscriber edge relay node IDs that
 need to receive the data**. It does **not describe** the path that the data will traverse.
+
 FNS is exchanged via the peer session that will receive the data using the control stream via that
 same peer session. Utilizing the control bidir stream within the peer session ensures scope of the FNS
 to be within the peer session to support parallel peer sessions and control information based peering
@@ -415,33 +458,13 @@ The sender generates the FNS ID.
 The FNS ID is an `unsigned 32bit` integer that is a monotonic series increasing by one.
 The ID starts at ONE and can wrap to ONE as needed. Zero is reserved to indicate no ID.   
 
-Upon STREAM closure, the ID is removed from state and is no longer valid. No withdrawal is required to remove/cleanup
-state of an FNS. In the case of datagram, there is no closure. To support cleanup when using datagram, the state of FNS
-is expired after a peer session negotiated FNS idle timeout. A new FNS needs to be advertised if there has been no 
-datagram frames within the idle timeout. As long as there are frames being sent, the FNS is still valid. 
-States are peer scoped and will be removed upon peer session close. 
+Withdraws remove FNS IDs from active state. States are peer scoped and will be removed upon peer session close. 
 
 The design of forwarding node sets is to be fast and lightweight with little control signaling involvement to maintain
 state. Node sets can change often based on node (e.g., relay) churn with peering sessions and subscribers. This
-will result in new FNS being advertised. In effort to reduce delays, the set is updated by indicating the FSN
-that a new FNS replaces. 
-
-FNS information message has the following fields:
-
-| Field           | Description                                                               |
-|-----------------|---------------------------------------------------------------------------|
-| FNS ID          | FNS ID of this entry                                                      |
-| Replaces FNS ID | Zero indicates no repalce                                                 |
-| Target Node Set | Target node ID set. Array of all nodes that should be forwarded this data |
-
-The target node set is generated based on the [Best Node Information](#node-information) via the peering session. 
-For example, when subscribes are received by the publisher relay (aka origin relay) the subscriber information
-will indicate source nodes of where that subscribe originated. This node id will be added to a set that
-is relative to the peering session that reaches that node based on the [selection algorithm](#selection-algorithm)
-This will result in different sets based on selection of which peering session reaches best the edge nodes that need
-to receive the data. In large scale, multiple data peering sessions will be utilized, so the sets will be 
-a subset of total number of subscriber edge nodes.  STUBS are not included.  Only Edge relays are added to 
-this set. 
+will result in the FNS being updated. Using a new ID to replace the previous introduces race conditions where data
+could be lost.  Instead of replacing the ID, the same ID is updated with a new set to allow a smooth transition
+without invalidating a previous set id. 
 
 ```mermaid
 ---
@@ -467,11 +490,50 @@ flowchart TD
     end
 ```
 
+#### FNS Advertisement
+
+A new transport data context is created to handle the track data flow.  Considering the transport
+connection ID already provides a session specific ID that increments by one, it can be used
+as the FNS ID. In order to create a new data context, the session needs to be known. Therefore,
+a FNS is created with a computed set of downstream nodes by peering session that should be used, 
+which is based on [selection](#selection-algorithm). Upon identifying the peer session with
+the FNS per peer, a data context is created that provides the ID. The FNS is then advertised
+via the control bidir stream in parallel with data being transmitted and encoded with 
+the [data header](#start-of-data-header). 
+
+Considering the receiving side may receive data with an FNS ID that it doesn't know about yet,
+the receiving side will buffer the messages based on a negotiated buffer time period.  If
+the FNS ID is not received by that time, the data would be dropped in a circular buffer fashion. 
+
+FNS information message has the following fields:
+
+| Field           | Description                                                               |
+|-----------------|---------------------------------------------------------------------------|
+| FNS ID          | FNS ID of this entry                                                      |
+| Target Node Set | Target node ID set. Array of all nodes that should be forwarded this data |
+| Track Alias     | MoQT Track Alias                                                          |
+
+The target node set is generated based on the [Best Node Information](#node-information) via the peering session.
+For example, when subscribes are received by the publisher relay (aka origin relay) the subscriber information
+will indicate source nodes of where that subscribe originated. This node id will be added to a set that
+is relative to the peering session that reaches that node based on the [selection algorithm](#selection-algorithm)
+This will result in different sets based on selection of which peering session reaches best the edge nodes that need
+to receive the data. In large scale, multiple data peering sessions will be utilized, so the sets will be
+a subset of total number of subscriber edge nodes.  STUBS are not included.  Only Edge relays are added to
+this set.
+
+#### FNS Withdrawal
+Withdraw FNS information message has the following fields:
+
+| Field  | Description                   |
+|--------|-------------------------------|
+| FNS ID | FNS ID of the entry to remove |
+
 ### Start of Data Header
 
-| Field            | Description                                                                                                                          |
-|------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| FSN ID           | unsigned 32bit unique forwarding node set ID within the session scope that identifies which target nodes the data should be sent to. |
+| Field  | Description                                                                                                                          |
+|--------|--------------------------------------------------------------------------------------------------------------------------------------|
+| FNS ID | unsigned 32bit unique forwarding node set ID within the session scope that identifies which target nodes the data should be sent to. |
 
 > [!NOTE]
 > TODO will add more fields as needed
@@ -479,6 +541,7 @@ flowchart TD
 The FNS ID is changed hop by hop, but it uses a fixed 32 bit value supporting fast offset based changing of the value
 with datagram messages. QUIC streams only have this header on start of QUIC stream. Only on new QUIC stream is the
 start of data header included.
+
 
 ### Supporting MoQT data Objects in pipeline forwarding
 
@@ -537,7 +600,7 @@ sequenceDiagram
     R -) PS: Create bidir Control Stream
     PS ->> PS: Latch bidir stream as control stream
     
-    Note right of R: Using control stream
+    Note right of R: Using control peering mode
 
     loop If not STUB
         R -)+ PS: [node_info, ...]
