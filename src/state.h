@@ -63,28 +63,28 @@ namespace laps {
          * Map of subscribes set by namespace and track name hash
          *      Set<subscribe_who> = subscribe_active[track_namespace_hash, track_name_hash]
          */
-        struct SubscribeWho
+        struct SubscribeInfo
         {
             uint64_t connection_handle;
             uint64_t subscribe_id;
             uint64_t track_alias;
 
-            bool operator<(const SubscribeWho& other) const
+            bool operator<(const SubscribeInfo& other) const
             {
-                return connection_handle < other.connection_handle && subscribe_id << other.subscribe_id;
+                return connection_handle < other.connection_handle && subscribe_id < other.subscribe_id;
             }
 
-            bool operator==(const SubscribeWho& other) const
+            bool operator==(const SubscribeInfo& other) const
             {
                 return connection_handle == other.connection_handle && subscribe_id == other.subscribe_id;
             }
 
-            bool operator>(const SubscribeWho& other) const
+            bool operator>(const SubscribeInfo& other) const
             {
                 return connection_handle > other.connection_handle && subscribe_id > other.subscribe_id;
             }
         };
 
-        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeWho>> subscribe_active;
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeInfo>> subscribe_active;
     };
 }

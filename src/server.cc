@@ -234,7 +234,7 @@ namespace laps {
         state_.subscribes.erase(sub_it);
 
         auto& sub_active_list = state_.subscribe_active[{ th.track_namespace_hash, th.track_name_hash }];
-        sub_active_list.erase(State::SubscribeWho{ connection_handle, subscribe_id, th.track_fullname_hash });
+        sub_active_list.erase(State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
 
         if (sub_active_list.empty()) {
             state_.subscribe_active.erase({ th.track_namespace_hash, th.track_name_hash });
@@ -292,7 +292,7 @@ namespace laps {
 
         // record subscribe as active from this subscriber
         state_.subscribe_active[{ th.track_namespace_hash, th.track_name_hash }].emplace(
-          State::SubscribeWho{ connection_handle, subscribe_id, th.track_fullname_hash });
+          State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
         state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
         state_.subscribes.try_emplace(
