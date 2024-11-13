@@ -446,23 +446,23 @@ of edge relays. This would not scale to send the set of node IDs in every datagr
 stream, considering QUIC streams may change often due to group/subgroup changes. 
 
 Unlike segment routing where it utilizes a stack of labels/sids, this protocol utilizes 
-a **forwarding node set (FNS)** that **describes the set of subscriber edge relay node IDs that
+a **subscriber node set (SNS)** that **describes the set of subscriber edge relay node IDs that
 need to receive the data**. It does **not describe** the path that the data will traverse.
 
-FNS is exchanged via the peer session that will receive the data using the control stream via that
-same peer session. Utilizing the control bidir stream within the peer session ensures scope of the FNS
+SNS is exchanged via the peer session that will receive the data using the control stream via that
+same peer session. Utilizing the control bidir stream within the peer session ensures scope of the SNS
 to be within the peer session to support parallel peer sessions and control information based peering
-that is not using the same data path. Each FNS will be assigned an FNS ID that is unique to the session.
-The sender generates the FNS ID. 
+that is not using the same data path. Each SNS will be assigned an SNS ID that is unique to the session.
+The sender generates the SNS ID. 
 
-The FNS ID is an `unsigned 32bit` integer that is a monotonic series increasing by one.
+The SNS ID is an `unsigned 32bit` integer that is a monotonic series increasing by one.
 The ID starts at ONE and can wrap to ONE as needed. Zero is reserved to indicate no ID.   
 
-Withdraws remove FNS IDs from active state. States are peer scoped and will be removed upon peer session close. 
+Withdraws remove SNS IDs from active state. States are peer scoped and will be removed upon peer session close. 
 
-The design of forwarding node sets is to be fast and lightweight with little control signaling involvement to maintain
+The design of subscriber node sets is to be fast and lightweight with little control signaling involvement to maintain
 state. Node sets can change often based on node (e.g., relay) churn with peering sessions and subscribers. This
-will result in the FNS being updated. Using a new ID to replace the previous introduces race conditions where data
+will result in the SNS being updated. Using a new ID to replace the previous introduces race conditions where data
 could be lost.  Instead of replacing the ID, the same ID is updated with a new set to allow a smooth transition
 without invalidating a previous set id. 
 
@@ -472,44 +472,44 @@ title: Source Routing Data Forwarding
 ---
 flowchart TD
     P([Publisher]) -- MoQT Data Object --> OE[Origin 101.2:10]
-    OE -- " FNSid: 1=[100.2:1, 100.2:2, 103.2:1] " --> V1[Via 100.1:1]
+    OE -- " SNSid: 1=[100.2:1, 100.2:2, 103.2:1] " --> V1[Via 100.1:1]
 
     subgraph US-WEST
-        V1 -- " FNSid: 18=[100.2:1] " --> w1[Edge 100.2:1]
+        V1 -- " SNSid: 18=[100.2:1] " --> w1[Edge 100.2:1]
         w1 -- MoQT Data Object --> wS1([Subscriber 1])
         w1 -- MoQT Data Object --> wS2([Subscriber 2])
-        V1 -- " FNSid: 27=[100.2:2] " --> w2[Edge 100.2:2]
+        V1 -- " SNSid: 27=[100.2:2] " --> w2[Edge 100.2:2]
         w2 -- MoQT Data Object --> wS3([Subscriber 3])
         w2 -- MoQT Data Object --> wS4([Subscriber 4])
     end
     subgraph US-EAST
-        V1 -- " FNSid: 99=[103.2:1] " --> e1[Edge 103.2:1]
+        V1 -- " SNSid: 99=[103.2:1] " --> e1[Edge 103.2:1]
         e1 -- MoQT Data Object --> eS3([Subscriber 1])
         e1 -- MoQT Data Object --> eS4([Subscriber 2])
 
     end
 ```
 
-#### FNS Advertisement
+#### SNS Advertisement
 
 A new transport data context is created to handle the track data flow.  Considering the transport
 connection ID already provides a session specific ID that increments by one, it can be used
-as the FNS ID. In order to create a new data context, the session needs to be known. Therefore,
-a FNS is created with a computed set of downstream nodes by peering session that should be used, 
+as the SNS ID. In order to create a new data context, the session needs to be known. Therefore,
+a SNS is created with a computed set of downstream nodes by peering session that should be used, 
 which is based on [selection](#selection-algorithm). Upon identifying the peer session with
-the FNS per peer, a data context is created that provides the ID. The FNS is then advertised
+the SNS per peer, a data context is created that provides the ID. The SNS is then advertised
 via the control bidir stream in parallel with data being transmitted and encoded with 
 the [data header](#start-of-data-header). 
 
-Considering the receiving side may receive data with an FNS ID that it doesn't know about yet,
+Considering the receiving side may receive data with an SNS ID that it doesn't know about yet,
 the receiving side will buffer the messages based on a negotiated buffer time period.  If
-the FNS ID is not received by that time, the data would be dropped in a circular buffer fashion. 
+the SNS ID is not received by that time, the data would be dropped in a circular buffer fashion. 
 
-FNS information message has the following fields:
+SNS information message has the following fields:
 
 | Field           | Description                                                               |
 |-----------------|---------------------------------------------------------------------------|
-| FNS ID          | FNS ID of this entry                                                      |
+| SNS ID          | SNS ID of this entry                                                      |
 | Target Node Set | Target node ID set. Array of all nodes that should be forwarded this data |
 | Track Alias     | MoQT Track Alias                                                          |
 
@@ -522,23 +522,23 @@ to receive the data. In large scale, multiple data peering sessions will be util
 a subset of total number of subscriber edge nodes.  STUBS are not included.  Only Edge relays are added to
 this set.
 
-#### FNS Withdrawal
-Withdraw FNS information message has the following fields:
+#### SNS Withdrawal
+Withdraw SNS information message has the following fields:
 
 | Field  | Description                   |
 |--------|-------------------------------|
-| FNS ID | FNS ID of the entry to remove |
+| SNS ID | SNS ID of the entry to remove |
 
 ### Start of Data Header
 
 | Field  | Description                                                                                                                          |
 |--------|--------------------------------------------------------------------------------------------------------------------------------------|
-| FNS ID | unsigned 32bit unique forwarding node set ID within the session scope that identifies which target nodes the data should be sent to. |
+| SNS ID | unsigned 32bit unique subscriber node set ID within the session scope that identifies which target nodes the data should be sent to. |
 
 > [!NOTE]
 > TODO will add more fields as needed
 
-The FNS ID is changed hop by hop, but it uses a fixed 32 bit value supporting fast offset based changing of the value
+The SNS ID is changed hop by hop, but it uses a fixed 32 bit value supporting fast offset based changing of the value
 with datagram messages. QUIC streams only have this header on start of QUIC stream. Only on new QUIC stream is the
 start of data header included.
 

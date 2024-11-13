@@ -111,8 +111,8 @@ namespace laps {
 
         // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
         // for (const auto& [key, who] : state_.subscribe_active)
-        for (auto it = state_.subscribe_active.lower_bound({ th.track_namespace_hash, 0 });
-             it != state_.subscribe_active.end();
+        for (auto it = state_.subscribe_active_.lower_bound({ th.track_namespace_hash, 0 });
+             it != state_.subscribe_active_.end();
              it++) {
             const auto& [key, who] = *it;
 
@@ -227,11 +227,11 @@ namespace laps {
 
         state_.subscribes.erase(sub_it);
 
-        auto& sub_active_list = state_.subscribe_active[{ th.track_namespace_hash, th.track_name_hash }];
+        auto& sub_active_list = state_.subscribe_active_[{ th.track_namespace_hash, th.track_name_hash }];
         sub_active_list.erase(State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
 
         if (sub_active_list.empty()) {
-            state_.subscribe_active.erase({ th.track_namespace_hash, th.track_name_hash });
+            state_.subscribe_active_.erase({ th.track_namespace_hash, th.track_name_hash });
         }
 
         // Are there any other subscribers?
@@ -288,7 +288,7 @@ namespace laps {
         state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
         // record subscribe as active from this subscriber
-        state_.subscribe_active[{ th.track_namespace_hash, th.track_name_hash }].emplace(
+        state_.subscribe_active_[{ th.track_namespace_hash, th.track_name_hash }].emplace(
           State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
         state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 

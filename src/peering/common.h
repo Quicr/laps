@@ -53,20 +53,32 @@ namespace laps::peering {
     struct FullNameHash
     {
         NamespaceTuples namespace_tuples;
-        HashType name{ 0 };
-        HashType hash{ 0 };
+        HashType namespace_hash{ 0 };
+        HashType name_hash{ 0 };
+        HashType full_name_hash{ 0 };
 
         uint64_t ComputeFullNameHash()
         {
             std::hash<HashType> hasher;
-            hash = 0;
+            full_name_hash = 0;
             for (auto ns : namespace_tuples) {
-                hash ^= hasher(ns) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                full_name_hash ^= hasher(ns) + 0x9e3779b9 + (full_name_hash << 6) + (full_name_hash >> 2);
             }
 
-            hash ^= hasher(name) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            full_name_hash ^= hasher(name_hash) + 0x9e3779b9 + (full_name_hash << 6) + (full_name_hash >> 2);
 
-            return hash;
+            return full_name_hash;
+        }
+
+        uint64_t ComputeNamespaceHash()
+        {
+            std::hash<HashType> hasher;
+            namespace_hash = 0;
+            for (auto ns : namespace_tuples) {
+                namespace_hash ^= hasher(ns) + 0x9e3779b9 + (namespace_hash << 6) + (namespace_hash >> 2);
+            }
+
+            return namespace_hash;
         }
 
         size_t SizeBytes() const { return namespace_tuples.size() * 8 + 8; }

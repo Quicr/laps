@@ -89,6 +89,6 @@ namespace laps {
             }
         };
 
-        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeInfo>> subscribe_active;
+        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeInfo>> subscribe_active_;
     };
 }

@@ -35,9 +35,10 @@ namespace laps::peering {
             it += 8;
         }
 
-        full_name.name = ValueOf<uint64_t>({ it, it + 8 });
+        full_name.name_hash = ValueOf<uint64_t>({ it, it + 8 });
 
         full_name.ComputeFullNameHash();
+        full_name.ComputeNamespaceHash();
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeInfo& subscribe_info)
@@ -55,7 +56,7 @@ namespace laps::peering {
             data.insert(data.end(), ns_item_bytes.rbegin(), ns_item_bytes.rend());
         }
 
-        auto name_bytes = BytesOf(subscribe_info.full_name.name);
+        auto name_bytes = BytesOf(subscribe_info.full_name.name_hash);
         data.insert(data.end(), name_bytes.rbegin(), name_bytes.rend());
 
         return data;

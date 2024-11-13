@@ -70,10 +70,29 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
 
+    bool PeerSession::AddSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id)
+    {
+        auto [it, _] = sns_.try_emplace(subscribe_id);
+        auto& sns = it->second;
+        auto [__, is_new] = sns.nodes.emplace(sub_node_id);
+        return is_new;
+    }
+
+    bool PeerSession::RemoveSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id)
+    {
+        auto it = sns_.find(subscribe_id);
+        if (it != sns_.end()) {
+            auto& sns = it->second;
+            return sns.nodes.erase(sub_node_id) ? true : false;
+        }
+
+        return false;
+    }
+
     void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
     {
         SPDLOG_LOGGER_DEBUG(
-          LOGGER, "Sending announce info id: {} source_node_id: {} withdraw: {}", announce_info.full_name.hash, announce_info.source_node_id, withdraw);
+          LOGGER, "Sending announce info id: {} source_node_id: {} withdraw: {}", announce_info.full_name.full_name_hash, announce_info.source_node_id, withdraw);
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, announce_info.Serialize(true, withdraw), 0, 1000);
     }
 

@@ -48,8 +48,8 @@ namespace laps::peering {
 
         auto peer_session = GetPeerSession(peer_session_id);
         if (not withdraw && !info_base_->AddSubscribe(subscribe_info)) {
-                // Don't send to other peers if we have seen this before (loop)
-                return;
+            // Don't send to other peers if we have seen this before (loop)
+            return;
         }
 
         for (const auto& sess : client_peer_sessions_) {
@@ -60,6 +60,52 @@ namespace laps::peering {
         for (const auto& sess : server_peer_sessions_) {
             if (peer_session_id != sess.first)
                 sess.second->SendSubscribeInfo(subscribe_info, withdraw);
+        }
+
+        /*
+         * On subscribe, check if there are client announcements that match it. If so,
+         * find best peer session and update peer session with subscribe node id
+         * and send notification to client manager that there is a subscribe.
+         */
+        if (not withdraw) {
+            auto it = state_.announce_active.lower_bound({ subscribe_info.full_name.namespace_hash, 0 });
+            if (it != state_.announce_active.end()) {
+                // TODO: Notify client manager of new subscribe that matches a namespace
+                SPDLOG_LOGGER_INFO(LOGGER, "Announce matched subscribe id: {}", subscribe_info.id);
+
+                auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
+                if (bp_it != info_base_->nodes_best_.end()) {
+                    const auto& peer_session = bp_it->second.lock();
+                    SPDLOG_LOGGER_DEBUG(LOGGER,
+                                        "Best peer session for subscribe id: {} source_node: {} is via peer_session_id: {}",
+                                        subscribe_info.id,
+                                        subscribe_info.source_node_id,
+                                        peer_session->GetSessionId());
+
+                    if (peer_session->AddSubscribeSourceNode(subscribe_info.id, subscribe_info.source_node_id)) {
+                        SPDLOG_LOGGER_INFO(
+                          LOGGER,
+                          "New source added to peer session for subscribe id: {} source_node: {} is via peer_session_id: {}",
+                          subscribe_info.id,
+                          subscribe_info.source_node_id,
+                          peer_session->GetSessionId());
+                    }
+
+                }
+            }
+        } else {
+            auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
+            if (bp_it != info_base_->nodes_best_.end()) {
+                const auto& peer_session = bp_it->second.lock();
+                if (peer_session->RemoveSubscribeSourceNode(subscribe_info.id, subscribe_info.source_node_id)) {
+                    SPDLOG_LOGGER_INFO(
+                      LOGGER,
+                      "Removed source from peer session for subscribe id: {} source_node: {} is via peer_session_id: {}",
+                      subscribe_info.id,
+                      subscribe_info.source_node_id,
+                      peer_session->GetSessionId());
+                }
+            }
         }
 
     } catch (const std::exception&) {
@@ -73,7 +119,7 @@ namespace laps::peering {
         SPDLOG_LOGGER_INFO(LOGGER,
                            "Announce info received peer_session_id: {} hash: {} withdraw: {}",
                            peer_session_id,
-                           announce_info.full_name.hash,
+                           announce_info.full_name.full_name_hash,
                            withdraw);
 
         auto peer_session = GetPeerSession(peer_session_id);
@@ -142,8 +188,8 @@ namespace laps::peering {
             si.full_name.namespace_tuples.push_back(ns_item);
         }
 
-        si.full_name.name = th.track_name_hash;
-        si.full_name.hash = th.track_fullname_hash;
+        si.full_name.name_hash = th.track_name_hash;
+        si.full_name.full_name_hash = th.track_fullname_hash;
 
         for (const auto& sess : client_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe to id: {} peer_session_id: {}", si.id, sess.first);
@@ -166,23 +212,25 @@ namespace laps::peering {
 
         AnnounceInfo ai;
 
-        ai.full_name.hash = th.track_fullname_hash;
+        ai.full_name.full_name_hash = th.track_fullname_hash;
         ai.full_name.namespace_tuples.reserve(track_full_name.name_space.GetHashes().size());
 
         for (const auto ns_item : track_full_name.name_space.GetHashes()) {
             ai.full_name.namespace_tuples.push_back(ns_item);
         }
 
-        ai.full_name.name = th.track_name_hash;
+        ai.full_name.name_hash = th.track_name_hash;
 
         for (const auto& sess : client_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
             ai.source_node_id = sess.second->node_info_.id;
             sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
         for (const auto& sess : server_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
             ai.source_node_id = sess.second->node_info_.id;
             sess.second->SendAnnounceInfo(ai, withdraw);
         }
