@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
 #include "state.h"
+#include "server.h"
 #include <chrono>
 #include <sstream>
 
@@ -70,40 +71,85 @@ namespace laps::peering {
         if (not withdraw) {
             auto it = state_.announce_active.lower_bound({ subscribe_info.full_name.namespace_hash, 0 });
             if (it != state_.announce_active.end()) {
-                // TODO: Notify client manager of new subscribe that matches a namespace
                 SPDLOG_LOGGER_INFO(LOGGER, "Announce matched subscribe id: {}", subscribe_info.id);
+                if (auto cm = client_manager_.lock()) {
+
+                    quicr::SubscribeAttributes s_attrs;
+                    s_attrs.priority = 10;
+
+                    cm->ProcessSubscribe(0,
+                                         0,
+                                         { subscribe_info.full_name.namespace_hash,
+                                           subscribe_info.full_name.name_hash,
+                                           subscribe_info.full_name.full_name_hash },
+                                         {},
+                                         s_attrs);
+                }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
                 if (bp_it != info_base_->nodes_best_.end()) {
                     const auto& peer_session = bp_it->second.lock();
-                    SPDLOG_LOGGER_DEBUG(LOGGER,
-                                        "Best peer session for subscribe id: {} source_node: {} is via peer_session_id: {}",
-                                        subscribe_info.id,
-                                        subscribe_info.source_node_id,
-                                        peer_session->GetSessionId());
+                    SPDLOG_LOGGER_DEBUG(
+                      LOGGER,
+                      "Best peer session for subscribe id: {} source_node: {} is via peer_session_id: {}",
+                      subscribe_info.id,
+                      subscribe_info.source_node_id,
+                      peer_session->GetSessionId());
 
-                    if (peer_session->AddSubscribeSourceNode(subscribe_info.id, subscribe_info.source_node_id)) {
-                        SPDLOG_LOGGER_INFO(
-                          LOGGER,
-                          "New source added to peer session for subscribe id: {} source_node: {} is via peer_session_id: {}",
-                          subscribe_info.id,
-                          subscribe_info.source_node_id,
-                          peer_session->GetSessionId());
+                    if (auto [sns_id, is_new] =
+                          peer_session->AddSubscribeSourceNode(subscribe_info.id, subscribe_info.source_node_id);
+                        is_new) {
+                        SPDLOG_LOGGER_INFO(LOGGER,
+                                           "New source added to peer session for subscribe id: {} source_node: {} is "
+                                           "via peer_session_id: {} sns_id: {}",
+                                           subscribe_info.id,
+                                           subscribe_info.source_node_id,
+                                           peer_session->GetSessionId(),
+                                           sns_id);
+
+                        if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
+                              { subscribe_info.id, peer_session_id }, InfoBase::FibEntry{sns_id, bp_it->second});
+                            is_new) {
+                            SPDLOG_LOGGER_INFO(
+                              LOGGER, "New subscribe id: {}, sending subscribe to client manager", subscribe_info.id);
+                            // TODO(tievens): Implement subscribe to client manager
+                        }
                     }
-
                 }
             }
         } else {
             auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
             if (bp_it != info_base_->nodes_best_.end()) {
                 const auto& peer_session = bp_it->second.lock();
-                if (peer_session->RemoveSubscribeSourceNode(subscribe_info.id, subscribe_info.source_node_id)) {
-                    SPDLOG_LOGGER_INFO(
-                      LOGGER,
-                      "Removed source from peer session for subscribe id: {} source_node: {} is via peer_session_id: {}",
-                      subscribe_info.id,
-                      subscribe_info.source_node_id,
-                      peer_session->GetSessionId());
+                if (const auto [_, sns_removed] =
+                      peer_session->RemoveSubscribeSourceNode(subscribe_info.id, subscribe_info.source_node_id);
+                    sns_removed) {
+                    SPDLOG_LOGGER_INFO(LOGGER,
+                                       "No subscribe nodes left via peer session {}, removed subscribe id: {}",
+                                       peer_session->GetSessionId(),
+                                       subscribe_info.id);
+
+                    info_base_->client_fib_.erase({ subscribe_info.id, peer_session_id });
+
+                    bool has_subscribe_peers { false };
+                    for (auto it = info_base_->client_fib_.lower_bound({ subscribe_info.id, 0 });
+                         it != info_base_->client_fib_.end();
+                         ++it) {
+                        auto& [key, _] = *it;
+
+                        if (key.first != subscribe_info.id)
+                            break;
+
+                        has_subscribe_peers = true;
+                        break;
+                    }
+
+                    if (not has_subscribe_peers) {
+                        SPDLOG_LOGGER_INFO(LOGGER,
+                            "No peers left for subscribe id: {}, removing client subscribe state",
+                            subscribe_info.id);
+                        // TODO(tievens): Implement client removal
+                    }
                 }
             }
         }

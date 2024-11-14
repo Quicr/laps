@@ -37,6 +37,12 @@ namespace laps {
                                const quicr::FullTrackName& track_full_name,
                                const quicr::SubscribeAttributes&) override;
 
+        void ProcessSubscribe(quicr::ConnectionHandle connection_handle,
+                              uint64_t subscribe_id,
+                              const quicr::TrackHash& th,
+                              const quicr::FullTrackName& track_full_name,
+                              const quicr::SubscribeAttributes&);
+
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;
 

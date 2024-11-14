@@ -109,6 +109,23 @@ namespace laps::peering {
         // std::map<quicr::messages::TrackAlias, std::set<decltype(nodes_best_)::mapped_type&>> subscribes+;
         std::map<SubscribeId, std::set<NodeIdValueType>> subscribes_;
 
+        struct FibEntry
+        {
+            SubscribeNodeSetId sns_id;
+            decltype(nodes_best_)::mapped_type& peer_session;
+        };
+
+        /**
+         * @brief Client forwarding information base (table)
+         * @details Client published objects uses this map to forward the objects to
+         *   peers based on peer subscribes and best peer to reach the subscribing node. This map
+         *   is updated by peering manager on peer received subscribes when relay has local
+         *   announcement matching the subscribe
+         */
+        std::map<std::pair<SubscribeId, PeerSessionId>, FibEntry> client_fib_;
+
+        std::map<std::pair<PeerSessionId, NodeIdValueType>, FibEntry> peer_fib_;
+
         /// Key is the full name hash of the announce (hash of tuple and name), value is the source node ID
         std::map<HashType, std::set<NodeIdValueType>> announces_;
 

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_session.h"
 #include "common.h"
+#include "peer_manager.h"
 #include "peering/messages/connect.h"
 #include "peering/messages/connect_response.h"
 #include "peering/messages/node_info.h"
-#include "peer_manager.h"
 #include "peering/messages/subscribe_info.h"
 
 #include <sstream>
@@ -70,36 +70,59 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
 
-    bool PeerSession::AddSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id)
+    std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(SubscribeId subscribe_id,
+                                                                            NodeIdValueType sub_node_id)
     {
         auto [it, _] = sns_.try_emplace(subscribe_id);
         auto& sns = it->second;
+
+        if (it->second.id == 0) { // If not set, create the data context
+            // TODO(tievens): Add datagram support - update transport to allow changing reliable state
+            // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
+            it->second.id = transport_->CreateDataContext(t_conn_id_, true, 2, false);
+        }
+
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
-        return is_new;
+        return { it->second.id, is_new };
     }
 
-    bool PeerSession::RemoveSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id)
+    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id)
     {
+        bool node_removed{ false };
+        bool sns_removed{ false };
+
         auto it = sns_.find(subscribe_id);
         if (it != sns_.end()) {
             auto& sns = it->second;
-            return sns.nodes.erase(sub_node_id) ? true : false;
+            node_removed = sns.nodes.erase(sub_node_id) ? true : false;
+
+            if (sns.nodes.empty()) {
+                sns_removed = true;
+                transport_->DeleteDataContext(t_conn_id_, it->second.id);
+                sns_.erase(it);
+            }
         }
 
-        return false;
+        return { node_removed, sns_removed };
     }
 
     void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
     {
-        SPDLOG_LOGGER_DEBUG(
-          LOGGER, "Sending announce info id: {} source_node_id: {} withdraw: {}", announce_info.full_name.full_name_hash, announce_info.source_node_id, withdraw);
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Sending announce info id: {} source_node_id: {} withdraw: {}",
+                            announce_info.full_name.full_name_hash,
+                            announce_info.source_node_id,
+                            withdraw);
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, announce_info.Serialize(true, withdraw), 0, 1000);
     }
 
-
     void PeerSession::SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw)
     {
-        SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe info id: {} source_ndoe_id: {} withdraw: {}", subscribe_info.id, subscribe_info.source_node_id, withdraw);
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Sending subscribe info id: {} source_ndoe_id: {} withdraw: {}",
+                            subscribe_info.id,
+                            subscribe_info.source_node_id,
+                            withdraw);
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, subscribe_info.Serialize(true, withdraw), 0, 1000);
     }
 
@@ -280,7 +303,6 @@ namespace laps::peering {
                             manager_.AnnounceInfoReceived(GetSessionId(), announce_info, true);
                             break;
                         }
-
 
                         default: {
                             SPDLOG_LOGGER_DEBUG(config_.logger_, "Invalid message type {}", static_cast<int>(type));

@@ -21,6 +21,7 @@ namespace laps::peering {
     using HashType = uint64_t; ///< Value data type for hashes
     using NamespaceTuples = std::vector<HashType>;
     using PeerSessionId = uint64_t;
+    using SubscribeNodeSetId = uint32_t;
 
     /**
      * @brief Peering Mode that the peer operates in to exchange info and/or data
@@ -47,7 +48,9 @@ namespace laps::peering {
         kSubscribeInfoAdvertised,
         kSubscribeInfoWithdrawn,
         kAnnounceInfoAdvertised,
-        kAnnounceInfoWithdrawn
+        kAnnounceInfoWithdrawn,
+        kSubscribeNodeSetAdvertised,
+        kSubscribeNodeSetWithdrawn
     };
 
     struct FullNameHash

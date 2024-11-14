@@ -18,6 +18,7 @@ add_executable(lapsRelay
         peering/messages/subscribe_info.cc
         peering/messages/announce_info.cc
         peering/messages/node_info.cc
+        peering/messages/subscribe_node_set.cc
 
         peering/peer_manager.cc
         peering/peer_session.cc

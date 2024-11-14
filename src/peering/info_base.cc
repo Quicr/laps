@@ -145,7 +145,7 @@ namespace laps::peering {
         NodeInfo best_node_info;
         auto best_it = nodes_best_.find(node_id);
         if (best_it != nodes_best_.end()) {
-            best_peer_session = best_it->second.lock();
+            best_peer_session = best_it->second;
             best_node_info = nodes_.at({ node_id, best_peer_session.lock()->GetSessionId() }).node_info;
         }
 

@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "peering/subscribe_info.h"
+#include "peering/messages/subscribe_info.h"
 
 #include <iostream>
 

@@ -270,7 +270,6 @@ namespace laps {
             }
         }
     }
-
     void LapsServer::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                        uint64_t subscribe_id,
                                        [[maybe_unused]] uint64_t proposed_track_alias,
@@ -285,20 +284,44 @@ namespace laps {
                     th.track_fullname_hash,
                     attrs.priority);
 
-        state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
+        ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, attrs);
+    }
 
-        // record subscribe as active from this subscriber
-        state_.subscribe_active_[{ th.track_namespace_hash, th.track_name_hash }].emplace(
-          State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
-        state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
+    void LapsServer::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
+                                      uint64_t subscribe_id,
+                                      const quicr::TrackHash& th,
+                                      const quicr::FullTrackName& track_full_name,
+                                      const quicr::SubscribeAttributes& attrs)
+    {
+        auto is_peer{ false };
+        if (connection_handle == 0 && subscribe_id == 0) {
+            is_peer = true;
+            SPDLOG_DEBUG("Processing peer subscribe track alias: {} priority: {}",
+                         th.track_fullname_hash, attrs.priority);
+        }
 
-        const auto [_, is_new] = state_.subscribes.try_emplace(
-          { th.track_fullname_hash, connection_handle },
-          State::SubscribePublishHandlerInfo{
-            track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, nullptr });
+        else {
+            SPDLOG_DEBUG("Processing subscribe connection handle: {0} subscribe_id: {1} track alias: {2} priority: {3}",
+                         connection_handle,
+                         subscribe_id,
+                         th.track_fullname_hash,
+                         attrs.priority);
 
-        if (is_new) {
-            peer_manager_.ClientSubscribe(track_full_name, attrs, false);
+            state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
+
+            // record subscribe as active from this subscriber
+            state_.subscribe_active_[{ th.track_namespace_hash, th.track_name_hash }].emplace(
+              State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
+            state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
+
+            const auto [_, is_new] = state_.subscribes.try_emplace(
+              { th.track_fullname_hash, connection_handle },
+              State::SubscribePublishHandlerInfo{
+                track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, nullptr });
+
+            if (is_new) {
+                peer_manager_.ClientSubscribe(track_full_name, attrs, false);
+            }
         }
 
         // Subscribe to announcer if announcer is active

@@ -143,6 +143,8 @@ main(int argc, char* argv[])
 
     try {
         auto server = std::make_shared<LapsServer>(state, config, peer_manager);
+        peer_manager.SetClientManager(server); // Set pointer to client manager (e.g., server) after construct
+
         if (server->Start() != quicr::Transport::Status::kReady) {
             SPDLOG_ERROR("Server failed to start");
             exit(-2);

@@ -12,6 +12,9 @@
 #include "peer_session.h"
 #include "state.h"
 
+namespace laps {
+    class LapsServer;
+}
 namespace laps::peering {
     /**
      * @brief Peering manager class. Manages relay to relay (peering) forwarding of
@@ -53,6 +56,11 @@ namespace laps::peering {
         void ClientUnsubscribe(const quicr::FullTrackName& track_full_name)
         {
             ClientSubscribe(track_full_name, {}, true);
+        }
+
+        void SetClientManager(std::weak_ptr<LapsServer> client_manager)
+        {
+            client_manager_ = std::move(client_manager);
         }
 
         // -------------------------------------------------------------------------------
@@ -99,6 +107,7 @@ namespace laps::peering {
         std::mutex mutex_;
         std::shared_ptr<InfoBase> info_base_;
         std::shared_ptr<quicr::TickService> tick_service_;
+        std::weak_ptr<LapsServer> client_manager_;
         const Config& config_;
         State& state_;
         NodeInfo node_info_;
@@ -112,6 +121,7 @@ namespace laps::peering {
         std::shared_ptr<quicr::ITransport> server_transport_; /// Server Transport for inbound connections
 
         std::thread check_thr_; /// Check/task thread, handles reconnects
+
     };
 
 } // namespace laps

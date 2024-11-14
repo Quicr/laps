@@ -3,15 +3,15 @@
 #pragma once
 
 #include <map>
-#include <set>
-#include <memory>
 #include <optional>
 #include <quicr/detail/quic_transport.h>
+#include <set>
 
 #include "config.h"
 #include "messages/announce_info.h"
+#include "messages/node_info.h"
 #include "messages/subscribe_info.h"
-#include "peering/messages/node_info.h"
+#include "messages/subscribe_node_set.h"
 
 #include <sys/param.h>
 
@@ -91,19 +91,25 @@ namespace laps::peering {
          *
          * @param subscribe_id     Subscribe ID (aka track alias)
          * @param sub_node_id      Source NodeId of the node that has the subscriber
-         * @returns True if the subscribe node is newly added, false if existing
+         * @returns pair Subscribe Node Set Id and True if subscriber node is new or False if existing
          */
-        bool AddSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id);
+        std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(SubscribeId subscribe_id,
+                                                                   NodeIdValueType sub_node_id);
 
         /**
          * @brief Remove subscriber source node from the subscribe id state
          *
+         * @details Removes the subscribe source node from the nodes set. When there are no
+         *   nodes left, the SNS will be removed, resulting in the transport data connection
+         *   being closed. The SNS ID will no longer be valid.
+         *
          * @param subscribe_id     Subscribe ID (aka track alias)
          * @param sub_node_id      Source NodeId of the node that has the subscriber
          *
-         * @eturns True if the new was removed, false if node wasn't found
+         * @eturns First bool indicates true if source node was removed and second indicates true if there are
+         *   no subscribe nodes
          */
-        bool RemoveSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id);
+        std::pair<bool, bool> RemoveSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id);
 
         /*
          * Delegate functions mainly for Outgoing but does include incoming
@@ -155,19 +161,7 @@ namespace laps::peering {
             .debug = config_.debug,
         };
 
-        const uint32_t kMaxSnsId = 0xFFFFFFFE;
-        struct SubscriberNodeSet
-        {
-            uint32_t id{ 1 };                ///< SNS ID
-            std::set<NodeIdValueType> nodes; ///< Set of source nodes for each subscriber
-
-            bool operator<(const SubscriberNodeSet& other) const { return id < other.id; }
-            bool operator==(const SubscriberNodeSet& other) const { return id == other.id; }
-            bool operator>(const SubscriberNodeSet& other) const { return id > other.id; }
-        };
-
-        uint32_t next_sns_id_{ 1 }; // Incremented after a new entry is added to sns_
-        std::map<SubscribeId, SubscriberNodeSet>
+        std::map<SubscribeId, SubscribeNodeSet>
           sns_; // Map of all subscriber source nodes, indexed by subscribe Id (aka track alias)
 
         quicr::TransportConnId t_conn_id_;         /// Transport connection context ID (aka peer session id)
