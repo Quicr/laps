@@ -33,8 +33,7 @@ namespace laps {
      *  Comments:
      *      None.
      */
-    void
-    signalHandler(int signal_number)
+    void signalHandler(int signal_number)
     {
         const auto lock = std::lock_guard<std::mutex>(gvars::main_mutex);
 
@@ -50,21 +49,21 @@ namespace laps {
         switch (signal_number) {
             case SIGINT:
                 gvars::termination_reason = "Interrupt signal received";
-            break;
+                break;
 
 #ifndef _WIN32
             case SIGHUP:
                 gvars::termination_reason = "Hangup signal received";
-            break;
+                break;
 
             case SIGQUIT:
                 gvars::termination_reason = "Quit signal received";
-            break;
+                break;
 #endif
 
             default:
                 gvars::termination_reason = "Unknown signal received";
-            break;
+                break;
         }
 
         // Notify the main execution thread to terminate
@@ -87,8 +86,7 @@ namespace laps {
      *  Comments:
      *      None.
      */
-    void
-    installSignalHandlers()
+    void installSignalHandlers()
     {
 #ifdef _WIN32
         if (signal(SIGINT, signalHandler) == SIG_ERR) {

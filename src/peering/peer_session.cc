@@ -86,7 +86,8 @@ namespace laps::peering {
         return { it->second.id, is_new };
     }
 
-    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id, NodeIdValueType sub_node_id)
+    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
+                                                                 NodeIdValueType sub_node_id)
     {
         bool node_removed{ false };
         bool sns_removed{ false };

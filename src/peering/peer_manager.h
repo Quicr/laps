@@ -13,7 +13,7 @@
 #include "state.h"
 
 namespace laps {
-    class LapsServer;
+    class ClientManager;
 }
 namespace laps::peering {
     /**
@@ -59,7 +59,10 @@ namespace laps::peering {
             ClientSubscribe(track_full_name, {}, {}, true);
         }
 
-        void SetClientManager(std::weak_ptr<LapsServer> client_manager) { client_manager_ = std::move(client_manager); }
+        void SetClientManager(std::weak_ptr<ClientManager> client_manager)
+        {
+            client_manager_ = std::move(client_manager);
+        }
 
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
@@ -105,7 +108,7 @@ namespace laps::peering {
         std::mutex mutex_;
         std::shared_ptr<InfoBase> info_base_;
         std::shared_ptr<quicr::TickService> tick_service_;
-        std::weak_ptr<LapsServer> client_manager_;
+        std::weak_ptr<ClientManager> client_manager_;
         const Config& config_;
         State& state_;
         NodeInfo node_info_;

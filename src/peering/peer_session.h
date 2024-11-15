@@ -109,7 +109,8 @@ namespace laps::peering {
          * @eturns First bool indicates true if source node was removed and second indicates true if there are
          *   no subscribe nodes
          */
-        std::pair<bool, bool> RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id, NodeIdValueType sub_node_id);
+        std::pair<bool, bool> RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
+                                                        NodeIdValueType sub_node_id);
 
         /*
          * Delegate functions mainly for Outgoing but does include incoming

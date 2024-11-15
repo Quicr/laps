@@ -11,7 +11,7 @@ namespace laps {
     SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                                                  quicr::messages::ObjectPriority priority,
                                                  quicr::messages::GroupOrder group_order,
-                                                 LapsServer& server)
+                                                 ClientManager& server)
       : quicr::SubscribeTrackHandler(full_track_name, priority, group_order)
       , server_(server)
     {

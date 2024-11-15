@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
-#include "server.h"
+#include "client_manager.h"
 #include "state.h"
 #include <chrono>
 #include <sstream>
@@ -71,7 +71,8 @@ namespace laps::peering {
         if (not withdraw) {
             auto it = state_.announce_active.lower_bound({ subscribe_info.full_name.namespace_hash, 0 });
             if (it != state_.announce_active.end()) {
-                SPDLOG_LOGGER_INFO(LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.full_name.full_name_hash);
+                SPDLOG_LOGGER_INFO(
+                  LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.full_name.full_name_hash);
                 if (auto cm = client_manager_.lock()) {
 
                     quicr::SubscribeAttributes s_attrs;
@@ -101,22 +102,25 @@ namespace laps::peering {
                       subscribe_info.source_node_id,
                       peer_session->GetSessionId());
 
-                    if (auto [sns_id, is_new] =
-                          peer_session->AddSubscribeSourceNode(subscribe_info.full_name.full_name_hash, subscribe_info.source_node_id);
+                    if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
+                          subscribe_info.full_name.full_name_hash, subscribe_info.source_node_id);
                         is_new) {
-                        SPDLOG_LOGGER_INFO(LOGGER,
-                                           "New source added to peer session for subscribe fullname: {} source_node: {} is "
-                                           "via peer_session_id: {} sns_id: {}",
-                                           subscribe_info.full_name.full_name_hash,
-                                           subscribe_info.source_node_id,
-                                           peer_session->GetSessionId(),
-                                           sns_id);
+                        SPDLOG_LOGGER_INFO(
+                          LOGGER,
+                          "New source added to peer session for subscribe fullname: {} source_node: {} is "
+                          "via peer_session_id: {} sns_id: {}",
+                          subscribe_info.full_name.full_name_hash,
+                          subscribe_info.source_node_id,
+                          peer_session->GetSessionId(),
+                          sns_id);
 
                         if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
-                              { subscribe_info.full_name.full_name_hash, peer_session_id }, InfoBase::FibEntry{ sns_id, bp_it->second });
+                              { subscribe_info.full_name.full_name_hash, peer_session_id },
+                              InfoBase::FibEntry{ sns_id, bp_it->second });
                             is_new) {
-                            SPDLOG_LOGGER_INFO(
-                              LOGGER, "New subscribe fullname: {}, sending subscribe to client manager", subscribe_info.full_name.full_name_hash);
+                            SPDLOG_LOGGER_INFO(LOGGER,
+                                               "New subscribe fullname: {}, sending subscribe to client manager",
+                                               subscribe_info.full_name.full_name_hash);
                             // TODO(tievens): Implement subscribe to client manager
                         }
                     }
@@ -126,8 +130,8 @@ namespace laps::peering {
             auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
             if (bp_it != info_base_->nodes_best_.end()) {
                 const auto& peer_session = bp_it->second.lock();
-                if (const auto [_, sns_removed] =
-                      peer_session->RemoveSubscribeSourceNode(subscribe_info.full_name.full_name_hash, subscribe_info.source_node_id);
+                if (const auto [_, sns_removed] = peer_session->RemoveSubscribeSourceNode(
+                      subscribe_info.full_name.full_name_hash, subscribe_info.source_node_id);
                     sns_removed) {
                     SPDLOG_LOGGER_INFO(LOGGER,
                                        "No subscribe nodes left via peer session {}, removed subscribe fullname: {}",
@@ -244,13 +248,15 @@ namespace laps::peering {
         si.subscribe_data.assign(subscribe_data.begin(), subscribe_data.end());
 
         for (const auto& sess : client_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe to fullname: {} peer_session_id: {}", si.full_name.full_name_hash, sess.first);
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "Sending subscribe to fullname: {} peer_session_id: {}", si.full_name.full_name_hash, sess.first);
             si.source_node_id = sess.second->node_info_.id;
             sess.second->SendSubscribeInfo(si, withdraw);
         }
 
         for (const auto& sess : server_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe to fullname: {} peer_session_id: {}", si.full_name.full_name_hash, sess.first);
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "Sending subscribe to fullname: {} peer_session_id: {}", si.full_name.full_name_hash, sess.first);
             si.source_node_id = sess.second->node_info_.id;
             sess.second->SendSubscribeInfo(si, withdraw);
         }

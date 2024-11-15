@@ -9,7 +9,7 @@ endif()
 add_executable(lapsRelay
         main.cc
         config.cc
-        server.cc
+        client_manager.cc
         subscribe_handler.cc
         publish_handler.cc
 

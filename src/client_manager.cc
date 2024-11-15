@@ -4,27 +4,27 @@
 #include <quicr/server.h>
 #include <quicr/subscribe_track_handler.h>
 
+#include "client_manager.h"
 #include "config.h"
 #include "publish_handler.h"
-#include "server.h"
 #include "subscribe_handler.h"
 
 namespace laps {
-    LapsServer::LapsServer(State& state, const quicr::ServerConfig& cfg, peering::PeerManager& peer_manager)
+    ClientManager::ClientManager(State& state, const quicr::ServerConfig& cfg, peering::PeerManager& peer_manager)
       : quicr::Server(cfg)
       , state_(state)
       , peer_manager_(peer_manager)
     {
     }
 
-    void LapsServer::NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
-                                           const ConnectionRemoteInfo& remote)
+    void ClientManager::NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
+                                              const ConnectionRemoteInfo& remote)
     {
         SPDLOG_INFO("New connection handle {0} accepted from {1}:{2}", connection_handle, remote.ip, remote.port);
     }
 
-    void LapsServer::UnannounceReceived(quicr::ConnectionHandle connection_handle,
-                                        const quicr::TrackNamespace& track_namespace)
+    void ClientManager::UnannounceReceived(quicr::ConnectionHandle connection_handle,
+                                           const quicr::TrackNamespace& track_namespace)
     {
         auto th = quicr::TrackHash({ track_namespace, {}, std::nullopt });
 
@@ -51,7 +51,7 @@ namespace laps {
         peer_manager_.ClientUnannounce({ track_namespace, {}, th.track_fullname_hash });
     }
 
-    void LapsServer::PurgePublishState(quicr::ConnectionHandle connection_handle)
+    void ClientManager::PurgePublishState(quicr::ConnectionHandle connection_handle)
     {
         std::lock_guard<std::mutex> _(state_.state_mutex);
 
@@ -82,9 +82,9 @@ namespace laps {
                          remove_key.second);
         }
     }
-    void LapsServer::AnnounceReceived(quicr::ConnectionHandle connection_handle,
-                                      const quicr::TrackNamespace& track_namespace,
-                                      const quicr::PublishAnnounceAttributes& attrs)
+    void ClientManager::AnnounceReceived(quicr::ConnectionHandle connection_handle,
+                                         const quicr::TrackNamespace& track_namespace,
+                                         const quicr::PublishAnnounceAttributes& attrs)
     {
         auto th = quicr::TrackHash({ track_namespace, {}, std::nullopt });
 
@@ -146,7 +146,7 @@ namespace laps {
         }
     }
 
-    void LapsServer::ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status)
+    void ClientManager::ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status)
     {
         switch (status) {
             case ConnectionStatus::kConnected:
@@ -186,7 +186,7 @@ namespace laps {
         PurgePublishState(connection_handle);
     }
 
-    quicr::Server::ClientSetupResponse LapsServer::ClientSetupReceived(
+    quicr::Server::ClientSetupResponse ClientManager::ClientSetupReceived(
       quicr::ConnectionHandle,
       const quicr::ClientSetupAttributes& client_setup_attributes)
     {
@@ -197,7 +197,7 @@ namespace laps {
         return client_setup_response;
     }
 
-    void LapsServer::UnsubscribeReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id)
+    void ClientManager::UnsubscribeReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id)
     {
         SPDLOG_INFO("Unsubscribe connection handle: {0} subscribe_id: {1}", connection_handle, subscribe_id);
 
@@ -270,11 +270,11 @@ namespace laps {
             }
         }
     }
-    void LapsServer::SubscribeReceived(quicr::ConnectionHandle connection_handle,
-                                       uint64_t subscribe_id,
-                                       [[maybe_unused]] uint64_t proposed_track_alias,
-                                       const quicr::FullTrackName& track_full_name,
-                                       const quicr::SubscribeAttributes& attrs)
+    void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
+                                          uint64_t subscribe_id,
+                                          [[maybe_unused]] uint64_t proposed_track_alias,
+                                          const quicr::FullTrackName& track_full_name,
+                                          const quicr::SubscribeAttributes& attrs)
     {
         auto th = quicr::TrackHash(track_full_name);
 
@@ -287,11 +287,11 @@ namespace laps {
         ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, attrs);
     }
 
-    void LapsServer::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
-                                      uint64_t subscribe_id,
-                                      const quicr::TrackHash& th,
-                                      const quicr::FullTrackName& track_full_name,
-                                      const quicr::SubscribeAttributes& attrs)
+    void ClientManager::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
+                                         uint64_t subscribe_id,
+                                         const quicr::TrackHash& th,
+                                         const quicr::FullTrackName& track_full_name,
+                                         const quicr::SubscribeAttributes& attrs)
     {
         auto is_peer{ false };
         if (connection_handle == 0 && subscribe_id == 0) {
@@ -366,8 +366,8 @@ namespace laps {
         }
     }
 
-    void LapsServer::MetricsSampled(const quicr::ConnectionHandle connection_handle,
-                                    const quicr::ConnectionMetrics& metrics)
+    void ClientManager::MetricsSampled(const quicr::ConnectionHandle connection_handle,
+                                       const quicr::ConnectionMetrics& metrics)
     {
         SPDLOG_DEBUG("Metrics connection handle: {0}"
                      " rtt_us: {1}"

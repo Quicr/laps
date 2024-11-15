@@ -5,13 +5,12 @@
 #include "peering/common.h"
 #include "peering/messages/node_info.h"
 
-#include <set>
 #include <quicr/track_name.h>
+#include <set>
 
 namespace laps::peering {
 
     const uint32_t kMaxSnsId = 0xFFFFFFFE;
-
 
     /**
      * @brief SubscriberInfo describes a publisher
@@ -22,7 +21,7 @@ namespace laps::peering {
     class SubscribeNodeSet
     {
       public:
-        SubscribeNodeSetId id {0};            /// SNS ID that references this object
+        SubscribeNodeSetId id{ 0 };      /// SNS ID that references this object
         std::set<NodeIdValueType> nodes; ///< Set of source nodes for each subscriber
 
         /**
@@ -43,6 +42,6 @@ namespace laps::peering {
       private:
     };
 
-  std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeNodeSet& sns);
+    std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeNodeSet& sns);
 
 } // namespace laps

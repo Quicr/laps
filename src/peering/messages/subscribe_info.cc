@@ -5,7 +5,9 @@
 
 namespace laps::peering {
 
-    SubscribeInfo::SubscribeInfo(quicr::TrackFullNameHash id, NodeIdValueType source_node_id, const FullNameHash& full_name)
+    SubscribeInfo::SubscribeInfo(quicr::TrackFullNameHash id,
+                                 NodeIdValueType source_node_id,
+                                 const FullNameHash& full_name)
       : source_node_id(source_node_id)
       , full_name(full_name)
     {
@@ -40,7 +42,7 @@ namespace laps::peering {
         it += 4;
 
         subscribe_data.assign(it, it + sub_size);
-        //it += sub_size;
+        // it += sub_size;
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeInfo& subscribe_info)

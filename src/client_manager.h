@@ -10,10 +10,10 @@ namespace laps {
      * @brief MoQ Server
      * @details Implementation of the MoQ Server
      */
-    class LapsServer : public quicr::Server
+    class ClientManager : public quicr::Server
     {
       public:
-        LapsServer(State& state, const quicr::ServerConfig& cfg, peering::PeerManager& peer_manager);
+        ClientManager(State& state, const quicr::ServerConfig& cfg, peering::PeerManager& peer_manager);
 
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;

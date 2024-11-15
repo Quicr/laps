@@ -159,7 +159,7 @@ namespace laps::peering {
         /**
          * @brief Encode node object into bytes that can be written on the wire
          */
-        std::vector<uint8_t> Serialize(bool include_common_header = false, bool withdraw=false) const;
+        std::vector<uint8_t> Serialize(bool include_common_header = false, bool withdraw = false) const;
 
       private:
     };

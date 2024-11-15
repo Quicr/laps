@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <optional>
 #include "peering/common.h"
 #include "peering/errors.h"
+#include <optional>
 
 #include "node_info.h"
 

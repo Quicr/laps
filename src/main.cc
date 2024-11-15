@@ -8,13 +8,11 @@
 #include <set>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
-#include <unordered_map>
 
+#include "client_manager.h"
 #include "peering/peer_manager.h"
-#include "server.h"
 #include "signal_handler.h"
 #include "state.h"
-#include "subscribe_handler.h"
 
 #include <quicr/server.h>
 
@@ -64,8 +62,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
             cfg.node_type = peering::NodeType::kEdge;
         } else if (node_type == "via") {
             cfg.node_type = peering::NodeType::kVia;
-        }
-        else if (node_type == "stub") {
+        } else if (node_type == "stub") {
             cfg.node_type = peering::NodeType::kStub;
         } else {
             SPDLOG_LOGGER_ERROR(cfg.logger_, "unknown node type: '{}'", node_type);
@@ -73,12 +70,11 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
         }
 
         SPDLOG_LOGGER_INFO(cfg.logger_, "Setting node type to '{}'", node_type);
-
     }
 
     cfg.debug = cli_opts["debug"].as<bool>();
-    cfg.tls_cert_filename_ =  cli_opts["cert"].as<std::string>();
-    cfg.tls_key_filename_ =  cli_opts["key"].as<std::string>();
+    cfg.tls_cert_filename_ = cli_opts["cert"].as<std::string>();
+    cfg.tls_key_filename_ = cli_opts["key"].as<std::string>();
     cfg.peering.listening_port = cli_opts["peer_port"].as<uint16_t>();
 
     cfg.relay_id_ = cli_opts["endpoint_id"].as<std::string>();
@@ -142,15 +138,13 @@ main(int argc, char* argv[])
     peering::PeerManager peer_manager(cfg, state, forwarding_info);
 
     try {
-        auto server = std::make_shared<LapsServer>(state, config, peer_manager);
+        auto server = std::make_shared<ClientManager>(state, config, peer_manager);
         peer_manager.SetClientManager(server); // Set pointer to client manager (e.g., server) after construct
 
         if (server->Start() != quicr::Transport::Status::kReady) {
             SPDLOG_ERROR("Server failed to start");
             exit(-2);
         }
-
-
 
         // Wait until told to terminate
         gvars::cv.wait(lock, [&]() { return gvars::terminate; });
