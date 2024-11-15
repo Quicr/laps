@@ -39,7 +39,7 @@ namespace laps::peering {
 
         if (nodes_best_.erase(node_id) > 0) {
             SelectBestNode(node_id);
-            //TODO(tievens): Update subscribes and announces based on best change
+            // TODO(tievens): Update subscribes and announces based on best change
         }
     }
 
@@ -71,29 +71,27 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        auto it = subscribes_.find(subscribe_info.track_hash.track_fullname_hash);
-        if (it == subscribes_.end()) {
-            subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id);
-            return true;
-        }
-
-        const auto [__, is_new] = it->second.emplace(subscribe_info.source_node_id);
+        auto [__, is_new] =
+          subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id);
         return is_new;
     }
 
     bool InfoBase::RemoveSubscribe(const SubscribeInfo& subscribe_info)
     {
         std::lock_guard _(mutex_);
+        bool removed{ false };
 
         auto it = subscribes_.find(subscribe_info.track_hash.track_fullname_hash);
 
-        if (it == subscribes_.end()) {
-            if (it->second.erase(subscribe_info.source_node_id)) {
-                return true;
+        if (it != subscribes_.end()) {
+            removed = it->second.erase(subscribe_info.source_node_id) ? true : false;
+
+            if (it->second.empty()) {
+                subscribes_.erase(it);
             }
         }
 
-        return false;
+        return removed;
     }
 
     bool InfoBase::AddAnnounce(const AnnounceInfo& announce_info)

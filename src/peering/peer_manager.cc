@@ -57,6 +57,10 @@ namespace laps::peering {
             return;
         }
 
+        if (withdraw) {
+            info_base_->RemoveSubscribe(subscribe_info);
+        }
+
         for (const auto& sess : client_peer_sessions_) {
             if (peer_session_id != sess.first)
                 sess.second->SendSubscribeInfo(subscribe_info, withdraw);
