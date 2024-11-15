@@ -5,25 +5,21 @@
 
 namespace laps::peering {
 
-    SubscribeInfo::SubscribeInfo(SubscribeId id, NodeIdValueType source_node_id, const FullNameHash& full_name)
-      : id(id)
-      , source_node_id(source_node_id)
+    SubscribeInfo::SubscribeInfo(quicr::TrackFullNameHash id, NodeIdValueType source_node_id, const FullNameHash& full_name)
+      : source_node_id(source_node_id)
       , full_name(full_name)
     {
     }
 
     uint32_t SubscribeInfo::SizeBytes() const
     {
-        return sizeof(id) + sizeof(source_node_id) + 1 /* num of namespace tuples */
+        return sizeof(source_node_id) + 1 /* num of namespace tuples */
                + full_name.SizeBytes() + 4 /* size of sub data */ + subscribe_data.size();
     }
 
     SubscribeInfo::SubscribeInfo(Span<const uint8_t> serialized_data)
     {
         auto it = serialized_data.begin();
-
-        id = ValueOf<uint64_t>({ it, it + 8 });
-        it += 8;
 
         source_node_id = ValueOf<uint64_t>({ it, it + 8 });
         it += 8;
@@ -49,9 +45,6 @@ namespace laps::peering {
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeInfo& subscribe_info)
     {
-        auto id_bytes = BytesOf(subscribe_info.id);
-        data.insert(data.end(), id_bytes.rbegin(), id_bytes.rend());
-
         auto src_node_bytes = BytesOf(subscribe_info.source_node_id);
         data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
 

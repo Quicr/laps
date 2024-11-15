@@ -93,7 +93,7 @@ namespace laps::peering {
          * @param sub_node_id      Source NodeId of the node that has the subscriber
          * @returns pair Subscribe Node Set Id and True if subscriber node is new or False if existing
          */
-        std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(SubscribeId subscribe_id,
+        std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
                                                                    NodeIdValueType sub_node_id);
 
         /**
@@ -109,7 +109,7 @@ namespace laps::peering {
          * @eturns First bool indicates true if source node was removed and second indicates true if there are
          *   no subscribe nodes
          */
-        std::pair<bool, bool> RemoveSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id);
+        std::pair<bool, bool> RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id, NodeIdValueType sub_node_id);
 
         /*
          * Delegate functions mainly for Outgoing but does include incoming
@@ -161,7 +161,7 @@ namespace laps::peering {
             .debug = config_.debug,
         };
 
-        std::map<SubscribeId, SubscribeNodeSet>
+        std::map<quicr::TrackFullNameHash, SubscribeNodeSet>
           sns_; // Map of all subscriber source nodes, indexed by subscribe Id (aka track alias)
 
         quicr::TransportConnId t_conn_id_;         /// Transport connection context ID (aka peer session id)

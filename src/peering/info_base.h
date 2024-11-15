@@ -106,7 +106,7 @@ namespace laps::peering {
          *    peering session.
          */
         std::unordered_map<NodeIdValueType, std::weak_ptr<PeerSession>> nodes_best_;
-        std::map<SubscribeId, std::set<NodeIdValueType>> subscribes_;
+        std::map<quicr::TrackFullNameHash, std::set<NodeIdValueType>> subscribes_;
 
         struct FibEntry
         {
@@ -121,12 +121,12 @@ namespace laps::peering {
          *   is updated by peering manager on peer received subscribes when relay has local
          *   announcement matching the subscribe
          */
-        std::map<std::pair<SubscribeId, PeerSessionId>, FibEntry> client_fib_;
+        std::map<std::pair<quicr::TrackFullNameHash, PeerSessionId>, FibEntry> client_fib_;
 
         std::map<std::pair<PeerSessionId, NodeIdValueType>, FibEntry> peer_fib_;
 
         /// Key is the full name hash of the announce (hash of tuple and name), value is the source node ID
-        std::map<HashType, std::set<NodeIdValueType>> announces_;
+        std::map<quicr::TrackFullNameHash, std::set<NodeIdValueType>> announces_;
 
         /**
          * @brief Nodes by peer session id

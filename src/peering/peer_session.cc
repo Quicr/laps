@@ -70,7 +70,7 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
 
-    std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(SubscribeId subscribe_id,
+    std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
                                                                             NodeIdValueType sub_node_id)
     {
         auto [it, _] = sns_.try_emplace(subscribe_id);
@@ -86,7 +86,7 @@ namespace laps::peering {
         return { it->second.id, is_new };
     }
 
-    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(SubscribeId subscribe_id, NodeIdValueType sub_node_id)
+    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id, NodeIdValueType sub_node_id)
     {
         bool node_removed{ false };
         bool sns_removed{ false };
@@ -119,8 +119,8 @@ namespace laps::peering {
     void PeerSession::SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw)
     {
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Sending subscribe info id: {} source_ndoe_id: {} withdraw: {}",
-                            subscribe_info.id,
+                            "Sending subscribe info fullname: {} source_ndoe_id: {} withdraw: {}",
+                            subscribe_info.full_name.full_name_hash,
                             subscribe_info.source_node_id,
                             withdraw);
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, subscribe_info.Serialize(true, withdraw), 0, 1000);

@@ -10,7 +10,6 @@
 
 namespace laps::peering {
 
-    using SubscribeId = uint64_t;
     /**
      * @brief SubscriberInfo describes a publisher
      *
@@ -20,7 +19,6 @@ namespace laps::peering {
     class SubscribeInfo
     {
       public:
-        SubscribeId id;                 ///< Globally unique track ID (aka track alias)
         NodeIdValueType source_node_id; ///< Id of the originating source node
 
         FullNameHash full_name; ///< Full name hash
@@ -33,7 +31,7 @@ namespace laps::peering {
         std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
 
         SubscribeInfo() = default;
-        SubscribeInfo(SubscribeId, NodeIdValueType source_node_id, const FullNameHash& full_name);
+        SubscribeInfo(quicr::TrackFullNameHash, NodeIdValueType source_node_id, const FullNameHash& full_name);
         SubscribeInfo(Span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
