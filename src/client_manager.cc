@@ -245,31 +245,34 @@ namespace laps {
 
         if (unsub_pub) {
             SPDLOG_INFO("No subscribers left, unsubscribe publisher track_alias: {0}", track_alias);
-
             peer_manager_.ClientUnsubscribe(ftn);
-
-            std::vector<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>> remove_sub_pub;
-            for (auto it = state_.pub_subscribes.lower_bound({ th.track_namespace_hash, 0 });
-                 it != state_.pub_subscribes.end();
-                 ++it) {
-                const auto& [key, sub_to_pub_handler] = *it;
-
-                if (key.first != th.track_fullname_hash)
-                    break;
-
-                SPDLOG_INFO("Unsubscribe to announcer conn_id: {0} subscribe track_alias: {1}",
-                            key.second,
-                            th.track_fullname_hash);
-
-                UnsubscribeTrack(key.second, sub_to_pub_handler);
-                remove_sub_pub.push_back(key);
-            }
-
-            for (const auto& key : remove_sub_pub) {
-                state_.pub_subscribes.erase(key);
-            }
+            RemovePublisherSubscribe(th);
         }
     }
+
+    void ClientManager::RemovePublisherSubscribe(const quicr::TrackHash& track_hash)
+    {
+        std::vector<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>> remove_sub_pub;
+        for (auto it = state_.pub_subscribes.lower_bound({ track_hash.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+            const auto& [key, sub_to_pub_handler] = *it;
+
+            if (key.first != track_hash.track_fullname_hash)
+                break;
+
+            SPDLOG_INFO(
+              "Unsubscribe to announcer conn_id: {0} subscribe track_alias: {1}", key.second, track_hash.track_fullname_hash);
+
+            UnsubscribeTrack(key.second, sub_to_pub_handler);
+            remove_sub_pub.push_back(key);
+        }
+
+        for (const auto& key : remove_sub_pub) {
+            state_.pub_subscribes.erase(key);
+        }
+    }
+
     void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                           uint64_t subscribe_id,
                                           [[maybe_unused]] uint64_t proposed_track_alias,

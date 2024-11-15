@@ -43,6 +43,8 @@ namespace laps {
                               const quicr::FullTrackName& track_full_name,
                               const quicr::SubscribeAttributes&);
 
+        void RemovePublisherSubscribe(const quicr::TrackHash& track_hash);
+
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;
 

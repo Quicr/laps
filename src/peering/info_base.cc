@@ -99,9 +99,9 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        auto it = announces_.find(announce_info.full_name.full_name_hash);
+        auto it = announces_.find(announce_info.full_name.namespace_hash);
         if (it == announces_.end()) {
-            announces_[announce_info.full_name.full_name_hash].emplace(announce_info.source_node_id);
+            announces_[announce_info.full_name.namespace_hash].emplace(announce_info.source_node_id);
             return true;
         }
 
@@ -113,7 +113,7 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        auto it = subscribes_.find(announce_info.full_name.full_name_hash);
+        auto it = subscribes_.find(announce_info.full_name.namespace_hash);
 
         if (it == subscribes_.end()) {
             if (it->second.erase(announce_info.source_node_id)) {

@@ -73,6 +73,7 @@ namespace laps::peering {
             if (it != state_.announce_active.end()) {
                 SPDLOG_LOGGER_INFO(
                   LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.full_name.full_name_hash);
+
                 if (auto cm = client_manager_.lock()) {
 
                     quicr::SubscribeAttributes s_attrs;
@@ -91,6 +92,7 @@ namespace laps::peering {
                                          { sub.track_namespace, sub.track_name },
                                          s_attrs);
                 }
+
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
                 if (bp_it != info_base_->nodes_best_.end()) {
@@ -121,7 +123,25 @@ namespace laps::peering {
                             SPDLOG_LOGGER_INFO(LOGGER,
                                                "New subscribe fullname: {}, sending subscribe to client manager",
                                                subscribe_info.full_name.full_name_hash);
-                            // TODO(tievens): Implement subscribe to client manager
+                            if (auto cm = client_manager_.lock()) {
+
+                                quicr::SubscribeAttributes s_attrs;
+                                s_attrs.priority = 10;
+
+                                quicr::messages::MoqSubscribe sub;
+                                subscribe_info.subscribe_data >> sub;
+
+                                SPDLOG_LOGGER_INFO(
+                                  LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
+
+                                cm->ProcessSubscribe(0,
+                                                     0,
+                                                     { subscribe_info.full_name.namespace_hash,
+                                                       subscribe_info.full_name.name_hash,
+                                                       subscribe_info.full_name.full_name_hash },
+                                                     { sub.track_namespace, sub.track_name },
+                                                     s_attrs);
+                            }
                         }
                     }
                 }
@@ -157,7 +177,13 @@ namespace laps::peering {
                         SPDLOG_LOGGER_INFO(LOGGER,
                                            "No peers left for subscribe fullname: {}, removing client subscribe state",
                                            subscribe_info.full_name.full_name_hash);
-                        // TODO(tievens): Implement client removal
+
+                        if (auto cm = client_manager_.lock()) {
+                            quicr::TrackHash th{ subscribe_info.full_name.namespace_hash,
+                                                 subscribe_info.full_name.name_hash,
+                                                 subscribe_info.full_name.full_name_hash };
+                            cm->RemovePublisherSubscribe(th);
+                        }
                     }
                 }
             }
