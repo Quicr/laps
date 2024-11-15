@@ -70,10 +70,10 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
 
-    std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
+    std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                                             NodeIdValueType sub_node_id)
     {
-        auto [it, _] = sns_.try_emplace(subscribe_id);
+        auto [it, _] = sns_.try_emplace(full_name_hash);
         auto& sns = it->second;
 
         if (it->second.id == 0) { // If not set, create the data context
@@ -86,15 +86,16 @@ namespace laps::peering {
         return { it->second.id, is_new };
     }
 
-    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
+    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                                  NodeIdValueType sub_node_id)
     {
         bool node_removed{ false };
         bool sns_removed{ false };
 
-        auto it = sns_.find(subscribe_id);
+        auto it = sns_.find(full_name_hash);
         if (it != sns_.end()) {
             auto& sns = it->second;
+
             node_removed = sns.nodes.erase(sub_node_id) ? true : false;
 
             if (sns.nodes.empty()) {
@@ -120,8 +121,8 @@ namespace laps::peering {
     void PeerSession::SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw)
     {
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Sending subscribe info fullname: {} source_ndoe_id: {} withdraw: {}",
-                            subscribe_info.full_name.full_name_hash,
+                            "Sending subscribe fullname: {} source_node_id: {} withdraw: {}",
+                            subscribe_info.track_hash.track_fullname_hash,
                             subscribe_info.source_node_id,
                             withdraw);
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, subscribe_info.Serialize(true, withdraw), 0, 1000);

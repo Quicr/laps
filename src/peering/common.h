@@ -7,6 +7,7 @@
 #include <quicr/detail/uintvar.h>
 
 #include <iostream>
+#include <quicr/track_name.h>
 
 namespace laps::peering {
 #if __cplusplus >= 202002L
@@ -69,6 +70,7 @@ namespace laps::peering {
             }
 
             full_name_hash ^= hasher(name_hash) + 0x9e3779b9 + (full_name_hash << 6) + (full_name_hash >> 2);
+            full_name_hash = (full_name_hash << 2) >> 2;
 
             return full_name_hash;
         }

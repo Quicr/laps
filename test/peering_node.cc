@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "peering/node_info.h"
+#include "peering/messages/node_info.h"
 
 #include <iostream>
 

@@ -89,11 +89,11 @@ namespace laps::peering {
         /**
          * @brief Add subscriber source node to subscriber id state
          *
-         * @param subscribe_id     Subscribe ID (aka track alias)
+         * @param full_name_hash     Subscribe ID (aka track alias)
          * @param sub_node_id      Source NodeId of the node that has the subscriber
          * @returns pair Subscribe Node Set Id and True if subscriber node is new or False if existing
          */
-        std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
+        std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                                    NodeIdValueType sub_node_id);
 
         /**
@@ -103,13 +103,13 @@ namespace laps::peering {
          *   nodes left, the SNS will be removed, resulting in the transport data connection
          *   being closed. The SNS ID will no longer be valid.
          *
-         * @param subscribe_id     Subscribe ID (aka track alias)
+         * @param full_name_hash     Subscribe ID (aka track alias)
          * @param sub_node_id      Source NodeId of the node that has the subscriber
          *
          * @eturns First bool indicates true if source node was removed and second indicates true if there are
          *   no subscribe nodes
          */
-        std::pair<bool, bool> RemoveSubscribeSourceNode(quicr::TrackFullNameHash subscribe_id,
+        std::pair<bool, bool> RemoveSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                         NodeIdValueType sub_node_id);
 
         /*

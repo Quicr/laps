@@ -21,7 +21,7 @@ namespace laps::peering {
       public:
         NodeIdValueType source_node_id; ///< Id of the originating source node
 
-        FullNameHash full_name; ///< Full name hash
+        quicr::TrackHash track_hash; ///< Full name hash
         std::vector<uint8_t>
           subscribe_data; /// Original MoQ subscribe message (wire format) that initiated this subscribe
 
@@ -30,8 +30,12 @@ namespace laps::peering {
          */
         std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
 
-        SubscribeInfo() = default;
-        SubscribeInfo(quicr::TrackFullNameHash, NodeIdValueType source_node_id, const FullNameHash& full_name);
+        SubscribeInfo()
+          : track_hash({})
+        {
+        }
+
+        SubscribeInfo(quicr::TrackFullNameHash, NodeIdValueType source_node_id, const quicr::TrackHash& track_hash);
         SubscribeInfo(Span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;

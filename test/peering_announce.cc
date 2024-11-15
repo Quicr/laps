@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "peering/announce_info.h"
+#include "peering/messages/announce_info.h"
 
 #include <iostream>
 
@@ -12,7 +12,7 @@ TEST_CASE("Serialize Announce Info")
     announce_info.source_node_id = 0xff00aabbcc;
 
     FullNameHash full_name_hash;
-    full_name_hash.name = 0x9000;
+    full_name_hash.name_hash = 0x9000;
     full_name_hash.namespace_tuples.push_back(0x1);
     full_name_hash.namespace_tuples.push_back(0x90000001);
     full_name_hash.namespace_tuples.push_back(0x14);
@@ -34,6 +34,6 @@ TEST_CASE("Serialize Announce Info")
         CHECK_EQ(announce_info.full_name.namespace_tuples[i], decoded_ai.full_name.namespace_tuples[i]);
     }
 
-    CHECK_EQ(announce_info.full_name.name, decoded_ai.full_name.name);
+    CHECK_EQ(announce_info.full_name.name_hash, decoded_ai.full_name.name_hash);
 }
 

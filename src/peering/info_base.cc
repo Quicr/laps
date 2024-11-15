@@ -39,6 +39,7 @@ namespace laps::peering {
 
         if (nodes_best_.erase(node_id) > 0) {
             SelectBestNode(node_id);
+            //TODO(tievens): Update subscribes and announces based on best change
         }
     }
 
@@ -70,9 +71,9 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        auto it = subscribes_.find(subscribe_info.full_name.full_name_hash);
+        auto it = subscribes_.find(subscribe_info.track_hash.track_fullname_hash);
         if (it == subscribes_.end()) {
-            subscribes_[subscribe_info.full_name.full_name_hash].emplace(subscribe_info.source_node_id);
+            subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id);
             return true;
         }
 
@@ -84,7 +85,7 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        auto it = subscribes_.find(subscribe_info.full_name.full_name_hash);
+        auto it = subscribes_.find(subscribe_info.track_hash.track_fullname_hash);
 
         if (it == subscribes_.end()) {
             if (it->second.erase(subscribe_info.source_node_id)) {

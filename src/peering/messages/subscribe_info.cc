@@ -7,36 +7,32 @@ namespace laps::peering {
 
     SubscribeInfo::SubscribeInfo(quicr::TrackFullNameHash id,
                                  NodeIdValueType source_node_id,
-                                 const FullNameHash& full_name)
+                                 const quicr::TrackHash& track_hash)
       : source_node_id(source_node_id)
-      , full_name(full_name)
+      , track_hash(track_hash)
     {
     }
 
     uint32_t SubscribeInfo::SizeBytes() const
     {
-        return sizeof(source_node_id) + 1 /* num of namespace tuples */
-               + full_name.SizeBytes() + 4 /* size of sub data */ + subscribe_data.size();
+        return sizeof(source_node_id) + 24 /* namespace, name, and full name hashes */
+               + 4 /* size of sub data */ + subscribe_data.size();
     }
 
     SubscribeInfo::SubscribeInfo(Span<const uint8_t> serialized_data)
+      : track_hash({})
     {
         auto it = serialized_data.begin();
 
         source_node_id = ValueOf<uint64_t>({ it, it + 8 });
         it += 8;
 
-        uint8_t tuple_size = *it++;
-
-        for (uint8_t i = 0; i < tuple_size; i++) {
-            full_name.namespace_tuples.push_back(ValueOf<uint64_t>({ it, it + 8 }));
-            it += 8;
-        }
-
-        full_name.name_hash = ValueOf<uint64_t>({ it, it + 8 });
+        track_hash.track_namespace_hash = ValueOf<uint64_t>({ it, it + 8 });
         it += 8;
-        full_name.ComputeFullNameHash();
-        full_name.ComputeNamespaceHash();
+        track_hash.track_name_hash = ValueOf<uint64_t>({ it, it + 8 });
+        it += 8;
+        track_hash.track_fullname_hash = ValueOf<uint64_t>({ it, it + 8 });
+        it += 8;
 
         uint32_t sub_size = ValueOf<uint32_t>({ it, it + 4 });
         it += 4;
@@ -50,15 +46,14 @@ namespace laps::peering {
         auto src_node_bytes = BytesOf(subscribe_info.source_node_id);
         data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
 
-        data.push_back(static_cast<uint8_t>(subscribe_info.full_name.namespace_tuples.size()));
+        auto namespace_bytes = BytesOf(subscribe_info.track_hash.track_namespace_hash);
+        data.insert(data.end(), namespace_bytes.rbegin(), namespace_bytes.rend());
 
-        for (uint8_t i = 0; i < subscribe_info.full_name.namespace_tuples.size(); i++) {
-            auto ns_item_bytes = BytesOf(subscribe_info.full_name.namespace_tuples[i]);
-            data.insert(data.end(), ns_item_bytes.rbegin(), ns_item_bytes.rend());
-        }
-
-        auto name_bytes = BytesOf(subscribe_info.full_name.name_hash);
+        auto name_bytes = BytesOf(subscribe_info.track_hash.track_name_hash);
         data.insert(data.end(), name_bytes.rbegin(), name_bytes.rend());
+
+        auto full_name_bytes = BytesOf(subscribe_info.track_hash.track_fullname_hash);
+        data.insert(data.end(), full_name_bytes.rbegin(), full_name_bytes.rend());
 
         auto sub_size_bytes = BytesOf(uint32_t(subscribe_info.subscribe_data.size()));
         data.insert(data.end(), sub_size_bytes.rbegin(), sub_size_bytes.rend());

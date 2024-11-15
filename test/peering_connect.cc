@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "peering/connect.h"
-#include "peering/connect_response.h"
+#include "peering/messages/connect.h"
+#include "peering/messages/connect_response.h"
 
 #include <iostream>
 
