@@ -51,17 +51,15 @@ namespace laps::peering {
 
         void ClientSubscribe(const quicr::FullTrackName& track_full_name,
                              const quicr::SubscribeAttributes&,
+                             Span<const uint8_t> subscribe_data,
                              bool withdraw = false);
 
         void ClientUnsubscribe(const quicr::FullTrackName& track_full_name)
         {
-            ClientSubscribe(track_full_name, {}, true);
+            ClientSubscribe(track_full_name, {}, {}, true);
         }
 
-        void SetClientManager(std::weak_ptr<LapsServer> client_manager)
-        {
-            client_manager_ = std::move(client_manager);
-        }
+        void SetClientManager(std::weak_ptr<LapsServer> client_manager) { client_manager_ = std::move(client_manager); }
 
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
@@ -98,8 +96,8 @@ namespace laps::peering {
          */
         void CreatePeerSession(const quicr::TransportRemote& peer_config);
 
-        void PropagateNodeInfo(const NodeInfo& node_info, bool withdraw=false);
-        void PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw=false);
+        void PropagateNodeInfo(const NodeInfo& node_info, bool withdraw = false);
+        void PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw = false);
         std::shared_ptr<PeerSession> GetPeerSession(PeerSessionId peer_session_id);
 
       private:
@@ -121,7 +119,6 @@ namespace laps::peering {
         std::shared_ptr<quicr::ITransport> server_transport_; /// Server Transport for inbound connections
 
         std::thread check_thr_; /// Check/task thread, handles reconnects
-
     };
 
 } // namespace laps

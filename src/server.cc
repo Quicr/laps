@@ -296,8 +296,8 @@ namespace laps {
         auto is_peer{ false };
         if (connection_handle == 0 && subscribe_id == 0) {
             is_peer = true;
-            SPDLOG_DEBUG("Processing peer subscribe track alias: {} priority: {}",
-                         th.track_fullname_hash, attrs.priority);
+            SPDLOG_DEBUG(
+              "Processing peer subscribe track alias: {} priority: {}", th.track_fullname_hash, attrs.priority);
         }
 
         else {
@@ -320,7 +320,24 @@ namespace laps {
                 track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, nullptr });
 
             if (is_new) {
-                peer_manager_.ClientSubscribe(track_full_name, attrs, false);
+                quicr::messages::MoqSubscribe sub;
+                sub.group_order = attrs.group_order;
+                sub.priority = attrs.priority;
+                sub.subscribe_id = subscribe_id;
+                sub.track_alias = th.track_fullname_hash;
+                sub.track_namespace = track_full_name.name_space;
+                sub.track_name = track_full_name.name;
+
+                quicr::Bytes sub_data;
+                sub_data << sub;
+
+                // TODO(tievens): Clean up total hack to accommodate encode using operator overload that adds common
+                // header
+                auto mt_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin());
+                auto len_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin() + mt_sz);
+                sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + len_sz);
+
+                peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data, false);
             }
         }
 

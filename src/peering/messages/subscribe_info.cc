@@ -15,7 +15,7 @@ namespace laps::peering {
     uint32_t SubscribeInfo::SizeBytes() const
     {
         return sizeof(id) + sizeof(source_node_id) + 1 /* num of namespace tuples */
-               + full_name.SizeBytes();
+               + full_name.SizeBytes() + 4 /* size of sub data */ + subscribe_data.size();
     }
 
     SubscribeInfo::SubscribeInfo(Span<const uint8_t> serialized_data)
@@ -36,9 +36,15 @@ namespace laps::peering {
         }
 
         full_name.name_hash = ValueOf<uint64_t>({ it, it + 8 });
-
+        it += 8;
         full_name.ComputeFullNameHash();
         full_name.ComputeNamespaceHash();
+
+        uint32_t sub_size = ValueOf<uint32_t>({ it, it + 4 });
+        it += 4;
+
+        subscribe_data.assign(it, it + sub_size);
+        //it += sub_size;
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeInfo& subscribe_info)
@@ -59,6 +65,11 @@ namespace laps::peering {
         auto name_bytes = BytesOf(subscribe_info.full_name.name_hash);
         data.insert(data.end(), name_bytes.rbegin(), name_bytes.rend());
 
+        auto sub_size_bytes = BytesOf(uint32_t(subscribe_info.subscribe_data.size()));
+        data.insert(data.end(), sub_size_bytes.rbegin(), sub_size_bytes.rend());
+
+        data.insert(data.end(), subscribe_info.subscribe_data.begin(), subscribe_info.subscribe_data.end());
+
         return data;
     }
 
@@ -73,8 +84,8 @@ namespace laps::peering {
               static_cast<uint16_t>(withdraw ? MsgType::kSubscribeInfoWithdrawn : MsgType::kSubscribeInfoAdvertised);
             auto type_bytes = BytesOf(type);
             data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
-            auto ni_size = SizeBytes();
-            auto data_len_bytes = BytesOf(ni_size);
+            auto si_size = SizeBytes();
+            auto data_len_bytes = BytesOf(si_size);
             data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
         } else {
             data.reserve(SizeBytes());

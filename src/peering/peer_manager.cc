@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
-#include "state.h"
 #include "server.h"
+#include "state.h"
 #include <chrono>
 #include <sstream>
 
@@ -77,12 +77,17 @@ namespace laps::peering {
                     quicr::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
+                    quicr::messages::MoqSubscribe sub;
+                    subscribe_info.subscribe_data >> sub;
+
+                    SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
+
                     cm->ProcessSubscribe(0,
                                          0,
                                          { subscribe_info.full_name.namespace_hash,
                                            subscribe_info.full_name.name_hash,
                                            subscribe_info.full_name.full_name_hash },
-                                         {},
+                                         { sub.track_namespace, sub.track_name },
                                          s_attrs);
                 }
 
@@ -108,7 +113,7 @@ namespace laps::peering {
                                            sns_id);
 
                         if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
-                              { subscribe_info.id, peer_session_id }, InfoBase::FibEntry{sns_id, bp_it->second});
+                              { subscribe_info.id, peer_session_id }, InfoBase::FibEntry{ sns_id, bp_it->second });
                             is_new) {
                             SPDLOG_LOGGER_INFO(
                               LOGGER, "New subscribe id: {}, sending subscribe to client manager", subscribe_info.id);
@@ -131,7 +136,7 @@ namespace laps::peering {
 
                     info_base_->client_fib_.erase({ subscribe_info.id, peer_session_id });
 
-                    bool has_subscribe_peers { false };
+                    bool has_subscribe_peers{ false };
                     for (auto it = info_base_->client_fib_.lower_bound({ subscribe_info.id, 0 });
                          it != info_base_->client_fib_.end();
                          ++it) {
@@ -146,8 +151,8 @@ namespace laps::peering {
 
                     if (not has_subscribe_peers) {
                         SPDLOG_LOGGER_INFO(LOGGER,
-                            "No peers left for subscribe id: {}, removing client subscribe state",
-                            subscribe_info.id);
+                                           "No peers left for subscribe id: {}, removing client subscribe state",
+                                           subscribe_info.id);
                         // TODO(tievens): Implement client removal
                     }
                 }
@@ -221,6 +226,7 @@ namespace laps::peering {
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
                                       const quicr::SubscribeAttributes&,
+                                      Span<const uint8_t> subscribe_data,
                                       bool withdraw)
     {
         quicr::TrackHash th(track_full_name);
@@ -236,6 +242,7 @@ namespace laps::peering {
 
         si.full_name.name_hash = th.track_name_hash;
         si.full_name.full_name_hash = th.track_fullname_hash;
+        si.subscribe_data.assign(subscribe_data.begin(), subscribe_data.end());
 
         for (const auto& sess : client_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(LOGGER, "Sending subscribe to id: {} peer_session_id: {}", si.id, sess.first);

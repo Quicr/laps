@@ -24,6 +24,8 @@ namespace laps::peering {
         NodeIdValueType source_node_id; ///< Id of the originating source node
 
         FullNameHash full_name; ///< Full name hash
+        std::vector<uint8_t>
+          subscribe_data; /// Original MoQ subscribe message (wire format) that initiated this subscribe
 
         /**
          * @brief Encode node object into bytes that can be written on the wire
