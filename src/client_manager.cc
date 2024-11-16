@@ -87,6 +87,7 @@ namespace laps {
                                          const quicr::PublishAnnounceAttributes& attrs)
     {
         auto th = quicr::TrackHash({ track_namespace, {}, std::nullopt });
+        bool notify_peering_manager{ false };
 
         SPDLOG_INFO("Received announce from connection handle: {0} for namespace_hash: {1}",
                     connection_handle,
@@ -100,7 +101,7 @@ namespace laps {
              */
             PurgePublishState(connection_handle);
         } else {
-            peer_manager_.ClientAnnounce({ track_namespace, {}, th.track_fullname_hash }, attrs, false);
+            notify_peering_manager = true;
         }
 
         AnnounceResponse announce_response;
@@ -143,6 +144,11 @@ namespace laps {
                     state_.pub_subscribes[{ a_who.track_alias, connection_handle }] = sub_track_handler;
                 }
             }
+        }
+
+        if (notify_peering_manager) {
+            // Needs to be done last
+            peer_manager_.ClientAnnounce({ track_namespace, {}, th.track_fullname_hash }, attrs, false);
         }
     }
 
