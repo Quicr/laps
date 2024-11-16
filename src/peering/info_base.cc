@@ -71,6 +71,8 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
+        subscribes_info_[subscribe_info.track_hash.track_namespace_hash] = subscribe_info;
+
         auto [__, is_new] =
           subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id);
         return is_new;
@@ -82,11 +84,11 @@ namespace laps::peering {
         bool removed{ false };
 
         auto it = subscribes_.find(subscribe_info.track_hash.track_fullname_hash);
-
         if (it != subscribes_.end()) {
             removed = it->second.erase(subscribe_info.source_node_id) ? true : false;
 
             if (it->second.empty()) {
+                subscribes_info_.erase(subscribe_info.track_hash.track_namespace_hash);
                 subscribes_.erase(it);
             }
         }

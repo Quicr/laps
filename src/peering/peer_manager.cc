@@ -125,26 +125,6 @@ namespace laps::peering {
                         SPDLOG_LOGGER_INFO(LOGGER,
                                            "New subscribe fullname: {}, sending subscribe to client manager",
                                            subscribe_info.track_hash.track_fullname_hash);
-                        /*
-                                                    if (auto cm = client_manager_.lock()) {
-
-                                                        quicr::SubscribeAttributes s_attrs;
-                                                        s_attrs.priority = 10;
-
-                                                        quicr::messages::MoqSubscribe sub;
-                                                        subscribe_info.subscribe_data >> sub;
-
-                                                        SPDLOG_LOGGER_INFO(
-                                                          LOGGER, "Subscribe to client manager track alias: {}",
-                           sub.track_alias);
-
-                                                        cm->ProcessSubscribe(0,
-                                                                             0,
-                                                                             subscribe_info.track_hash,
-                                                                             { sub.track_namespace, sub.track_name
-                           }, s_attrs);
-                                                    }
-                                                    */
                     }
                 }
             }
@@ -316,6 +296,26 @@ namespace laps::peering {
               LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
             ai.source_node_id = sess.second->node_info_.id;
             sess.second->SendAnnounceInfo(ai, withdraw);
+        }
+
+        if (not withdraw) {
+            // TODO: change to not iterate over all subscribes to find a match
+            for (const auto& sub_info : info_base_->subscribes_info_) {
+                quicr::messages::MoqSubscribe sub;
+                sub_info.second.subscribe_data >> sub;
+
+                if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
+                    if (auto cm = client_manager_.lock()) {
+                        quicr::SubscribeAttributes s_attrs;
+                        s_attrs.priority = 10;
+
+                        SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
+
+                        cm->ProcessSubscribe(
+                          0, 0, sub_info.second.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
+                    }
+                }
+            }
         }
     }
 
