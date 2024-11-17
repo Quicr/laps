@@ -300,9 +300,11 @@ namespace laps::peering {
 
         if (not withdraw) {
             // TODO: change to not iterate over all subscribes to find a match
-            for (const auto& sub_info : info_base_->subscribes_info_) {
+            for (const auto& [ftn, sub_map] : info_base_->subscribes_) {
+                const auto& sub_info = sub_map.begin()->second; // Only need the first entry in the set
+
                 quicr::messages::MoqSubscribe sub;
-                sub_info.second.subscribe_data >> sub;
+                sub_info.subscribe_data >> sub;
 
                 if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
                     if (auto cm = client_manager_.lock()) {
@@ -312,7 +314,7 @@ namespace laps::peering {
                         SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
                         cm->ProcessSubscribe(
-                          0, 0, sub_info.second.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
+                          0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
                     }
                 }
             }

@@ -71,10 +71,10 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        subscribes_info_[subscribe_info.track_hash.track_namespace_hash] = subscribe_info;
-
         auto [__, is_new] =
-          subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id);
+          subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id, subscribe_info);
+
+        // TODO: If not new, update metrics in existing entry
         return is_new;
     }
 
@@ -88,10 +88,10 @@ namespace laps::peering {
             removed = it->second.erase(subscribe_info.source_node_id) ? true : false;
 
             if (it->second.empty()) {
-                subscribes_info_.erase(subscribe_info.track_hash.track_namespace_hash);
                 subscribes_.erase(it);
             }
         }
+
 
         return removed;
     }
@@ -100,29 +100,29 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        auto it = announces_.find(announce_info.full_name.namespace_hash);
-        if (it == announces_.end()) {
-            announces_[announce_info.full_name.namespace_hash].emplace(announce_info.source_node_id);
-            return true;
-        }
+        auto [__, is_new] =
+          announces_[announce_info.full_name.namespace_hash].emplace(announce_info.source_node_id, announce_info);
 
-        const auto [__, is_new] = it->second.emplace(announce_info.source_node_id);
+        // TODO: If not new, update metrics in existing entry
+
         return is_new;
     }
 
     bool InfoBase::RemoveAnnounce(const AnnounceInfo& announce_info)
     {
+        bool removed {false};
         std::lock_guard _(mutex_);
 
-        auto it = subscribes_.find(announce_info.full_name.namespace_hash);
+        auto it = announces_.find(announce_info.full_name.namespace_hash);
+        if (it != announces_.end()) {
+            removed = it->second.erase(announce_info.source_node_id) ? true : false;
 
-        if (it == subscribes_.end()) {
-            if (it->second.erase(announce_info.source_node_id)) {
-                return true;
+            if (it->second.empty()) {
+                announces_.erase(it);
             }
         }
 
-        return false;
+        return removed;
     }
 
     PeerSession& InfoBase::GetBestPeerSession(NodeIdValueType node_id)

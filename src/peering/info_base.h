@@ -106,12 +106,7 @@ namespace laps::peering {
          *    peering session.
          */
         std::unordered_map<NodeIdValueType, std::weak_ptr<PeerSession>> nodes_best_;
-        std::map<quicr::TrackFullNameHash, std::set<NodeIdValueType>> subscribes_;
-
-        /**
-         * @brief
-         */
-        std::map<quicr::TrackFullNameHash, SubscribeInfo> subscribes_info_;
+        std::map<quicr::TrackFullNameHash, std::map<NodeIdValueType, SubscribeInfo>> subscribes_;
 
         struct FibEntry
         {
@@ -131,7 +126,7 @@ namespace laps::peering {
         std::map<std::pair<PeerSessionId, NodeIdValueType>, FibEntry> peer_fib_;
 
         /// Key is the namespace hash of the announce (hash of tuple and name), value is the source node ID
-        std::map<quicr::TrackNamespaceHash, std::set<NodeIdValueType>> announces_;
+        std::map<quicr::TrackNamespaceHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;
 
         /**
          * @brief Nodes by peer session id

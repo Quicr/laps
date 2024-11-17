@@ -249,6 +249,7 @@ namespace laps::peering {
                             manager_.NodeReceived(GetSessionId(), connect.node_info, false);
                             SendConnectOk();
 
+                            // TODO(tievens): Send node, subscribes and announce info
                             break;
                         }
 
@@ -258,6 +259,9 @@ namespace laps::peering {
                             if (connect_resp.error == ProtocolError::kNoError) {
                                 remote_node_info_ = *connect_resp.node_info;
                                 manager_.NodeReceived(GetSessionId(), *connect_resp.node_info, false);
+
+                                // TODO(tievens): Send node, subscribes and announce info
+
                             } else {
                                 SPDLOG_LOGGER_DEBUG(config_.logger_,
                                                     "Connect error response from id: {} contact: {} error: {}",
