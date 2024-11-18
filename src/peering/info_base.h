@@ -22,12 +22,6 @@ namespace laps::peering {
         InfoBase() = default;
         virtual ~InfoBase() = default;
 
-        struct NodeItem
-        {
-            std::weak_ptr<PeerSession> peer_session;
-            NodeInfo node_info;
-        };
-
         /**
          * @brief Add or update node in the info base
          * @details This will add or update a node in the info base. Upon update, other tables
@@ -90,6 +84,12 @@ namespace laps::peering {
          * @return True if node is better and updated, False if not
          */
         bool SelectBestNode(NodeIdValueType node_id);
+
+        struct NodeItem
+        {
+            std::weak_ptr<PeerSession> peer_session;
+            NodeInfo node_info;
+        };
 
         /**
          * @brief Table of nodes (all received node info), indexed by node id and peer session id

@@ -249,7 +249,7 @@ namespace laps::peering {
                             manager_.NodeReceived(GetSessionId(), connect.node_info, false);
                             SendConnectOk();
 
-                            // TODO(tievens): Send node, subscribes and announce info
+                            manager_.InfoBaseSyncPeer(*this);
                             break;
                         }
 
@@ -260,7 +260,7 @@ namespace laps::peering {
                                 remote_node_info_ = *connect_resp.node_info;
                                 manager_.NodeReceived(GetSessionId(), *connect_resp.node_info, false);
 
-                                // TODO(tievens): Send node, subscribes and announce info
+                                manager_.InfoBaseSyncPeer(*this);
 
                             } else {
                                 SPDLOG_LOGGER_DEBUG(config_.logger_,

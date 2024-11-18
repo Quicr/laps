@@ -64,6 +64,8 @@ namespace laps::peering {
             client_manager_ = std::move(client_manager);
         }
 
+        void InfoBaseSyncPeer(PeerSession& peer_session);
+
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
         // -------------------------------------------------------------------------------

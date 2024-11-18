@@ -380,6 +380,54 @@ namespace laps::peering {
         SPDLOG_LOGGER_INFO(LOGGER, "Closed peer manager stopped");
     }
 
+    void PeerManager::InfoBaseSyncPeer(PeerSession& peer_session)
+    {
+        std::lock_guard _(mutex_);
+
+        // Send all node info
+        for (const auto& [key, node_item] : info_base_->nodes_) {
+            if (key.first == peer_session.node_info_.id || key.second == peer_session.GetSessionId() ||
+                key.first == peer_session.remote_node_info_.id)
+                continue; // Skip, node is self, learned from peer, or peer is the node info
+
+            bool skip{ false };
+            for (auto& npi : node_item.node_info.path) {
+                if (npi.id == peer_session.remote_node_info_.id) {
+                    skip = true;
+                    break; // Skip, remote peer is in path
+                }
+            }
+
+            if (skip)
+                continue;
+
+            peer_session.SendNodeInfo(node_item.node_info);
+        }
+
+        // Send all announces
+        for (const auto& [th, anno_item] : info_base_->announces_) {
+            for (const auto& [_, anno_info]: anno_item) {
+                if (peer_session.GetSessionId() == anno_info.source_node_id ||
+                    peer_session.remote_node_info_.id == anno_info.source_node_id)
+                    continue; // Skip, don't send self or remote to self
+
+                peer_session.SendAnnounceInfo(anno_info);
+            }
+        }
+
+        // Send all subscribes
+        for (const auto& [tfh, sub_item] : info_base_->subscribes_) {
+            for (const auto& [_, sub_info]: sub_item) {
+                if (peer_session.GetSessionId() == sub_info.source_node_id ||
+                    peer_session.remote_node_info_.id == sub_info.source_node_id)
+                    continue; // Skip, don't send self or remote to self
+
+                peer_session.SendSubscribeInfo(sub_info);
+            }
+        }
+    }
+
+
     void PeerManager::PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw)
     {
         std::lock_guard _(mutex_);
