@@ -193,7 +193,7 @@ namespace laps::peering {
                 auto node_item = nodes_.at({ node.first, node_info->GetSessionId() });
                 SPDLOG_DEBUG("Forwarding table node id: {} contact {} best via peer_session id: {} contact: {} "
                              "path_len: {} sum_srtt: {}",
-                             node.first,
+                             NodeId().Value(node.first),
                              node_item.node_info.contact,
                              node_info->GetSessionId(),
                              node_info->remote_node_info_.contact,

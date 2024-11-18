@@ -123,7 +123,15 @@ namespace laps::peering {
          */
         std::map<std::pair<quicr::TrackFullNameHash, PeerSessionId>, FibEntry> client_fib_;
 
-        std::map<std::pair<PeerSessionId, NodeIdValueType>, FibEntry> peer_fib_;
+        /**
+         * @brief Peer forwarding information base (table)
+         * @details Peer receives subscribe node sets (SNS) via control channel. The SNS has a session scope
+         *   ID that is set by the sender of data objects. Upon receiving the data object the
+         *   SNS ID is looked up to forward data to other peers using an egress SNS ID for that peer session.
+         *   A session Id=0 and SNS ID=0 indicates that this relay has a client that is interested and that
+         *   the object should be sent to the client manager to fan out the data to subscribers.
+         */
+        std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, FibEntry> peer_fib_;
 
         /// Key is the namespace hash of the announce (hash of tuple and name), value is the source node ID
         std::map<quicr::TrackNamespaceHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;

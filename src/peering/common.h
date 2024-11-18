@@ -110,7 +110,7 @@ namespace laps::peering {
     }
 
     template<typename T, std::enable_if_t<std::is_integral<T>::value || std::is_floating_point<T>::value, bool> = true>
-    T ValueOf(Span<uint8_t const> value, bool host_order = true)
+    constexpr T ValueOf(Span<uint8_t const> value, bool host_order = true)
     {
         T rval{ 0 };
         auto rval_ptr = reinterpret_cast<uint8_t*>(&rval);

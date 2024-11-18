@@ -83,6 +83,11 @@ namespace laps::peering {
         }
 
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
+
+        if (is_new) {
+            SendSns(sns, false);
+        }
+
         return { it->second.id, is_new };
     }
 
@@ -101,12 +106,24 @@ namespace laps::peering {
             if (sns.nodes.empty()) {
                 sns_removed = true;
                 transport_->DeleteDataContext(t_conn_id_, it->second.id);
+
+                SendSns(sns, true);
+
                 sns_.erase(it);
+
             }
         }
 
         return { node_removed, sns_removed };
     }
+
+    void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw)
+    {
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Sending SNS id: {} set size: {} withdraw: {}", sns.id, sns.nodes.size(), withdraw);
+
+        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, sns.Serialize(true, withdraw), 0, 1000);
+    }
+
 
     void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
     {
@@ -237,7 +254,7 @@ namespace laps::peering {
                         case MsgType::kConnect: {
                             peering::Connect connect(msg_bytes);
                             SPDLOG_LOGGER_DEBUG(config_.logger_,
-                                                "Connect from id: {} contact: {} mode: {} ",
+                                                "Connect from id: {} contact: {} mode: {}",
                                                 NodeId().Value(connect.node_info.id),
                                                 connect.node_info.contact,
                                                 static_cast<int>(connect.mode));
@@ -271,6 +288,27 @@ namespace laps::peering {
                             }
                             status_ = StatusValue::kConnected;
                             manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
+                            break;
+                        }
+
+                        case MsgType::kSubscribeNodeSetAdvertised: {
+                            SubscribeNodeSet sns(msg_bytes, false);
+
+                            if (config_.debug) {
+                                std::ostringstream sns_nodes;
+                                for (const auto& node : sns.nodes) {
+                                    sns_nodes << NodeId().Value(node) << ", ";
+                                }
+
+                                SPDLOG_LOGGER_DEBUG(LOGGER, "SNS received id: {} nodes: {}", sns.id, sns_nodes.str());
+                            }
+
+                            break;
+                        }
+
+                        case MsgType::kSubscribeNodeSetWithdrawn: {
+                            SubscribeNodeSet sns(msg_bytes, true);
+                            SPDLOG_LOGGER_DEBUG(LOGGER, "SNS withdrawn received id: {}", sns.id);
                             break;
                         }
 

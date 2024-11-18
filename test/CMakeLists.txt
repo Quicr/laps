@@ -7,12 +7,14 @@ add_executable(laps_test
         peering_connect.cc
         peering_subscribe.cc
         peering_announce.cc
+        peering_sns.cc
 
         ../src/peering/messages/connect.cc
         ../src/peering/messages/connect_response.cc
         ../src/peering/messages/node_info.cc
         ../src/peering/messages/subscribe_info.cc
         ../src/peering/messages/announce_info.cc
+        ../src/peering/messages/subscribe_node_set.cc
 )
 target_include_directories(laps_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 

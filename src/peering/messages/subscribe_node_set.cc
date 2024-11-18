@@ -11,19 +11,21 @@ namespace laps::peering {
                + nodes.size() * sizeof(NodeIdValueType);
     }
 
-    SubscribeNodeSet::SubscribeNodeSet(Span<const uint8_t> serialized_data)
+    SubscribeNodeSet::SubscribeNodeSet(Span<const uint8_t> serialized_data, bool withdraw)
     {
         auto it = serialized_data.begin();
 
-        id = ValueOf<uint64_t>({ it, it + 4 });
+        id = ValueOf<uint32_t>({ it, it + 4 });
         it += 4;
 
-        uint16_t num_nodes = ValueOf<uint64_t>({ it, it + 2 });
-        it += 2;
+        if (not withdraw) {
+            uint16_t num_nodes = ValueOf<uint16_t>({ it, it + 2 });
+            it += 2;
 
-        for (uint16_t i = 0; i < num_nodes; i++) {
-            nodes.emplace(ValueOf<NodeIdValueType>({ it, it + sizeof(NodeIdValueType) }));
-            it += sizeof(NodeIdValueType);
+            for (uint16_t i = 0; i < num_nodes; i++) {
+                nodes.emplace(ValueOf<NodeIdValueType>({ it, it + sizeof(NodeIdValueType) }));
+                it += sizeof(NodeIdValueType);
+            }
         }
     }
 
@@ -32,7 +34,7 @@ namespace laps::peering {
         auto id_bytes = BytesOf(sns.id);
         data.insert(data.end(), id_bytes.rbegin(), id_bytes.rend());
 
-        auto num_nodes = sns.nodes.size();
+        uint16_t num_nodes = sns.nodes.size();
         auto num_nodes_bytes = BytesOf(num_nodes);
         data.insert(data.end(), num_nodes_bytes.rbegin(), num_nodes_bytes.rend());
 
@@ -62,7 +64,14 @@ namespace laps::peering {
             data.reserve(SizeBytes());
         }
 
-        data << *this;
+        if (withdraw) {
+            auto id_bytes = BytesOf(id);
+            data.insert(data.end(), id_bytes.rbegin(), id_bytes.rend());
+
+        } else {
+            data << *this;
+        }
+
         return data;
     }
 }
