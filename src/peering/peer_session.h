@@ -88,6 +88,19 @@ namespace laps::peering {
         void SendSns(const SubscribeNodeSet& sns, bool withdraw = false);
 
         /**
+         * @brief Add subscriber source node to the peer SNS state
+         *
+         * @param in_peer_session_id Ingress peer session ID
+         * @param in_sns_id          Ingress peer session SNS ID
+         * @param sub_node_id        Source NodeId of the node that has the subscriber
+         *
+         * @returns pair Subscribe Node Set Id and True if subscriber node is new or False if existing
+         */
+        std::pair<SubscribeNodeSetId, bool> AddPeerSnsSourceNode(PeerSessionId in_peer_session_id,
+                                                                 SubscribeNodeSetId in_sns_id,
+                                                                 NodeIdValueType sub_node_id);
+
+        /**
          * @brief Add subscriber source node to subscriber id state
          *
          * @param full_name_hash     Subscribe ID (aka track alias)
@@ -112,6 +125,20 @@ namespace laps::peering {
          */
         std::pair<bool, bool> RemoveSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                         NodeIdValueType sub_node_id);
+
+        /**
+         * @brief Remove subscriber source node from the peer SNS state
+         *
+         * @param in_peer_session_id Ingress peer session ID
+         * @param in_sns_id          Ingress peer session SNS ID
+         * @param sub_node_id        Source NodeId of the node that has the subscriber
+         *
+         * @eturns First bool indicates true if source node was removed and second indicates true if there are
+         *   no subscribe nodes
+         */
+        std::pair<bool, bool> RemovePeerSnsSourceNode(PeerSessionId in_peer_session_id,
+                                                      SubscribeNodeSetId in_sns_id,
+                                                      NodeIdValueType sub_node_id);
 
         /*
          * Delegate functions mainly for Outgoing but does include incoming
@@ -164,7 +191,11 @@ namespace laps::peering {
         };
 
         std::map<quicr::TrackFullNameHash, SubscribeNodeSet>
-          sns_; // Map of all subscriber source nodes, indexed by subscribe Id (aka track alias)
+          sub_sns_; // Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)
+
+        /// Map of subscriber source nodes initiated by peer ingress SNS.
+        /// Key is the ingress peer session ID and SNS ID, value is the SNS egress via this peer
+        std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, SubscribeNodeSet> peer_sns_;
 
         quicr::TransportConnId t_conn_id_;         /// Transport connection context ID (aka peer session id)
         quicr::DataContextId control_data_ctx_id_; /// Control data context ID

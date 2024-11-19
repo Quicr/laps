@@ -70,10 +70,33 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
 
+    std::pair<SubscribeNodeSetId, bool> PeerSession::AddPeerSnsSourceNode(PeerSessionId in_peer_session_id,
+                                                                          SubscribeNodeSetId in_sns_id,
+                                                                          NodeIdValueType sub_node_id)
+    {
+        auto [it, new_ingress] = peer_sns_.try_emplace({in_peer_session_id, in_sns_id});
+        auto& sns = it->second;
+
+        if (it->second.id == 0) { // If not set, create the data context
+            // TODO(tievens): Add datagram support - update transport to allow changing reliable state
+            // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
+            it->second.id = transport_->CreateDataContext(t_conn_id_, true, 2, false);
+        }
+
+        auto [__, is_new] = sns.nodes.emplace(sub_node_id);
+
+        if (is_new) {
+            SendSns(sns, false);
+        }
+
+        return { it->second.id, is_new };
+    }
+
+
     std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                                             NodeIdValueType sub_node_id)
     {
-        auto [it, _] = sns_.try_emplace(full_name_hash);
+        auto [it, _] = sub_sns_.try_emplace(full_name_hash);
         auto& sns = it->second;
 
         if (it->second.id == 0) { // If not set, create the data context
@@ -97,8 +120,8 @@ namespace laps::peering {
         bool node_removed{ false };
         bool sns_removed{ false };
 
-        auto it = sns_.find(full_name_hash);
-        if (it != sns_.end()) {
+        auto it = sub_sns_.find(full_name_hash);
+        if (it != sub_sns_.end()) {
             auto& sns = it->second;
 
             node_removed = sns.nodes.erase(sub_node_id) ? true : false;
@@ -109,8 +132,41 @@ namespace laps::peering {
 
                 SendSns(sns, true);
 
-                sns_.erase(it);
+                sub_sns_.erase(it);
 
+            }
+        }
+
+        return { node_removed, sns_removed };
+    }
+
+    std::pair<bool, bool> PeerSession::RemovePeerSnsSourceNode(PeerSessionId in_peer_session_id,
+                                                               SubscribeNodeSetId in_sns_id,
+                                                               NodeIdValueType sub_node_id)
+    {
+        bool node_removed{ false };
+        bool sns_removed{ false };
+
+        auto it = peer_sns_.find({in_peer_session_id, in_sns_id});
+        if (it != peer_sns_.end()) {
+            auto& sns = it->second;
+
+            if (sub_node_id == 0) { // Remove all
+                SendSns(sns, true);
+                peer_sns_.erase(it);
+            }
+
+            else { // Remove one
+                node_removed = sns.nodes.erase(sub_node_id) ? true : false;
+
+                if (sns.nodes.empty()) {
+                    sns_removed = true;
+                    transport_->DeleteDataContext(t_conn_id_, it->second.id);
+
+                    SendSns(sns, true);
+
+                    peer_sns_.erase(it);
+                }
             }
         }
 

@@ -125,13 +125,13 @@ namespace laps::peering {
         return removed;
     }
 
-    PeerSession& InfoBase::GetBestPeerSession(NodeIdValueType node_id)
+    std::weak_ptr<PeerSession> InfoBase::GetBestPeerSession(NodeIdValueType node_id)
     {
         std::lock_guard _(mutex_);
 
         auto it = nodes_best_.find(node_id);
         if (it != nodes_best_.end()) {
-            return *it->second.lock().get();
+            return it->second;
         }
 
         throw std::runtime_error("Peer session not found");

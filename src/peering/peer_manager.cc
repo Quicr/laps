@@ -414,6 +414,50 @@ namespace laps::peering {
         SPDLOG_LOGGER_INFO(LOGGER, "Closed peer manager stopped");
     }
 
+    void PeerManager::SnsReceived(PeerSession& peer_session, const SubscribeNodeSet& sns, bool withdraw)
+    {
+        std::lock_guard _(mutex_);
+
+        if (withdraw) {
+            auto it = info_base_->peer_fib_.find({peer_session.GetSessionId(), sns.id});
+            if (it != info_base_->peer_fib_.end()) {
+                for (const auto& [out_peer_sess_id, entry]: it->second) {
+                    auto out_peer_sess = entry.peer_session.lock();
+                    out_peer_sess->RemovePeerSnsSourceNode(peer_session.GetSessionId(), sns.id, 0);
+                }
+            }
+            return;
+        }
+
+        auto [fib_it, new_ingress] = info_base_->peer_fib_.try_emplace({ peer_session.GetSessionId(), sns.id });
+        if (new_ingress) {
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "New ingress SNS peer session: {} sns id: {}", peer_session.GetSessionId(), sns.id);
+
+            for (const auto& node_id : sns.nodes) {
+
+                if (node_id == node_info_.id) {
+                    // Self
+                    fib_it->second.try_emplace(0);
+                    continue;
+                }
+
+                auto peer_sess_weak = info_base_->GetBestPeerSession(node_id);
+                if (auto peer_sess = peer_sess_weak.lock()) {
+
+                    const auto [out_sns_id, out_new] =
+                      peer_sess->AddPeerSnsSourceNode(peer_sess->GetSessionId(), sns.id, node_id);
+
+                    fib_it->second.try_emplace(peer_sess->GetSessionId(),
+                                               InfoBase::FibEntry{ out_sns_id, peer_sess_weak });
+                }
+            }
+        }
+
+
+    }
+
+
     void PeerManager::InfoBaseSyncPeer(PeerSession& peer_session)
     {
         std::lock_guard _(mutex_);

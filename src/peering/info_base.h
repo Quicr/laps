@@ -74,7 +74,7 @@ namespace laps::peering {
         /**
          * @brief Gets the best peer session for given node id
          */
-        PeerSession& GetBestPeerSession(NodeIdValueType node_id);
+        std::weak_ptr<PeerSession> GetBestPeerSession(NodeIdValueType node_id);
 
         /**
          * @brief Selects and updates the best peer session to use for given node id
@@ -110,7 +110,7 @@ namespace laps::peering {
 
         struct FibEntry
         {
-            SubscribeNodeSetId sns_id;
+            SubscribeNodeSetId sns_id; /// Egress SNS ID
             decltype(nodes_best_)::mapped_type& peer_session;
         };
 
@@ -120,6 +120,8 @@ namespace laps::peering {
          *   peers based on peer subscribes and best peer to reach the subscribing node. This map
          *   is updated by peering manager on peer received subscribes when relay has local
          *   announcement matching the subscribe
+         *
+         *   Key is the track full name hash and the egress peer session id
          */
         std::map<std::pair<quicr::TrackFullNameHash, PeerSessionId>, FibEntry> client_fib_;
 
@@ -130,8 +132,10 @@ namespace laps::peering {
          *   SNS ID is looked up to forward data to other peers using an egress SNS ID for that peer session.
          *   A session Id=0 and SNS ID=0 indicates that this relay has a client that is interested and that
          *   the object should be sent to the client manager to fan out the data to subscribers.
+         *
+         *   Key is the ingress peer session id and sns id. Value is the egress peer session id and fib entry
          */
-        std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, FibEntry> peer_fib_;
+        std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, std::map<PeerSessionId, FibEntry>> peer_fib_;
 
         /// Key is the namespace hash of the announce (hash of tuple and name), value is the source node ID
         std::map<quicr::TrackNamespaceHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;

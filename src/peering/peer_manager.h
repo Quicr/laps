@@ -66,6 +66,8 @@ namespace laps::peering {
 
         void InfoBaseSyncPeer(PeerSession& peer_session);
 
+        void SnsReceived(PeerSession& peer_session, const SubscribeNodeSet& sns, bool withdraw = false);
+
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
         // -------------------------------------------------------------------------------
