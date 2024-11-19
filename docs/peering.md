@@ -511,7 +511,6 @@ SNS information message has the following fields:
 |-----------------|---------------------------------------------------------------------------|
 | SNS ID          | SNS ID of this entry                                                      |
 | Target Node Set | Target node ID set. Array of all nodes that should be forwarded this data |
-| Track Alias     | MoQT Track Alias                                                          |
 
 The target node set is generated based on the [Best Node Information](#node-information) via the peering session.
 For example, when subscribes are received by the publisher relay (aka origin relay) the subscriber information
@@ -551,11 +550,11 @@ Only the receiving edge relay needs to know the start/end of MoQT QUIC streamed 
 sent correctly to the subscriber(s).  To support this with QUIC streams, an additional header for each object is
 used (QUIC streams only). All MoQT data via QUIC streams is sent using the below header to wrap the data object. 
 
-| Field          | Description                                                                           |
-|----------------|---------------------------------------------------------------------------------------|
-| payload length | QUIC variable length integer length value that indicates the payload length to follow |
-| payload        | Payload bytes based on the length indicated                                           |
-
+| Field                | Description                                                                           |
+|----------------------|---------------------------------------------------------------------------------------|
+| track full name hash | Track full name hash (aka MoQ track alias)                                            |
+| payload length       | QUIC variable length integer length value that indicates the payload length to follow |
+| payload              | Payload bytes based on the length indicated                                           |
 
 ### Matching Subscribes to Announcements
 
