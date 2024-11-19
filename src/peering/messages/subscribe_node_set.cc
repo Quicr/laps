@@ -5,8 +5,12 @@
 
 namespace laps::peering {
 
-    uint32_t SubscribeNodeSet::SizeBytes() const
+    uint32_t SubscribeNodeSet::SizeBytes(bool withdraw) const
     {
+        if (withdraw) {
+            return sizeof(SubscribeNodeSetId);
+        }
+
         return sizeof(SubscribeNodeSetId) + 2 /* num of subscriber nodes */
                + nodes.size() * sizeof(NodeIdValueType);
     }
@@ -51,17 +55,17 @@ namespace laps::peering {
         std::vector<uint8_t> data;
 
         if (include_common_header) {
-            data.reserve(kCommonHeadersSize + SizeBytes());
+            data.reserve(kCommonHeadersSize + SizeBytes(withdraw));
             data.push_back(kProtocolVersion);
             uint16_t type = static_cast<uint16_t>(withdraw ? MsgType::kSubscribeNodeSetWithdrawn
                                                            : MsgType::kSubscribeNodeSetAdvertised);
             auto type_bytes = BytesOf(type);
             data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
-            auto sns_size = SizeBytes();
+            auto sns_size = SizeBytes(withdraw);
             auto data_len_bytes = BytesOf(sns_size);
             data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
         } else {
-            data.reserve(SizeBytes());
+            data.reserve(SizeBytes(withdraw));
         }
 
         if (withdraw) {

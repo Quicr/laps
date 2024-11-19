@@ -33,7 +33,7 @@ namespace laps::peering {
         SubscribeNodeSet(NodeIdValueType source_node_id, const FullNameHash& full_name);
         SubscribeNodeSet(Span<uint8_t const> serialized_data, bool withdraw = false);
 
-        uint32_t SizeBytes() const;
+        uint32_t SizeBytes(bool withdraw) const;
 
         bool operator<(const SubscribeNodeSet& other) const { return id < other.id; }
         bool operator==(const SubscribeNodeSet& other) const { return id == other.id; }
