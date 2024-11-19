@@ -359,12 +359,14 @@ namespace laps::peering {
                                 SPDLOG_LOGGER_DEBUG(LOGGER, "SNS received id: {} nodes: {}", sns.id, sns_nodes.str());
                             }
 
+                            manager_.SnsReceived(*this, sns, false);
                             break;
                         }
 
                         case MsgType::kSubscribeNodeSetWithdrawn: {
                             SubscribeNodeSet sns(msg_bytes, true);
                             SPDLOG_LOGGER_DEBUG(LOGGER, "SNS withdrawn received id: {}", sns.id);
+                            manager_.SnsReceived(*this, sns, true);
                             break;
                         }
 

@@ -110,8 +110,9 @@ namespace laps::peering {
 
         struct FibEntry
         {
+            uint64_t update_ref{ 0 };  /// Random reference number to detect if entry was updated or not
             SubscribeNodeSetId sns_id; /// Egress SNS ID
-            decltype(nodes_best_)::mapped_type& peer_session;
+            decltype(nodes_best_)::mapped_type peer_session;
         };
 
         /**

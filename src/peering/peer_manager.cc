@@ -77,6 +77,8 @@ namespace laps::peering {
          * and send notification to client manager that there is a subscribe.
          */
         if (not withdraw) {
+            uint64_t update_ref = rand();
+
             auto it = state_.announce_active.lower_bound({ subscribe_info.track_hash.track_namespace_hash, 0 });
             if (it != state_.announce_active.end()) {
                 SPDLOG_LOGGER_INFO(
@@ -109,17 +111,18 @@ namespace laps::peering {
                     if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
                           subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id);
                         is_new) {
-                        SPDLOG_LOGGER_INFO(LOGGER,
-                                           "New source added to peer session for subscribe fullname: {} source_node: {} is "
-                                           "via peer_session_id: {} sns_id: {}",
-                                           subscribe_info.track_hash.track_fullname_hash,
-                                           subscribe_info.source_node_id,
-                                           peer_session->GetSessionId(),
-                                           sns_id);
+                        SPDLOG_LOGGER_INFO(
+                          LOGGER,
+                          "New source added to peer session for subscribe fullname: {} source_node: {} is "
+                          "via peer_session_id: {} sns_id: {}",
+                          subscribe_info.track_hash.track_fullname_hash,
+                          subscribe_info.source_node_id,
+                          peer_session->GetSessionId(),
+                          sns_id);
 
                         if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
                               { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
-                              InfoBase::FibEntry{ sns_id, bp_it->second });
+                              InfoBase::FibEntry{ update_ref, sns_id, bp_it->second });
                             is_new) {
                             SPDLOG_LOGGER_INFO(LOGGER,
                                                "New subscribe fullname: {}, sending subscribe to client manager",
@@ -299,6 +302,8 @@ namespace laps::peering {
         }
 
         if (not withdraw) {
+            uint64_t update_ref = rand();
+
             // TODO: change to not iterate over all subscribes to find a match
             for (const auto& [ftn, sub_map] : info_base_->subscribes_) {
                 const auto& sub_info = sub_map.begin()->second; // Only need the first entry in the set
@@ -314,7 +319,7 @@ namespace laps::peering {
                         SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
                         cm->ProcessSubscribe(
-                          0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
+                          0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name, 0 }, s_attrs);
                     }
 
                     auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);
@@ -341,12 +346,11 @@ namespace laps::peering {
 
                             if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
                                   { sub_info.track_hash.track_fullname_hash, peer_session->GetSessionId() },
-                                  InfoBase::FibEntry{ sns_id, bp_it->second });
+                                  InfoBase::FibEntry{ update_ref, sns_id, bp_it->second });
                                 is_new) {
-                                SPDLOG_LOGGER_INFO(
-                                  LOGGER,
-                                  "New subscribe fullname: {}, sending subscribe to client manager",
-                                  sub_info.track_hash.track_fullname_hash);
+                                SPDLOG_LOGGER_INFO(LOGGER,
+                                                   "New subscribe fullname: {}, sending subscribe to client manager",
+                                                   sub_info.track_hash.track_fullname_hash);
                             }
                         }
                     }
@@ -416,16 +420,24 @@ namespace laps::peering {
 
     void PeerManager::SnsReceived(PeerSession& peer_session, const SubscribeNodeSet& sns, bool withdraw)
     {
+        uint64_t update_ref = rand();
+
         std::lock_guard _(mutex_);
 
         if (withdraw) {
-            auto it = info_base_->peer_fib_.find({peer_session.GetSessionId(), sns.id});
+            auto it = info_base_->peer_fib_.find({ peer_session.GetSessionId(), sns.id });
             if (it != info_base_->peer_fib_.end()) {
-                for (const auto& [out_peer_sess_id, entry]: it->second) {
+                for (const auto& [out_peer_sess_id, entry] : it->second) {
+                    if (out_peer_sess_id == 0)
+                        continue;
+
                     auto out_peer_sess = entry.peer_session.lock();
                     out_peer_sess->RemovePeerSnsSourceNode(peer_session.GetSessionId(), sns.id, 0);
                 }
+
+                info_base_->peer_fib_.erase(it);
             }
+
             return;
         }
 
@@ -438,7 +450,7 @@ namespace laps::peering {
 
                 if (node_id == node_info_.id) {
                     // Self
-                    fib_it->second.try_emplace(0);
+                    fib_it->second.try_emplace(0, InfoBase::FibEntry{ 0, {} });
                     continue;
                 }
 
@@ -446,17 +458,75 @@ namespace laps::peering {
                 if (auto peer_sess = peer_sess_weak.lock()) {
 
                     const auto [out_sns_id, out_new] =
-                      peer_sess->AddPeerSnsSourceNode(peer_sess->GetSessionId(), sns.id, node_id);
+                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
 
                     fib_it->second.try_emplace(peer_sess->GetSessionId(),
-                                               InfoBase::FibEntry{ out_sns_id, peer_sess_weak });
+                                               InfoBase::FibEntry{ update_ref, out_sns_id, peer_sess_weak });
                 }
             }
         }
 
+        else { // Existing
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "Update to ingress SNS peer session: {} sns id: {}", peer_session.GetSessionId(), sns.id);
 
+            for (const auto& node_id : sns.nodes) {
+                auto peer_sess_weak = info_base_->GetBestPeerSession(node_id);
+                auto peer_sess = peer_sess_weak.lock();
+
+                auto it = fib_it->second.find(peer_sess->GetSessionId());
+                if (it == fib_it->second.end()) {
+                    // New entry
+                    const auto [o_sns_id, __] =
+                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+
+                    fib_it->second.try_emplace(peer_sess->GetSessionId(),
+                           InfoBase::FibEntry{ update_ref, o_sns_id, peer_sess_weak });
+
+                    SPDLOG_LOGGER_DEBUG(LOGGER,
+                                        "SNS added peer session: {} sns id: {} added source node_id: {}",
+                                        peer_sess->GetSessionId(),
+                                        o_sns_id,
+                                        NodeId().Value(node_id));
+
+                } else {
+                    // Existing entry
+                    const auto [o_sns_id, is_new] =
+                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+                    if (is_new) {
+                        SPDLOG_LOGGER_DEBUG(LOGGER,
+                                            "SNS update peer session: {} sns id: {} added source node_id: {}",
+                                            it->second.peer_session.lock()->GetSessionId(),
+                                            o_sns_id,
+                                            NodeId().Value(node_id));
+                    }
+
+                    fib_it->second.try_emplace(peer_sess->GetSessionId(),
+                           InfoBase::FibEntry{ update_ref, o_sns_id, peer_sess_weak });
+
+                }
+            }
+
+            // Not ideal, but iterate over map of peers to remove entries that were not updated
+            std::vector<PeerSessionId> remove_peers;
+            for (auto& [peer_sess_id, entry]: fib_it->second) {
+                if (entry.update_ref == update_ref)
+                    continue;
+
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "SNS update remove peer session: {} sns id: {}",
+                                    entry.peer_session.lock()->GetSessionId(),
+                                    entry.sns_id);
+
+                entry.peer_session.lock()->RemovePeerSnsSourceNode(peer_session.GetSessionId(), sns.id, 0);
+                remove_peers.push_back(peer_sess_id);
+            }
+
+            for (const auto& peer_sess_id: remove_peers) {
+                fib_it->second.erase(peer_sess_id);
+            }
+        }
     }
-
 
     void PeerManager::InfoBaseSyncPeer(PeerSession& peer_session)
     {
@@ -484,7 +554,7 @@ namespace laps::peering {
 
         // Send all announces
         for (const auto& [th, anno_item] : info_base_->announces_) {
-            for (const auto& [_, anno_info]: anno_item) {
+            for (const auto& [_, anno_info] : anno_item) {
                 if (peer_session.GetSessionId() == anno_info.source_node_id ||
                     peer_session.remote_node_info_.id == anno_info.source_node_id)
                     continue; // Skip, don't send self or remote to self
@@ -495,7 +565,7 @@ namespace laps::peering {
 
         // Send all subscribes
         for (const auto& [tfh, sub_item] : info_base_->subscribes_) {
-            for (const auto& [_, sub_info]: sub_item) {
+            for (const auto& [_, sub_info] : sub_item) {
                 if (peer_session.GetSessionId() == sub_info.source_node_id ||
                     peer_session.remote_node_info_.id == sub_info.source_node_id)
                     continue; // Skip, don't send self or remote to self
@@ -504,7 +574,6 @@ namespace laps::peering {
             }
         }
     }
-
 
     void PeerManager::PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw)
     {
