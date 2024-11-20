@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
 #include "client_manager.h"
+#include "messages/data_object.h"
 #include "state.h"
+
 #include <chrono>
 #include <sstream>
 
@@ -237,6 +239,24 @@ namespace laps::peering {
                     info_base_->PurgePeerSessionInfo(peer_session_id);
                 break;
         }
+    }
+
+    void PeerManager::ClientDataObject(const quicr::FullTrackName& full_track_name,
+                                       uint8_t priority,
+                                       uint16_t ttl,
+                                       DataObjectType type,
+                                       Span<uint8_t const> data)
+    {
+        quicr::TrackHash th(full_track_name);
+
+        DataObject data_object;
+        data_object.type = type;
+        data_object.priority = priority;
+        data_object.ttl = ttl;
+        data_object.data = data;
+
+        auto net_data = data_object.Serialize()
+
     }
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,

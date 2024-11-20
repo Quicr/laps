@@ -40,14 +40,21 @@ namespace laps::peering {
 
         uint64_t data_length; ///< Length of data object (aka payload) as uintvar on wire
 
-        std::vector<uint8_t> data; ///< Data payload (aka object data)
+        /**
+         * @brief Span of data (aka object payload)
+         *
+         * @note This is a bit dangerous because:
+         *    1. app must not allow this data to go out of scope
+         *      till the object is finished. PeerManager::ClientDataObject() and other peering
+         *      methods are designed to deal with this.
+         *    2. Deserialized data must not go out of scope either. Peering receive data handles this.
+         */
+        Span<uint8_t const> data;
 
         /**
          * @brief Encode data object into bytes that can be written on the wire
-         *
-         * @param include_header     True to prepend common header
          */
-        std::vector<uint8_t> Serialize(bool include_header) const;
+        std::vector<uint8_t> Serialize() const;
 
         DataObject() = default;
         DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type);

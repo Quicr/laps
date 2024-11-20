@@ -7,6 +7,7 @@
 #include "client_manager.h"
 #include "config.h"
 #include "publish_handler.h"
+#include "spdlog/fmt/bundled/chrono.h"
 #include "subscribe_handler.h"
 
 namespace laps {
@@ -230,6 +231,10 @@ namespace laps {
 
         auto ftn = sub_it->second.track_full_name;
         auto th = quicr::TrackHash(sub_it->second.track_full_name);
+
+        if (sub_it->second.publish_handler != nullptr) {
+            // TODO(tievens): Clean up publish track handler by adding unbind
+        }
 
         state_.subscribes.erase(sub_it);
 

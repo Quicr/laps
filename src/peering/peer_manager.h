@@ -9,6 +9,7 @@
 
 #include "config.h"
 #include "info_base.h"
+#include "messages/data_object.h"
 #include "peer_session.h"
 #include "state.h"
 
@@ -39,6 +40,12 @@ namespace laps::peering {
         void SessionChanged(PeerSessionId peer_session_id,
                             PeerSession::StatusValue status,
                             const NodeInfo& remote_node_info);
+
+        void ClientDataObject(const quicr::FullTrackName& full_track_name,
+                              uint8_t priority,
+                              uint16_t ttl,
+                              DataObjectType type,
+                              Span<uint8_t const> data);
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,
                             const quicr::PublishAnnounceAttributes&,

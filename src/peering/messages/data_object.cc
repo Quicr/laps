@@ -73,8 +73,11 @@ namespace laps::peering {
         data_length = uint64_t(quicr::UintVar({ it, it + data_len_uv_size }));
         it += data_len_uv_size;
 
-        data.reserve(data_length);
-        data.assign(it, it + data_length);
+        if (data_len_uv_size > serialized_data.end() - it) {
+            throw std::runtime_error("data length exceeds data object size");
+        }
+
+        data = {it, it + data_length};
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const DataObject& data_object)
@@ -118,23 +121,11 @@ namespace laps::peering {
         return data;
     }
 
-    std::vector<uint8_t> DataObject::Serialize(bool include_header) const
+    std::vector<uint8_t> DataObject::Serialize() const
     {
         std::vector<uint8_t> data;
 
-        if (include_header) {
-            data.reserve(kCommonHeadersSize + SizeBytes());
-            data.push_back(kProtocolVersion);
-            uint16_t htype = static_cast<uint8_t>(MsgType::kDataObject);
-            auto type_bytes = BytesOf(htype);
-            data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
-            auto d_size = SizeBytes();
-            auto data_len_bytes = BytesOf(d_size);
-            data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
-
-        } else {
-            data.reserve(SizeBytes());
-        }
+        data.reserve(SizeBytes());
 
         data << *this;
         return data;
