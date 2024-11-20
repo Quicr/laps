@@ -3,18 +3,38 @@
 
 #include "data_object.h"
 
+#include "subscribe_node_set.h"
+
 namespace laps::peering {
 
-    DataObject::DataObject(NodeIdValueType source_node_id, const FullNameHash& full_name)
-      : source_node_id(source_node_id)
-      , full_name(full_name)
+    DataObject::DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type)
+      : type(type)
+      , sns_id(sns_id)
+      , track_full_name_hash(full_name)
     {
     }
 
-    uint32_t DataObject::SizeBytes() const
+    uint32_t DataObject::SizeBytes(bool include_header, DataObjectType type) const
     {
-        return sizeof(source_node_id) + 1 /* num of namespace tuples */
-               + full_name.SizeBytes();
+        uint32_t size = quicr::UintVar(data.size()).Size() + data.size();
+
+        if (include_header) {
+            size += sizeof(sns_id) + sizeof(track_full_name_hash);
+
+            switch (type) {
+                case DataObjectType::kDatagram:
+                    break;
+
+                case DataObjectType::kExistingStream:
+                    break;
+
+                case DataObjectType::kNewStream:
+                    size += sizeof(priority) + sizeof(ttl);
+                    break;
+            }
+        }
+
+        return size;
     }
 
     DataObject::DataObject(Span<const uint8_t> serialized_data)

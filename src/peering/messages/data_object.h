@@ -10,30 +10,53 @@
 
 namespace laps::peering {
 
+    enum class DataObjectType : uint8_t
+    {
+        kDatagram = 0,
+        kExistingStream,
+        kNewStream,
+    };
+
     /**
-     * @brief Data bytes to be sent to the O
+     * @brief Data object to be sent to subscribers
      *
-     * @details Subscriber info describes a subscrier of a specific track.
-     *    This info is exchanged with the relay control server(s).
+     * @details Data objects are initially enqueued at full size of the object, which may be very large.
+     *    They are then sliced and transmitted based on QUIC-transport MTU and other byte limitations. Bytes
+     *    are pipelined to relays to avoid hop by hop delays. The edge relay buffers up to the object length
+     *     before transmitting to the client. This will change when the MoQT implementation supports pipelining.
      */
     class DataObject
     {
       public:
+        DataObjectType type; ///< Not serialized; Type of the data object
+
+        // Below are sent only when include headers is requested
+
         SubscribeNodeSetId sns_id;                     ///< SNS ID used by the peer
         quicr::TrackFullNameHash track_full_name_hash; ///< Full Track name (aka track alias)
-        uint64_t data_length;                          ///< Length of data object (aka payload) as uintvar
 
+        uint8_t priority; ///< Stream only; Priority for new stream
+        uint16_t ttl;     ///< Stream only; Time to live in millis for stream objects
+
+        // Below are sent in every data object
+
+        uint64_t data_length; ///< Length of data object (aka payload) as uintvar on wire
+
+        Span<uint8_t> data; ///< Data payload (aka object data)
 
         /**
-         * @brief Encode node object into bytes that can be written on the wire
+         * @brief Encode data object into bytes that can be written on the wire
+         *
+         * @param include_header     True to prepend common and full data object header
+         * @param type               Data object type is used when including header. Header is different based on type
          */
-        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
+        std::vector<uint8_t> Serialize(bool include_header, DataObjectType type) const;
 
         DataObject() = default;
-        DataObject(NodeIdValueType source_node_id, const FullNameHash& full_name);
+        DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type);
         DataObject(Span<uint8_t const> serialized_data);
 
-        uint32_t SizeBytes() const;
+        uint32_t SizeBytes(bool include_header, DataObjectType type) const;
 
       private:
     };
