@@ -41,56 +41,71 @@ namespace laps::peering {
     {
         auto it = serialized_data.begin();
 
-        source_node_id = ValueOf<uint64_t>({ it, it + 8 });
+        type = static_cast<DataObjectType>(*(it++));
+
+        sns_id = ValueOf<uint32_t>({ it, it + 4 });
+        it += 4;
+
+        track_full_name_hash = ValueOf<uint64_t>({ it, it + 8 });
         it += 8;
 
-        uint8_t tuple_size = *it++;
-
-        for (uint8_t i = 0; i < tuple_size; i++) {
-            full_name.namespace_tuples.push_back(ValueOf<uint64_t>({ it, it + 8 }));
-            it += 8;
+        switch (type) {
+            case DataObjectType::kDatagram:
+                break;
+            case DataObjectType::kExistingStream:
+                break;
+            case DataObjectType::kNewStream:
+                priority = *(it++);
+                ttl = ValueOf<uint16_t>({ it, it + 2 });
+                it += 2;
+                break;
         }
 
-        full_name.name_hash = ValueOf<uint64_t>({ it, it + 8 });
+        auto data_len_uv_size = quicr::UintVar::Size(*it);
+        data_length = uint64_t(quicr::UintVar({ it, it + data_len_uv_size }));
+        it += data_len_uv_size;
 
-        full_name.ComputeFullNameHash();
-        full_name.ComputeNamespaceHash();
+        data.reserve(data_length);
+        data.assign(it, it + data_length);
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const DataObject& data_object)
     {
-        auto src_node_bytes = BytesOf(announce_info.source_node_id);
-        data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
+        auto data_len_uv_size = quicr::UintVar(data_object.data_length);
+        data.insert(data.end(), data_len_uv_size.begin(), data_len_uv_size.end());
 
-        data.push_back(static_cast<uint8_t>(announce_info.full_name.namespace_tuples.size()));
-
-        for (uint8_t i = 0; i < announce_info.full_name.namespace_tuples.size(); i++) {
-            auto ns_item_bytes = BytesOf(announce_info.full_name.namespace_tuples[i]);
-            data.insert(data.end(), ns_item_bytes.rbegin(), ns_item_bytes.rend());
-        }
-
-        auto name_bytes = BytesOf(announce_info.full_name.name_hash);
-        data.insert(data.end(), name_bytes.rbegin(), name_bytes.rend());
+        // TODO(tievens): Revisit copying of data objects
+        data.insert(data.end(), data_object.data.begin(), data_object.data.end());
 
         return data;
     }
 
-    std::vector<uint8_t> DataObject::Serialize(bool include_common_header, bool withdraw) const
+    std::vector<uint8_t> DataObject::Serialize(bool include_header, DataObjectType data_type) const
     {
         std::vector<uint8_t> data;
 
-        if (include_common_header) {
-            data.reserve(kCommonHeadersSize + SizeBytes());
+        if (include_header) {
+            data.reserve(kCommonHeadersSize + SizeBytes(true, data_type));
             data.push_back(kProtocolVersion);
-            uint16_t type =
-              static_cast<uint16_t>(withdraw ? MsgType::kAnnounceInfoWithdrawn : MsgType::kAnnounceInfoAdvertised);
+            uint16_t type = static_cast<uint8_t>(MsgType::kDataObject);
             auto type_bytes = BytesOf(type);
             data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
-            auto ni_size = SizeBytes();
+            auto ni_size = SizeBytes(true, data_type);
             auto data_len_bytes = BytesOf(ni_size);
             data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
+
+
+            switch (data_type) {
+                case DataObjectType::kDatagram:
+                    break;
+                case DataObjectType::kExistingStream:
+                    break;
+                case DataObjectType::kNewStream:
+                    break;
+            }
+
         } else {
-            data.reserve(SizeBytes());
+            data.reserve(SizeBytes(false, data_type));
         }
 
         data << *this;

@@ -28,10 +28,8 @@ namespace laps::peering {
     class DataObject
     {
       public:
-        DataObjectType type; ///< Not serialized; Type of the data object
-
         // Below are sent only when include headers is requested
-
+        DataObjectType type;                           ///< Type of the data object
         SubscribeNodeSetId sns_id;                     ///< SNS ID used by the peer
         quicr::TrackFullNameHash track_full_name_hash; ///< Full Track name (aka track alias)
 
@@ -42,15 +40,15 @@ namespace laps::peering {
 
         uint64_t data_length; ///< Length of data object (aka payload) as uintvar on wire
 
-        Span<uint8_t> data; ///< Data payload (aka object data)
+        std::vector<uint8_t> data; ///< Data payload (aka object data)
 
         /**
          * @brief Encode data object into bytes that can be written on the wire
          *
          * @param include_header     True to prepend common and full data object header
-         * @param type               Data object type is used when including header. Header is different based on type
+         * @param data_type          Data object type is used when including header. Header is different based on type
          */
-        std::vector<uint8_t> Serialize(bool include_header, DataObjectType type) const;
+        std::vector<uint8_t> Serialize(bool include_header, DataObjectType data_type) const;
 
         DataObject() = default;
         DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type);
