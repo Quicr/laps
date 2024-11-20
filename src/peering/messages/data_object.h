@@ -33,8 +33,8 @@ namespace laps::peering {
         SubscribeNodeSetId sns_id;                     ///< SNS ID used by the peer
         quicr::TrackFullNameHash track_full_name_hash; ///< Full Track name (aka track alias)
 
-        uint8_t priority; ///< Stream only; Priority for new stream
-        uint16_t ttl;     ///< Stream only; Time to live in millis for stream objects
+        uint8_t priority{ 1 }; ///< Stream only; Priority for new stream
+        uint16_t ttl{ 2000 };  ///< Stream only; Time to live in millis for stream objects
 
         // Below are sent in every data object
 
@@ -45,16 +45,15 @@ namespace laps::peering {
         /**
          * @brief Encode data object into bytes that can be written on the wire
          *
-         * @param include_header     True to prepend common and full data object header
-         * @param data_type          Data object type is used when including header. Header is different based on type
+         * @param include_header     True to prepend common header
          */
-        std::vector<uint8_t> Serialize(bool include_header, DataObjectType data_type) const;
+        std::vector<uint8_t> Serialize(bool include_header) const;
 
         DataObject() = default;
         DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type);
         DataObject(Span<uint8_t const> serialized_data);
 
-        uint32_t SizeBytes(bool include_header, DataObjectType type) const;
+        uint32_t SizeBytes() const;
 
       private:
     };

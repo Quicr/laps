@@ -18,7 +18,7 @@ TEST_CASE("Serialize Subscribe Node Set")
     auto net_data = sns.Serialize(false);
 
     CHECK_EQ(net_data.size(), 22);
-    CHECK_EQ(net_data.size(), sns.SizeBytes());
+    CHECK_EQ(net_data.size(), sns.SizeBytes(false));
 
     SubscribeNodeSet decoded(net_data);
 
