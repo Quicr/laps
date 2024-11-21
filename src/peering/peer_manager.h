@@ -41,9 +41,19 @@ namespace laps::peering {
                             PeerSession::StatusValue status,
                             const NodeInfo& remote_node_info);
 
-        void ClientDataObject(const quicr::FullTrackName& full_track_name,
+        void ForwardPeerData(SubscribeNodeSetId in_sns_id,
+                             uint8_t priority,
+                             uint32_t ttl,
+                             Span<uint8_t const> data,
+                             quicr::ITransport::EnqueueFlags eflags);
+
+        void CompleteDataObjectReceived(PeerSessionId peer_session_id, const DataObject& data_object);
+
+        void ClientDataObject(quicr::TrackFullNameHash track_full_name_hash,
                               uint8_t priority,
-                              uint16_t ttl,
+                              uint32_t ttl,
+                              quicr::messages::GroupId group_id,
+                              quicr::messages::SubGroupId sub_group_id,
                               DataObjectType type,
                               Span<uint8_t const> data);
 

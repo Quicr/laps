@@ -74,7 +74,7 @@ namespace laps::peering {
                                                                           SubscribeNodeSetId in_sns_id,
                                                                           NodeIdValueType sub_node_id)
     {
-        auto [it, new_ingress] = peer_sns_.try_emplace({in_peer_session_id, in_sns_id});
+        auto [it, new_ingress] = peer_sns_.try_emplace({ in_peer_session_id, in_sns_id });
         auto& sns = it->second;
 
         if (it->second.id == 0) { // If not set, create the data context
@@ -91,7 +91,6 @@ namespace laps::peering {
 
         return { it->second.id, is_new };
     }
-
 
     std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                                             NodeIdValueType sub_node_id)
@@ -133,7 +132,6 @@ namespace laps::peering {
                 SendSns(sns, true);
 
                 sub_sns_.erase(it);
-
             }
         }
 
@@ -147,7 +145,7 @@ namespace laps::peering {
         bool node_removed{ false };
         bool sns_removed{ false };
 
-        auto it = peer_sns_.find({in_peer_session_id, in_sns_id});
+        auto it = peer_sns_.find({ in_peer_session_id, in_sns_id });
         if (it != peer_sns_.end()) {
             auto& sns = it->second;
 
@@ -173,13 +171,23 @@ namespace laps::peering {
         return { node_removed, sns_removed };
     }
 
+    void PeerSession::SendData(uint8_t priority,
+                               uint32_t ttl,
+                               SubscribeNodeSetId sns_id,
+                               const quicr::ITransport::EnqueueFlags& eflags,
+                               Span<uint8_t const> data)
+    {
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Sending data SNS id: {} data size: {}", sns_id, data.size());
+
+        transport_->Enqueue(t_conn_id_, sns_id, data, priority, ttl, 0, eflags);
+    }
+
     void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw)
     {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending SNS id: {} set size: {} withdraw: {}", sns.id, sns.nodes.size(), withdraw);
 
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, sns.Serialize(true, withdraw), 0, 1000);
     }
-
 
     void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
     {
@@ -290,19 +298,19 @@ namespace laps::peering {
         }
 
         // Get common header
-        if (stream_buf->Available(kCommonHeadersSize)) {
-            auto bytes = stream_buf->Front(kCommonHeadersSize);
+        if (is_bidir) { // control
+            if (stream_buf->Available(kCommonHeadersSize)) {
+                auto bytes = stream_buf->Front(kCommonHeadersSize);
 
-            auto version = bytes.front();
-            auto type = ValueOf<uint16_t>({ bytes.begin() + 1, bytes.begin() + 3 });
-            auto data_len = ValueOf<uint32_t>({ bytes.begin() + 3, bytes.begin() + 7 });
+                auto version = bytes.front();
+                auto type = ValueOf<uint16_t>({ bytes.begin() + 1, bytes.begin() + 3 });
+                auto data_len = ValueOf<uint32_t>({ bytes.begin() + 3, bytes.begin() + 7 });
 
-            if (stream_buf->Available(kCommonHeadersSize + data_len)) {
-                stream_buf->Pop(kCommonHeadersSize);
-                auto msg_bytes = stream_buf->Front(data_len);
-                stream_buf->Pop(data_len);
+                if (stream_buf->Available(kCommonHeadersSize + data_len)) {
+                    stream_buf->Pop(kCommonHeadersSize);
+                    auto msg_bytes = stream_buf->Front(data_len);
+                    stream_buf->Pop(data_len);
 
-                if (is_bidir) { // Control message
                     control_data_ctx_id_ = *data_ctx_id;
 
                     // Control Message
@@ -410,19 +418,81 @@ namespace laps::peering {
                             SPDLOG_LOGGER_DEBUG(config_.logger_, "Invalid message type {}", static_cast<int>(type));
                         }
                     }
-
-                } else {
-                    // Data message
                 }
             }
+        } else {
+            // Data message
+            if (!stream_buf->AnyHasValueB()) {
+                SPDLOG_LOGGER_DEBUG(LOGGER, "Received new data object stream id: {}, init data object", stream_id);
+                stream_buf->InitAnyB<DataObject>();
 
-            SPDLOG_LOGGER_DEBUG(config_.logger_,
-                                "Version: {} type: {} data_len: {} ctrl_data_ctx_id: {} recv_data_ctx_id: {}",
-                                static_cast<int>(version),
-                                type,
-                                data_len,
-                                control_data_ctx_id_,
-                                *data_ctx_id);
+                auto& dobj = stream_buf->GetAnyB<DataObject>();
+                if (stream_buf->Available(2)) {
+                    auto buf_sz = stream_buf->Size();
+
+                    std::vector<uint8_t> data = std::move(stream_buf->Front(buf_sz));
+                    auto is_complete = dobj.Deserialize(data);
+
+                    // Set Any object if new stream
+                    if (dobj.type == DataObjectType::kNewStream) {
+                        stream_buf->InitAny<DataObject>();
+                        auto& sobj = stream_buf->GetAny<DataObject>();
+                        sobj = dobj;
+
+                    } else if (dobj.type == DataObjectType::kExistingStream) {
+                        auto& sobj = stream_buf->GetAny<DataObject>();
+                        dobj.sns_id = sobj.sns_id;
+                        dobj.priority = sobj.priority;
+                        dobj.ttl = sobj.ttl;
+                        dobj.track_full_name_hash = sobj.track_full_name_hash;
+                        dobj.group_id = sobj.group_id;
+                        dobj.sub_group_id = sobj.sub_group_id;
+                    }
+
+                    if (is_complete) {
+                        SPDLOG_LOGGER_DEBUG(
+                          LOGGER,
+                          "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} dobj_size: {} sbuf_size: {}",
+                          stream_id,
+                          dobj.sns_id,
+                          dobj.track_full_name_hash,
+                          dobj.data_length,
+                          dobj.SizeBytes(),
+                          stream_buf->Size());
+
+                        stream_buf->Pop(dobj.SizeBytes());
+
+                        manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
+
+                        stream_buf->ResetAnyB(); // Reset must be done after use of data
+                    } else {
+                        stream_buf->Pop(dobj.SizeBytes());
+                    }
+
+                    // TODO(tievens): loop to process remaining data in stream buffer
+                }
+            } else { // Existing data - append to data object AnyB
+                auto& dobj = stream_buf->GetAnyB<DataObject>();
+                const auto avail_bytes = stream_buf->Size();
+                auto data = stream_buf->Front(avail_bytes);
+                const auto [read_bytes, is_complete] = dobj.AppendData(data);
+                stream_buf->Pop(read_bytes);
+                // TODO(tievens): loop to process remaining data in stream buffer
+
+                if (is_complete) {
+                    SPDLOG_LOGGER_DEBUG(LOGGER,
+                                        "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} sbuf_size: {}",
+                                        stream_id,
+                                        dobj.sns_id,
+                                        dobj.track_full_name_hash,
+                                        dobj.data_length,
+                                        stream_buf->Size());
+
+                    manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
+
+                    stream_buf->ResetAnyB(); // Reset must be done after use of data
+                }
+            }
         }
     }
 
@@ -435,6 +505,14 @@ namespace laps::peering {
             if (!data) {
                 return;
             }
+
+            DataObject data_object(*data);
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Received dgram sns_id: {} track_full_name: {} data size: {}",
+                                data_object.sns_id,
+                                data_object.track_full_name_hash,
+                                data_object.data.size());
+            // TODO(tievens): Send data based on peer fib
         }
     }
 

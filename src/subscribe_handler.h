@@ -23,5 +23,8 @@ namespace laps {
 
       private:
         ClientManager& server_;
+
+        uint64_t prev_group_id_{ 0 };
+        uint64_t prev_subgroup_id_{ 0 };
     };
 } // namespace laps

@@ -86,6 +86,11 @@ namespace laps::peering {
         void SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw = false);
         void SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw = false);
         void SendSns(const SubscribeNodeSet& sns, bool withdraw = false);
+        void SendData(uint8_t priority,
+                      uint32_t ttl,
+                      SubscribeNodeSetId sns_id,
+                      const quicr::ITransport::EnqueueFlags& eflags,
+                      Span<uint8_t const> data);
 
         /**
          * @brief Add subscriber source node to the peer SNS state

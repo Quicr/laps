@@ -15,18 +15,22 @@ TEST_CASE("Serialize Data Object Datagram")
     data_object.type = DataObjectType::kDatagram;
     data_object.sns_id = 0x1234;
     data_object.track_full_name_hash = 0xabcdef;
+    data_object.group_id = 0x9001;
+    data_object.sub_group_id = 0x5001;
     data_object.data_length = test_data.size();
     data_object.data = data;
 
     auto net_data = data_object.Serialize();
 
-    CHECK_EQ(net_data.size(), 41);
+    CHECK_EQ(net_data.size(), 49);
 
     DataObject decoded(net_data);
 
     CHECK_EQ(data_object.type, decoded.type);
     CHECK_EQ(data_object.sns_id, decoded.sns_id);
     CHECK_EQ(data_object.track_full_name_hash, decoded.track_full_name_hash);
+    CHECK_EQ(data_object.group_id, decoded.group_id);
+    CHECK_EQ(data_object.sub_group_id, decoded.sub_group_id);
     CHECK_EQ(data_object.data_length, decoded.data_length);
 
     std::vector<uint8_t> decoded_data { decoded.data.begin(), decoded.data.end() };
@@ -43,19 +47,23 @@ TEST_CASE("Serialize Data Object new stream")
     data_object.sns_id = 0x1234;
     data_object.priority = 100;
     data_object.ttl = 5000;
+    data_object.group_id = 0x9001;
+    data_object.sub_group_id = 0x5001;
     data_object.track_full_name_hash = 0xabcdef;
     data_object.data_length = test_data.size();
     data_object.data = data;
 
     auto net_data = data_object.Serialize();
 
-    CHECK_EQ(net_data.size(), 44);
+    CHECK_EQ(net_data.size(), 54);
 
     DataObject decoded(net_data);
 
     CHECK_EQ(data_object.type, decoded.type);
     CHECK_EQ(data_object.sns_id, decoded.sns_id);
     CHECK_EQ(data_object.track_full_name_hash, decoded.track_full_name_hash);
+    CHECK_EQ(data_object.group_id, decoded.group_id);
+    CHECK_EQ(data_object.sub_group_id, decoded.sub_group_id);
     CHECK_EQ(data_object.priority, decoded.priority);
     CHECK_EQ(data_object.ttl, decoded.ttl);
     CHECK_EQ(data_object.data_length, decoded.data_length);

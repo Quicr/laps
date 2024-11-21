@@ -241,22 +241,70 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::ClientDataObject(const quicr::FullTrackName& full_track_name,
+    void PeerManager::CompleteDataObjectReceived(PeerSessionId peer_session_id, const DataObject& data_object)
+    {
+        auto it = info_base_->peer_fib_.find({ peer_session_id, data_object.sns_id });
+        if (it != info_base_->peer_fib_.end()) {
+            if (it->second.count(0)) { // client manager is interested
+                client_manager_.lock()->ProcessPeerDataObject(data_object);
+            }
+        }
+    }
+
+    void PeerManager::ClientDataObject(quicr::TrackFullNameHash track_full_name_hash,
                                        uint8_t priority,
-                                       uint16_t ttl,
+                                       uint32_t ttl,
+                                       quicr::messages::GroupId group_id,
+                                       quicr::messages::SubGroupId sub_group_id,
                                        DataObjectType type,
                                        Span<uint8_t const> data)
     {
-        quicr::TrackHash th(full_track_name);
-
         DataObject data_object;
         data_object.type = type;
         data_object.priority = priority;
         data_object.ttl = ttl;
+        data_object.group_id = group_id;
+        data_object.sub_group_id = sub_group_id;
         data_object.data = data;
+        data_object.data_length = data.size();
+        data_object.track_full_name_hash = track_full_name_hash;
 
-        auto net_data = data_object.Serialize()
+        auto net_data = data_object.Serialize();
 
+        quicr::ITransport::EnqueueFlags eflags;
+
+        bool set_sns_id{ false };
+        switch (type) {
+            case DataObjectType::kDatagram:
+                eflags.use_reliable = false;
+                set_sns_id = true;
+                break;
+            case DataObjectType::kExistingStream:
+                eflags.use_reliable = true;
+                break;
+            case DataObjectType::kNewStream:
+                set_sns_id = true;
+                eflags.use_reliable = true;
+                eflags.new_stream = true;
+                eflags.clear_tx_queue = true;
+                eflags.use_reset = true;
+                break;
+        }
+
+        for (auto it = info_base_->client_fib_.lower_bound({ track_full_name_hash, 0 });
+             it != info_base_->client_fib_.end();
+             ++it) {
+            const auto& fib_entry = it->second;
+
+            if (const auto peer_sess = fib_entry.peer_session.lock()) {
+                if (set_sns_id) {
+                    SPDLOG_LOGGER_DEBUG(LOGGER, "Data object send, setting SNS_ID: {} ", fib_entry.sns_id);
+                    auto sns_id_bytes = BytesOf(fib_entry.sns_id);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data.begin()+1);
+                }
+                peer_sess->SendData(priority, ttl, fib_entry.sns_id, eflags, net_data);
+            }
+        }
     }
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
