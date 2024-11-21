@@ -3,9 +3,43 @@
 #include "state.h"
 
 #include <peering/peer_manager.h>
+#include <quicr/cache.h>
 #include <quicr/server.h>
 
+#include <functional>
+#include <set>
+
 namespace laps {
+    /**
+     * @brief Defines an object received from an announcer that lives in the cache.
+     */
+    struct CacheObject
+    {
+        uint8_t priority;
+        uint32_t ttl;
+        bool stream_header_needed;
+        uint64_t group_id;
+        uint64_t subgroup_id;
+        uint64_t object_id;
+        std::optional<quicr::Extensions> extensions;
+        quicr::Bytes data;
+    };
+}
+
+/**
+ * @brief Specialization of std::less for sorting CacheObjects by object ID.
+ */
+template<>
+struct std::less<laps::CacheObject>
+{
+    constexpr bool operator()(const laps::CacheObject& lhs, const laps::CacheObject& rhs) const noexcept
+    {
+        return lhs.object_id < rhs.object_id;
+    }
+};
+
+namespace laps {
+
     /**
      * @brief MoQ Server
      * @details Implementation of the MoQ Server
@@ -40,6 +74,18 @@ namespace laps {
                                const quicr::FullTrackName& track_full_name,
                                const quicr::SubscribeAttributes&) override;
 
+        bool FetchReceived(quicr::ConnectionHandle connection_handle,
+                           uint64_t subscribe_id,
+                           const quicr::FullTrackName& track_full_name,
+                           const quicr::FetchAttributes& attrs) override;
+
+        void OnFetchOk(quicr::ConnectionHandle connection_handle,
+                       uint64_t subscribe_id,
+                       const quicr::FullTrackName& track_full_name,
+                       const quicr::FetchAttributes& attrs) override;
+
+        void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id) override;
+
         void ProcessSubscribe(quicr::ConnectionHandle connection_handle,
                               uint64_t subscribe_id,
                               const quicr::TrackHash& th,
@@ -62,7 +108,10 @@ namespace laps {
         const Config& config_;
         peering::PeerManager& peer_manager_;
 
+        std::map<quicr::TrackHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
+
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;
+        friend class FetchTrackHandler;
     };
 } // namespace laps

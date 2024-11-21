@@ -71,14 +71,45 @@ namespace laps {
 
             if (sub_info.publish_handler == nullptr) {
                 // Create the publish track handler and bind it on first object received
-                auto pub_track_h =
-                  std::make_shared<PublishTrackHandler>(sub_info.track_full_name,
-                                                        *object_headers.track_mode,
-                                                        sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
-                                                        object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
+                auto pub_track_h = std::make_shared<PublishTrackHandler>(
+                  sub_info.track_full_name,
+                  *object_headers.track_mode,
+                  sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
+                  object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
+
+                auto&& cache_message_callback =
+                  [&, tnsh = quicr::TrackHash(sub_info.track_full_name)](uint8_t priority,
+                                                                         uint32_t ttl,
+                                                                         bool stream_header_needed,
+                                                                         uint64_t group_id,
+                                                                         uint64_t subgroup_id,
+                                                                         uint64_t object_id,
+                                                                         std::optional<quicr::Extensions> extensions,
+                                                                         quicr::BytesSpan data) {
+                      if (server_.cache_.count(tnsh) == 0) {
+                          server_.cache_.insert(
+                            std::make_pair(tnsh,
+                                           quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                                             ttl, 1, server_.GetTickService() }));
+                      }
+
+                      auto& cache_entry = server_.cache_.at(tnsh);
+
+                      CacheObject object{
+                          priority,    ttl,       stream_header_needed, group_id,
+                          subgroup_id, object_id, extensions,           { data.begin(), data.end() },
+                      };
+
+                      try {
+                          cache_entry.Get(group_id).insert(std::move(object));
+                      } catch (...) {
+                          cache_entry.Insert(group_id, { std::move(object) }, ttl);
+                      }
+                  };
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h);
+                server_.BindPublisherTrack(
+                  connection_handle, sub_info.subscribe_id, pub_track_h, std::move(cache_message_callback));
                 sub_info.publish_handler = pub_track_h;
             }
 
