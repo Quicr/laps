@@ -370,11 +370,12 @@ namespace laps {
         }
 
         else {
-            SPDLOG_DEBUG("Processing subscribe connection handle: {0} subscribe_id: {1} track alias: {2} priority: {3}",
+            SPDLOG_DEBUG("Processing subscribe connection handle: {} subscribe_id: {} track alias: {} priority: {} ns: {} name: {}",
                          connection_handle,
                          subscribe_id,
                          th.track_fullname_hash,
-                         attrs.priority);
+                         attrs.priority,
+                         th.track_namespace_hash, th.track_name_hash);
 
             state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
