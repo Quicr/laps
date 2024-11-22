@@ -378,8 +378,8 @@ namespace laps {
             sub_info.publish_handler->PublishObject(object_headers, object.payload);
         }
     }
-    bool ClientManager::FetchReceived(quicr::ConnectionHandle connection_handle,
-                                      uint64_t subscribe_id,
+    bool ClientManager::FetchReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
+                                      [[maybe_unused]] uint64_t subscribe_id,
                                       const quicr::FullTrackName& track_full_name,
                                       const quicr::FetchAttributes& attrs)
     {

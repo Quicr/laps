@@ -30,6 +30,15 @@ namespace laps {
  * @brief Specialization of std::less for sorting CacheObjects by object ID.
  */
 template<>
+struct std::less<quicr::TrackHash>
+{
+    constexpr bool operator()(const quicr::TrackHash& lhs, const quicr::TrackHash& rhs) const noexcept
+    {
+        return lhs.track_fullname_hash < rhs.track_fullname_hash;
+    }
+};
+
+template<>
 struct std::less<laps::CacheObject>
 {
     constexpr bool operator()(const laps::CacheObject& lhs, const laps::CacheObject& rhs) const noexcept
@@ -98,8 +107,6 @@ namespace laps {
 
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;
-
-        void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id) override {}
 
       private:
         void PurgePublishState(quicr::ConnectionHandle connection_handle);
