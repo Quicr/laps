@@ -251,6 +251,26 @@ namespace laps::peering {
         }
     }
 
+    void PeerManager::ForwardPeerData(PeerSessionId peer_ession_id,
+                                      SubscribeNodeSetId in_sns_id,
+                                      uint8_t priority,
+                                      uint32_t ttl,
+                                      Span<uint8_t const> data,
+                                      quicr::ITransport::EnqueueFlags eflags)
+    {
+        auto it = info_base_->peer_fib_.find({ peer_ession_id, in_sns_id });
+        if (it != info_base_->peer_fib_.end()) {
+            for (const auto& [out_peer_sess_id, entry] : it->second) {
+                if (out_peer_sess_id == 0 || out_peer_sess_id == peer_ession_id)
+                    continue; // Skip; don't send back to same peer or if it's self
+
+                auto out_peer_sess = entry.peer_session.lock();
+                out_peer_sess->SendData(priority, ttl, entry.sns_id, eflags, data);
+            }
+        }
+    }
+
+
     void PeerManager::ClientDataObject(quicr::TrackFullNameHash track_full_name_hash,
                                        uint8_t priority,
                                        uint32_t ttl,
@@ -318,13 +338,19 @@ namespace laps::peering {
 
         si.track_hash = th;
         si.subscribe_data.assign(subscribe_data.begin(), subscribe_data.end());
+        si.source_node_id = node_info_.id;
+
+        if (not withdraw) {
+            info_base_->AddSubscribe(si);
+        } else {
+            info_base_->RemoveSubscribe(si);
+        }
 
         for (const auto& sess : client_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Sending subscribe fullname: {} peer_session_id: {}",
                                 si.track_hash.track_fullname_hash,
                                 sess.first);
-            si.source_node_id = sess.second->node_info_.id;
             sess.second->SendSubscribeInfo(si, withdraw);
         }
 
@@ -333,7 +359,6 @@ namespace laps::peering {
                                 "Sending subscribe fullname: {} peer_session_id: {}",
                                 si.track_hash.track_fullname_hash,
                                 sess.first);
-            si.source_node_id = sess.second->node_info_.id;
             sess.second->SendSubscribeInfo(si, withdraw);
         }
     }
@@ -348,6 +373,13 @@ namespace laps::peering {
 
         ai.full_name.full_name_hash = th.track_fullname_hash;
         ai.full_name.namespace_tuples.reserve(track_full_name.name_space.GetHashes().size());
+        ai.source_node_id = node_info_.id;
+
+        if (not withdraw) {
+            info_base_->AddAnnounce(ai);
+        } else {
+            info_base_->RemoveAnnounce(ai);
+        }
 
         for (const auto ns_item : track_full_name.name_space.GetHashes()) {
             ai.full_name.namespace_tuples.push_back(ns_item);
@@ -358,14 +390,12 @@ namespace laps::peering {
         for (const auto& sess : client_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(
               LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
-            ai.source_node_id = sess.second->node_info_.id;
             sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
         for (const auto& sess : server_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(
               LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
-            ai.source_node_id = sess.second->node_info_.id;
             sess.second->SendAnnounceInfo(ai, withdraw);
         }
 

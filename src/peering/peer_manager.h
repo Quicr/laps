@@ -41,7 +41,8 @@ namespace laps::peering {
                             PeerSession::StatusValue status,
                             const NodeInfo& remote_node_info);
 
-        void ForwardPeerData(SubscribeNodeSetId in_sns_id,
+        void ForwardPeerData(PeerSessionId peer_session_id,
+                             SubscribeNodeSetId in_sns_id,
                              uint8_t priority,
                              uint32_t ttl,
                              Span<uint8_t const> data,

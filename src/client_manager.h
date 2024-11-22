@@ -50,7 +50,7 @@ namespace laps {
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;
 
-      void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id) override {}
+        void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id) override {}
 
       private:
         void PurgePublishState(quicr::ConnectionHandle connection_handle);

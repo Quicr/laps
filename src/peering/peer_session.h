@@ -170,6 +170,11 @@ namespace laps::peering {
         void SendConnect();
         void SendConnectOk();
 
+        void ProcessControlMessage(std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
+
+        void ProcessReceivedData(std::optional<uint64_t> stream_id,
+                                 std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
+
       public:
         quicr::TransportRemote peer_config_;
         const Config& config_;

@@ -286,6 +286,240 @@ namespace laps::peering {
         // Not used for outgoing connections. Incoming connections are handled by the server delegate
     }
 
+    void PeerSession::ProcessControlMessage(std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf)
+    {
+        if (stream_buf->Available(kCommonHeadersSize)) {
+            auto bytes = stream_buf->Front(kCommonHeadersSize);
+
+            auto version = bytes.front();
+            auto type = ValueOf<uint16_t>({ bytes.begin() + 1, bytes.begin() + 3 });
+            auto data_len = ValueOf<uint32_t>({ bytes.begin() + 3, bytes.begin() + 7 });
+
+            if (stream_buf->Available(kCommonHeadersSize + data_len)) {
+                stream_buf->Pop(kCommonHeadersSize);
+                auto msg_bytes = stream_buf->Front(data_len);
+                stream_buf->Pop(data_len);
+
+                // Control Message
+                switch (static_cast<MsgType>(type)) {
+                    case MsgType::kConnect: {
+                        peering::Connect connect(msg_bytes);
+                        SPDLOG_LOGGER_DEBUG(config_.logger_,
+                                            "Connect from id: {} contact: {} mode: {}",
+                                            NodeId().Value(connect.node_info.id),
+                                            connect.node_info.contact,
+                                            static_cast<int>(connect.mode));
+                        remote_node_info_ = connect.node_info;
+
+                        status_ = StatusValue::kConnected;
+                        manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
+
+                        manager_.NodeReceived(GetSessionId(), connect.node_info, false);
+                        SendConnectOk();
+
+                        manager_.InfoBaseSyncPeer(*this);
+                        break;
+                    }
+
+                    case MsgType::kConnectResponse: {
+                        ConnectResponse connect_resp(msg_bytes);
+
+                        if (connect_resp.error == ProtocolError::kNoError) {
+                            remote_node_info_ = *connect_resp.node_info;
+                            manager_.NodeReceived(GetSessionId(), *connect_resp.node_info, false);
+
+                            manager_.InfoBaseSyncPeer(*this);
+
+                        } else {
+                            SPDLOG_LOGGER_DEBUG(config_.logger_,
+                                                "Connect error response from id: {} contact: {} error: {}",
+                                                NodeId().Value(connect_resp.node_info->id),
+                                                connect_resp.node_info->contact,
+                                                static_cast<int>(connect_resp.error));
+                        }
+                        status_ = StatusValue::kConnected;
+                        manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
+                        break;
+                    }
+
+                    case MsgType::kSubscribeNodeSetAdvertised: {
+                        SubscribeNodeSet sns(msg_bytes, false);
+
+                        if (config_.debug) {
+                            std::ostringstream sns_nodes;
+                            for (const auto& node : sns.nodes) {
+                                sns_nodes << NodeId().Value(node) << ", ";
+                            }
+
+                            SPDLOG_LOGGER_DEBUG(LOGGER, "SNS received id: {} nodes: {}", sns.id, sns_nodes.str());
+                        }
+
+                        manager_.SnsReceived(*this, sns, false);
+                        break;
+                    }
+
+                    case MsgType::kSubscribeNodeSetWithdrawn: {
+                        SubscribeNodeSet sns(msg_bytes, true);
+                        SPDLOG_LOGGER_DEBUG(LOGGER, "SNS withdrawn received id: {}", sns.id);
+                        manager_.SnsReceived(*this, sns, true);
+                        break;
+                    }
+
+                    case MsgType::kNodeInfoAdvertise: {
+                        NodeInfo node_info(msg_bytes);
+                        manager_.NodeReceived(GetSessionId(), node_info, false);
+                        break;
+                    }
+
+                    case MsgType::kNodeInfoWithdrawn: {
+                        NodeInfo node_info(msg_bytes);
+                        manager_.NodeReceived(GetSessionId(), node_info, true);
+                        break;
+                    }
+
+                    case MsgType::kSubscribeInfoAdvertised: {
+                        SubscribeInfo subscribe_info(msg_bytes);
+                        manager_.SubscribeInfoReceived(GetSessionId(), subscribe_info, false);
+                        break;
+                    }
+
+                    case MsgType::kSubscribeInfoWithdrawn: {
+                        SubscribeInfo subscribe_info(msg_bytes);
+                        manager_.SubscribeInfoReceived(GetSessionId(), subscribe_info, true);
+                        break;
+                    }
+
+                    case MsgType::kAnnounceInfoAdvertised: {
+                        AnnounceInfo announce_info(msg_bytes);
+                        manager_.AnnounceInfoReceived(GetSessionId(), announce_info, false);
+                        break;
+                    }
+
+                    case MsgType::kAnnounceInfoWithdrawn: {
+                        AnnounceInfo announce_info(msg_bytes);
+                        manager_.AnnounceInfoReceived(GetSessionId(), announce_info, true);
+                        break;
+                    }
+
+                    default: {
+                        SPDLOG_LOGGER_DEBUG(config_.logger_, "Invalid message type {}", static_cast<int>(type));
+                    }
+                }
+            }
+        }
+    }
+
+    void PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
+                                          std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf)
+    {
+        quicr::ITransport::EnqueueFlags eflags;
+
+        eflags.use_reliable = stream_id.has_value() ? true : false; // If stream isn't set, it's datagram
+
+        if (!stream_buf->AnyHasValueB()) {
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Received new data object stream id: {}, init data object",
+                                stream_id.has_value() ? *stream_id : 0);
+            stream_buf->InitAnyB<DataObject>();
+
+            auto& dobj = stream_buf->GetAnyB<DataObject>();
+            if (stream_buf->Available(2)) {
+                auto buf_sz = stream_buf->Size();
+
+                std::vector<uint8_t> data = std::move(stream_buf->Front(buf_sz));
+                auto is_complete = dobj.Deserialize(data);
+
+                // Set Any object if new stream
+                if (dobj.type == DataObjectType::kNewStream) {
+                    eflags.new_stream = true;
+                    eflags.clear_tx_queue = true;
+                    eflags.use_reset = true;
+
+                    stream_buf->InitAny<DataObject>();
+                    auto& sobj = stream_buf->GetAny<DataObject>();
+                    sobj = dobj;
+
+                } else if (dobj.type == DataObjectType::kExistingStream) {
+                    auto& sobj = stream_buf->GetAny<DataObject>();
+                    dobj.sns_id = sobj.sns_id;
+                    dobj.priority = sobj.priority;
+                    dobj.ttl = sobj.ttl;
+                    dobj.track_full_name_hash = sobj.track_full_name_hash;
+                    dobj.group_id = sobj.group_id;
+                    dobj.sub_group_id = sobj.sub_group_id;
+                }
+
+                if (is_complete) {
+                    SPDLOG_LOGGER_DEBUG(LOGGER,
+                                        "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} "
+                                        "dobj_size: {} sbuf_size: {}",
+                                        stream_id.has_value() ? *stream_id : 0,
+                                        dobj.sns_id,
+                                        dobj.track_full_name_hash,
+                                        dobj.data_length,
+                                        dobj.SizeBytes(),
+                                        stream_buf->Size());
+
+                    stream_buf->Pop(dobj.SizeBytes());
+                    manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
+
+                    // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
+                    manager_.ForwardPeerData(GetSessionId(),
+                                             dobj.sns_id,
+                                             dobj.priority,
+                                             dobj.ttl,
+                                             { data.begin(), data.begin() + dobj.SizeBytes() },
+                                             eflags);
+
+                    stream_buf->ResetAnyB(); // Reset must be done after use of data
+                } else {
+
+                    stream_buf->Pop(dobj.SizeBytes());
+                    // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
+                    manager_.ForwardPeerData(GetSessionId(),
+                                             dobj.sns_id,
+                                             dobj.priority,
+                                             dobj.ttl,
+                                             { data.begin(), data.begin() + dobj.SizeBytes() },
+                                             eflags);
+                }
+
+                // TODO(tievens): loop to process remaining data in stream buffer
+            }
+        } else { // Existing data - append to data object AnyB
+            auto& dobj = stream_buf->GetAnyB<DataObject>();
+            const auto avail_bytes = stream_buf->Size();
+            auto data = stream_buf->Front(avail_bytes);
+            const auto [read_bytes, is_complete] = dobj.AppendData(data);
+            stream_buf->Pop(read_bytes);
+
+            // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
+            manager_.ForwardPeerData(GetSessionId(),
+                                     dobj.sns_id,
+                                     dobj.priority,
+                                     dobj.ttl,
+                                     { data.begin(), data.begin() + read_bytes },
+                                     eflags);
+
+            // TODO(tievens): loop to process remaining data in stream buffer
+
+            if (is_complete) {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER,
+                  "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} sbuf_size: {}",
+                  stream_id.has_value() ? *stream_id : 0,
+                  dobj.sns_id,
+                  dobj.track_full_name_hash,
+                  dobj.data_length,
+                  stream_buf->Size());
+
+                manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
+
+                stream_buf->ResetAnyB(); // Reset must be done after use of data
+            }
+        }
+    }
+
     void PeerSession::OnRecvStream(const quicr::TransportConnId& conn_id,
                                    uint64_t stream_id,
                                    std::optional<quicr::DataContextId> data_ctx_id,
@@ -299,200 +533,11 @@ namespace laps::peering {
 
         // Get common header
         if (is_bidir) { // control
-            if (stream_buf->Available(kCommonHeadersSize)) {
-                auto bytes = stream_buf->Front(kCommonHeadersSize);
+            control_data_ctx_id_ = *data_ctx_id;
+            ProcessControlMessage(stream_buf);
 
-                auto version = bytes.front();
-                auto type = ValueOf<uint16_t>({ bytes.begin() + 1, bytes.begin() + 3 });
-                auto data_len = ValueOf<uint32_t>({ bytes.begin() + 3, bytes.begin() + 7 });
-
-                if (stream_buf->Available(kCommonHeadersSize + data_len)) {
-                    stream_buf->Pop(kCommonHeadersSize);
-                    auto msg_bytes = stream_buf->Front(data_len);
-                    stream_buf->Pop(data_len);
-
-                    control_data_ctx_id_ = *data_ctx_id;
-
-                    // Control Message
-                    switch (static_cast<MsgType>(type)) {
-                        case MsgType::kConnect: {
-                            peering::Connect connect(msg_bytes);
-                            SPDLOG_LOGGER_DEBUG(config_.logger_,
-                                                "Connect from id: {} contact: {} mode: {}",
-                                                NodeId().Value(connect.node_info.id),
-                                                connect.node_info.contact,
-                                                static_cast<int>(connect.mode));
-                            remote_node_info_ = connect.node_info;
-
-                            status_ = StatusValue::kConnected;
-                            manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
-
-                            manager_.NodeReceived(GetSessionId(), connect.node_info, false);
-                            SendConnectOk();
-
-                            manager_.InfoBaseSyncPeer(*this);
-                            break;
-                        }
-
-                        case MsgType::kConnectResponse: {
-                            ConnectResponse connect_resp(msg_bytes);
-
-                            if (connect_resp.error == ProtocolError::kNoError) {
-                                remote_node_info_ = *connect_resp.node_info;
-                                manager_.NodeReceived(GetSessionId(), *connect_resp.node_info, false);
-
-                                manager_.InfoBaseSyncPeer(*this);
-
-                            } else {
-                                SPDLOG_LOGGER_DEBUG(config_.logger_,
-                                                    "Connect error response from id: {} contact: {} error: {}",
-                                                    NodeId().Value(connect_resp.node_info->id),
-                                                    connect_resp.node_info->contact,
-                                                    static_cast<int>(connect_resp.error));
-                            }
-                            status_ = StatusValue::kConnected;
-                            manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
-                            break;
-                        }
-
-                        case MsgType::kSubscribeNodeSetAdvertised: {
-                            SubscribeNodeSet sns(msg_bytes, false);
-
-                            if (config_.debug) {
-                                std::ostringstream sns_nodes;
-                                for (const auto& node : sns.nodes) {
-                                    sns_nodes << NodeId().Value(node) << ", ";
-                                }
-
-                                SPDLOG_LOGGER_DEBUG(LOGGER, "SNS received id: {} nodes: {}", sns.id, sns_nodes.str());
-                            }
-
-                            manager_.SnsReceived(*this, sns, false);
-                            break;
-                        }
-
-                        case MsgType::kSubscribeNodeSetWithdrawn: {
-                            SubscribeNodeSet sns(msg_bytes, true);
-                            SPDLOG_LOGGER_DEBUG(LOGGER, "SNS withdrawn received id: {}", sns.id);
-                            manager_.SnsReceived(*this, sns, true);
-                            break;
-                        }
-
-                        case MsgType::kNodeInfoAdvertise: {
-                            NodeInfo node_info(msg_bytes);
-                            manager_.NodeReceived(GetSessionId(), node_info, false);
-                            break;
-                        }
-
-                        case MsgType::kNodeInfoWithdrawn: {
-                            NodeInfo node_info(msg_bytes);
-                            manager_.NodeReceived(GetSessionId(), node_info, true);
-                            break;
-                        }
-
-                        case MsgType::kSubscribeInfoAdvertised: {
-                            SubscribeInfo subscribe_info(msg_bytes);
-                            manager_.SubscribeInfoReceived(GetSessionId(), subscribe_info, false);
-                            break;
-                        }
-
-                        case MsgType::kSubscribeInfoWithdrawn: {
-                            SubscribeInfo subscribe_info(msg_bytes);
-                            manager_.SubscribeInfoReceived(GetSessionId(), subscribe_info, true);
-                            break;
-                        }
-
-                        case MsgType::kAnnounceInfoAdvertised: {
-                            AnnounceInfo announce_info(msg_bytes);
-                            manager_.AnnounceInfoReceived(GetSessionId(), announce_info, false);
-                            break;
-                        }
-
-                        case MsgType::kAnnounceInfoWithdrawn: {
-                            AnnounceInfo announce_info(msg_bytes);
-                            manager_.AnnounceInfoReceived(GetSessionId(), announce_info, true);
-                            break;
-                        }
-
-                        default: {
-                            SPDLOG_LOGGER_DEBUG(config_.logger_, "Invalid message type {}", static_cast<int>(type));
-                        }
-                    }
-                }
-            }
         } else {
-            // Data message
-            if (!stream_buf->AnyHasValueB()) {
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Received new data object stream id: {}, init data object", stream_id);
-                stream_buf->InitAnyB<DataObject>();
-
-                auto& dobj = stream_buf->GetAnyB<DataObject>();
-                if (stream_buf->Available(2)) {
-                    auto buf_sz = stream_buf->Size();
-
-                    std::vector<uint8_t> data = std::move(stream_buf->Front(buf_sz));
-                    auto is_complete = dobj.Deserialize(data);
-
-                    // Set Any object if new stream
-                    if (dobj.type == DataObjectType::kNewStream) {
-                        stream_buf->InitAny<DataObject>();
-                        auto& sobj = stream_buf->GetAny<DataObject>();
-                        sobj = dobj;
-
-                    } else if (dobj.type == DataObjectType::kExistingStream) {
-                        auto& sobj = stream_buf->GetAny<DataObject>();
-                        dobj.sns_id = sobj.sns_id;
-                        dobj.priority = sobj.priority;
-                        dobj.ttl = sobj.ttl;
-                        dobj.track_full_name_hash = sobj.track_full_name_hash;
-                        dobj.group_id = sobj.group_id;
-                        dobj.sub_group_id = sobj.sub_group_id;
-                    }
-
-                    if (is_complete) {
-                        SPDLOG_LOGGER_DEBUG(
-                          LOGGER,
-                          "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} dobj_size: {} sbuf_size: {}",
-                          stream_id,
-                          dobj.sns_id,
-                          dobj.track_full_name_hash,
-                          dobj.data_length,
-                          dobj.SizeBytes(),
-                          stream_buf->Size());
-
-                        stream_buf->Pop(dobj.SizeBytes());
-
-                        manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-
-                        stream_buf->ResetAnyB(); // Reset must be done after use of data
-                    } else {
-                        stream_buf->Pop(dobj.SizeBytes());
-                    }
-
-                    // TODO(tievens): loop to process remaining data in stream buffer
-                }
-            } else { // Existing data - append to data object AnyB
-                auto& dobj = stream_buf->GetAnyB<DataObject>();
-                const auto avail_bytes = stream_buf->Size();
-                auto data = stream_buf->Front(avail_bytes);
-                const auto [read_bytes, is_complete] = dobj.AppendData(data);
-                stream_buf->Pop(read_bytes);
-                // TODO(tievens): loop to process remaining data in stream buffer
-
-                if (is_complete) {
-                    SPDLOG_LOGGER_DEBUG(LOGGER,
-                                        "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} sbuf_size: {}",
-                                        stream_id,
-                                        dobj.sns_id,
-                                        dobj.track_full_name_hash,
-                                        dobj.data_length,
-                                        stream_buf->Size());
-
-                    manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-
-                    stream_buf->ResetAnyB(); // Reset must be done after use of data
-                }
-            }
+            ProcessReceivedData(stream_id, stream_buf);
         }
     }
 
@@ -512,7 +557,7 @@ namespace laps::peering {
                                 data_object.sns_id,
                                 data_object.track_full_name_hash,
                                 data_object.data.size());
-            // TODO(tievens): Send data based on peer fib
+            // TODO(tievens): implement datagram
         }
     }
 
