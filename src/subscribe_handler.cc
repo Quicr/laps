@@ -96,7 +96,7 @@ namespace laps {
                 case Status::kNotConnected:
                     reason = "not connected";
                     break;
-                case Status::kSubscribeError:
+                case Status::kError:
                     reason = "subscribe error";
                     break;
                 case Status::kNotAuthorized:
@@ -105,7 +105,7 @@ namespace laps {
                 case Status::kNotSubscribed:
                     reason = "not subscribed";
                     break;
-                case Status::kPendingSubscribeResponse:
+                case Status::kPendingResponse:
                     reason = "pending subscribe response";
                     break;
                 case Status::kSendingUnsubscribe:
