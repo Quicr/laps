@@ -33,6 +33,7 @@ namespace laps::peering {
     {
       public:
         // Below are sent only when include headers is requested
+        uint8_t header_len{ 0 };                           ///< Size of header length in bytes (up to start of payload bytes)
         DataObjectType type;                                ///< Type of the data object
         SubscribeNodeSetId sns_id{ 0 };                     ///< SNS ID used by the peer
         quicr::TrackFullNameHash track_full_name_hash{ 0 }; ///< Full Track name (aka track alias)

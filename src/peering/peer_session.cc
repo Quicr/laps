@@ -416,11 +416,15 @@ namespace laps::peering {
 
         eflags.use_reliable = stream_id.has_value() ? true : false; // If stream isn't set, it's datagram
 
-        if (!stream_buf->Available(8)) {
+        if (!stream_buf->Available(10)) {
             return; // Wait for next callback as there isn't enough data
         }
 
         if (!stream_buf->AnyHasValueB()) {
+            if (stream_buf->Front() > stream_buf->Size()) {
+                return; // Not enough bytes to parse the headers, wait till more arrives
+            }
+
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Received new data object stream id: {}, init data object",
                                 stream_id.has_value() ? *stream_id : 0);
