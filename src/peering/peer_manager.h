@@ -42,6 +42,7 @@ namespace laps::peering {
                             const NodeInfo& remote_node_info);
 
         void ForwardPeerData(PeerSessionId peer_session_id,
+                             uint64_t stream_id,
                              SubscribeNodeSetId in_sns_id,
                              uint8_t priority,
                              uint32_t ttl,

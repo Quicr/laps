@@ -177,7 +177,7 @@ namespace laps::peering {
                                const quicr::ITransport::EnqueueFlags& eflags,
                                Span<uint8_t const> data)
     {
-        SPDLOG_LOGGER_DEBUG(LOGGER, "Sending data SNS id: {} data size: {}", sns_id, data.size());
+        //SPDLOG_LOGGER_DEBUG(LOGGER, "Sending data SNS id: {} data size: {}", sns_id, data.size());
 
         transport_->Enqueue(t_conn_id_, sns_id, data, priority, ttl, 0, eflags);
     }
@@ -416,6 +416,10 @@ namespace laps::peering {
 
         eflags.use_reliable = stream_id.has_value() ? true : false; // If stream isn't set, it's datagram
 
+        if (!stream_buf->Available(8)) {
+            return; // Wait for next callback as there isn't enough data
+        }
+
         if (!stream_buf->AnyHasValueB()) {
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Received new data object stream id: {}, init data object",
@@ -423,78 +427,90 @@ namespace laps::peering {
             stream_buf->InitAnyB<DataObject>();
 
             auto& dobj = stream_buf->GetAnyB<DataObject>();
-            if (stream_buf->Available(2)) {
-                auto buf_sz = stream_buf->Size();
+            std::vector<uint8_t> data = std::move(stream_buf->Front(stream_buf->Size()));
+            auto is_complete = dobj.Deserialize(data);
 
-                std::vector<uint8_t> data = std::move(stream_buf->Front(buf_sz));
-                auto is_complete = dobj.Deserialize(data);
+            // Set Any object if new stream
+            if (dobj.type == DataObjectType::kNewStream) {
+                eflags.new_stream = true;
+                eflags.clear_tx_queue = true;
+                eflags.use_reset = true;
 
-                // Set Any object if new stream
-                if (dobj.type == DataObjectType::kNewStream) {
-                    eflags.new_stream = true;
-                    eflags.clear_tx_queue = true;
-                    eflags.use_reset = true;
+                stream_buf->InitAny<DataObject>();
+                auto& sobj = stream_buf->GetAny<DataObject>();
+                sobj = dobj;
 
-                    stream_buf->InitAny<DataObject>();
-                    auto& sobj = stream_buf->GetAny<DataObject>();
-                    sobj = dobj;
-
-                } else if (dobj.type == DataObjectType::kExistingStream) {
-                    auto& sobj = stream_buf->GetAny<DataObject>();
-                    dobj.sns_id = sobj.sns_id;
-                    dobj.priority = sobj.priority;
-                    dobj.ttl = sobj.ttl;
-                    dobj.track_full_name_hash = sobj.track_full_name_hash;
-                    dobj.group_id = sobj.group_id;
-                    dobj.sub_group_id = sobj.sub_group_id;
-                }
-
-                if (is_complete) {
+            } else if (dobj.type == DataObjectType::kExistingStream) {
+                if (!stream_buf->AnyHasValue()) {
                     SPDLOG_LOGGER_DEBUG(LOGGER,
-                                        "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} "
-                                        "dobj_size: {} sbuf_size: {}",
-                                        stream_id.has_value() ? *stream_id : 0,
-                                        dobj.sns_id,
-                                        dobj.track_full_name_hash,
-                                        dobj.data_length,
-                                        dobj.SizeBytes(),
-                                        stream_buf->Size());
-
-                    stream_buf->Pop(dobj.SizeBytes());
-                    manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-
-                    // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
-                    manager_.ForwardPeerData(GetSessionId(),
-                                             dobj.sns_id,
-                                             dobj.priority,
-                                             dobj.ttl,
-                                             { data.begin(), data.begin() + dobj.SizeBytes() },
-                                             eflags);
-
-                    stream_buf->ResetAnyB(); // Reset must be done after use of data
-                } else {
-
-                    stream_buf->Pop(dobj.SizeBytes());
-                    // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
-                    manager_.ForwardPeerData(GetSessionId(),
-                                             dobj.sns_id,
-                                             dobj.priority,
-                                             dobj.ttl,
-                                             { data.begin(), data.begin() + dobj.SizeBytes() },
-                                             eflags);
+                                        "Received new data on stream id: {}, that is not of type kNewStream",
+                                        stream_id.has_value() ? *stream_id : 0);
+                    return;
                 }
 
-                // TODO(tievens): loop to process remaining data in stream buffer
+                auto& sobj = stream_buf->GetAny<DataObject>();
+                dobj.sns_id = sobj.sns_id;
+                dobj.priority = sobj.priority;
+                dobj.ttl = sobj.ttl;
+                dobj.track_full_name_hash = sobj.track_full_name_hash;
+                dobj.group_id = sobj.group_id;
+                dobj.sub_group_id = sobj.sub_group_id;
             }
+
+            if (is_complete) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {}"
+                                    " dobj_size: {} sbuf_size: {}",
+                                    stream_id.has_value() ? *stream_id : 0,
+                                    dobj.sns_id,
+                                    dobj.track_full_name_hash,
+                                    dobj.data_length,
+                                    dobj.data.size(),
+                                    dobj.SizeBytes(),
+                                    stream_buf->Size());
+
+                stream_buf->Pop(dobj.SizeBytes());
+                manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
+
+                // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
+                manager_.ForwardPeerData(GetSessionId(),
+                                         stream_id.has_value() ? *stream_id : 0,
+                                         dobj.sns_id,
+                                         dobj.priority,
+                                         dobj.ttl,
+                                         { data.begin(), data.begin() + dobj.SizeBytes() },
+                                         eflags);
+
+                stream_buf->ResetAnyB(); // Reset must be done after use of data
+
+            } else {
+                stream_buf->Pop(dobj.SizeBytes());
+                // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
+                manager_.ForwardPeerData(GetSessionId(),
+                                         stream_id.has_value() ? *stream_id : 0,
+                                         dobj.sns_id,
+                                         dobj.priority,
+                                         dobj.ttl,
+                                         { data.begin(), data.begin() + dobj.SizeBytes() },
+                                         eflags);
+            }
+
+            // TODO(tievens): loop to process remaining data in stream buffer
         } else { // Existing data - append to data object AnyB
             auto& dobj = stream_buf->GetAnyB<DataObject>();
-            const auto avail_bytes = stream_buf->Size();
-            auto data = stream_buf->Front(avail_bytes);
+
+            if (!stream_buf->Size()) {
+                return; // Nothing to do if there is no data available
+            }
+
+            auto data = stream_buf->Front(stream_buf->Size());
             const auto [read_bytes, is_complete] = dobj.AppendData(data);
+
             stream_buf->Pop(read_bytes);
 
             // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
             manager_.ForwardPeerData(GetSessionId(),
+                                     stream_id.has_value() ? *stream_id : 0,
                                      dobj.sns_id,
                                      dobj.priority,
                                      dobj.ttl,
@@ -506,16 +522,27 @@ namespace laps::peering {
             if (is_complete) {
                 SPDLOG_LOGGER_DEBUG(
                   LOGGER,
-                  "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} sbuf_size: {}",
+                  "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {} sbuf_size: {}",
                   stream_id.has_value() ? *stream_id : 0,
                   dobj.sns_id,
                   dobj.track_full_name_hash,
                   dobj.data_length,
+                  dobj.data.size(),
                   stream_buf->Size());
 
                 manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
 
                 stream_buf->ResetAnyB(); // Reset must be done after use of data
+            } else {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER,
+                  "Data object not complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} != {} sbuf_size: {}",
+                  stream_id.has_value() ? *stream_id : 0,
+                  dobj.sns_id,
+                  dobj.track_full_name_hash,
+                  dobj.data_length,
+                  dobj.data.size(),
+                  stream_buf->Size());
             }
         }
     }
@@ -552,7 +579,7 @@ namespace laps::peering {
             }
 
             DataObject data_object(*data);
-            SPDLOG_LOGGER_DEBUG(LOGGER,
+            SPDLOG_LOGGER_TRACE(LOGGER,
                                 "Received dgram sns_id: {} track_full_name: {} data size: {}",
                                 data_object.sns_id,
                                 data_object.track_full_name_hash,

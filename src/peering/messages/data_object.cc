@@ -17,13 +17,12 @@ namespace laps::peering {
     uint32_t DataObject::SizeBytes() const
     {
         uint32_t size = 1 /* type */
-        + quicr::UintVar(group_id).Size()
-        + quicr::UintVar(sub_group_id).Size()
-        + quicr::UintVar(data.size()).Size() + data.size();
+                        + quicr::UintVar(data.size()).Size() + data.size();
 
         switch (type) {
             case DataObjectType::kDatagram:
                 size += sizeof(sns_id) + sizeof(track_full_name_hash);
+                size += quicr::UintVar(group_id).Size() + quicr::UintVar(sub_group_id).Size();
                 break;
 
             case DataObjectType::kExistingStream:
@@ -32,6 +31,7 @@ namespace laps::peering {
             case DataObjectType::kNewStream:
                 size += sizeof(sns_id) + sizeof(track_full_name_hash);
                 size += sizeof(priority) + sizeof(ttl);
+                size += quicr::UintVar(group_id).Size() + quicr::UintVar(sub_group_id).Size();
                 break;
         }
 
@@ -47,6 +47,7 @@ namespace laps::peering {
     {
         auto it = serialized_data.begin();
 
+        uint32_t size_needed = 1;
         type = static_cast<DataObjectType>(*(it++));
 
 
@@ -57,17 +58,21 @@ namespace laps::peering {
             case DataObjectType::kDatagram: {
                 sns_id = ValueOf<uint32_t>({ it, it + 4 });
                 it += 4;
+                size_needed += 4;
 
                 track_full_name_hash = ValueOf<uint64_t>({ it, it + 8 });
                 it += 8;
+                size_needed += 8;
 
                 auto group_id_size = quicr::UintVar::Size(*it);
                 group_id = uint64_t(quicr::UintVar({ it, it + group_id_size }));
                 it += group_id_size;
+                size_needed += group_id_size;
 
                 auto subgroup_id_size = quicr::UintVar::Size(*it);
                 sub_group_id = uint64_t(quicr::UintVar({ it, it + subgroup_id_size }));
                 it += subgroup_id_size;
+                size_needed += subgroup_id_size;
 
                 break;
             }
@@ -75,22 +80,26 @@ namespace laps::peering {
             case DataObjectType::kNewStream: {
                 sns_id = ValueOf<uint32_t>({ it, it + 4 });
                 it += 4;
+                size_needed += 4;
 
                 track_full_name_hash = ValueOf<uint64_t>({ it, it + 8 });
                 it += 8;
+                size_needed += 8;
 
                 auto group_id_size = quicr::UintVar::Size(*it);
                 group_id = uint64_t(quicr::UintVar({ it, it + group_id_size }));
                 it += group_id_size;
+                size_needed += group_id_size;
 
                 auto subgroup_id_size = quicr::UintVar::Size(*it);
                 group_id = uint64_t(quicr::UintVar({ it, it + subgroup_id_size }));
                 it += subgroup_id_size;
+                size_needed += subgroup_id_size;
 
                 priority = *(it++);
                 ttl = ValueOf<uint32_t>({ it, it + 4 });
                 it += 4;
-
+                size_needed += 4;
 
                 break;
             }
@@ -99,15 +108,21 @@ namespace laps::peering {
         auto data_len_uv_size = quicr::UintVar::Size(*it);
         data_length = uint64_t(quicr::UintVar({ it, it + data_len_uv_size }));
         it += data_len_uv_size;
+        size_needed += data_len_uv_size;
 
-        if (data_len_uv_size <= serialized_data.end() - it) {
+        if (size_needed > serialized_data.size()) {
+            throw std::runtime_error("not enough bytes to decode headers");
+        }
+
+        auto remaining_data_size = serialized_data.end() - it;
+        if (data_length <= remaining_data_size) {
             data = {it, it + data_length};
             return true;
-
         }
 
         if (data_length >= 2'000'000) {
             SPDLOG_WARN("Received data object is very large size: {}", data_length);
+            return false;
         }
 
         data_storage.reserve(data_length);
@@ -120,16 +135,21 @@ namespace laps::peering {
 
     std::pair<uint64_t, bool> DataObject::AppendData(Span<const uint8_t> a_data)
     {
-        bool is_complete{ false };
         uint64_t read_bytes{ 0 };
 
         const auto remaining_data_bytes = data_length - data.size();
 
+        if (a_data.size() >= remaining_data_bytes) {
+            data_storage.insert(data_storage.end(), a_data.begin(), a_data.begin() + remaining_data_bytes);
+            read_bytes = remaining_data_bytes;
+        } else {
+            data_storage.insert(data_storage.end(), a_data.begin(), a_data.end());
+            read_bytes = a_data.size();
+        }
 
-        data_storage.insert(data_storage.end(), a_data.begin(), a_data.end());
         data = { data_storage.begin(), data_storage.end() };
 
-        return {read_bytes, is_complete};
+        return {read_bytes, data.size() == data_length};
     }
 
 
