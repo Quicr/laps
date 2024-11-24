@@ -271,11 +271,11 @@ namespace laps::peering {
 
                 entry.stream_id = stream_id;
 
-                // TODO: Need to udpate the SNS ID
-                /*
-                auto sns_id_bytes = BytesOf(entry.sns_id);
-                std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data.begin() + 2);
-                */
+                // Update SNS_ID if new stream header included or if datagram (both have sns_id)
+                if (eflags.new_stream || eflags.use_reliable == false) {
+                    auto sns_id_bytes = BytesOf(entry.sns_id);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data.begin() + 2);
+                }
 
                 auto out_peer_sess = entry.peer_session.lock();
                 out_peer_sess->SendData(priority, ttl, entry.sns_id, eflags, data);

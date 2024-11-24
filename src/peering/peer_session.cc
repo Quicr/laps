@@ -428,7 +428,7 @@ namespace laps::peering {
                 return false; // Not enough bytes to parse the headers, wait till more arrives
             }
 
-            SPDLOG_LOGGER_DEBUG(LOGGER,
+            SPDLOG_LOGGER_TRACE(LOGGER,
                                 "Received new data object stream id: {}, init data object",
                                 stream_id.has_value() ? *stream_id : 0);
             stream_buf->InitAnyB<DataObject>();
@@ -465,7 +465,7 @@ namespace laps::peering {
             }
 
             if (is_complete) {
-                SPDLOG_LOGGER_DEBUG(LOGGER,
+                SPDLOG_LOGGER_TRACE(LOGGER,
                                     "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {}"
                                     " dobj_size: {} sbuf_size: {}",
                                     stream_id.has_value() ? *stream_id : 0,
@@ -526,7 +526,7 @@ namespace laps::peering {
                                  eflags);
 
         if (is_complete) {
-            SPDLOG_LOGGER_DEBUG(
+            SPDLOG_LOGGER_TRACE(
               LOGGER,
               "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {} sbuf_size: {}",
               stream_id.has_value() ? *stream_id : 0,
@@ -543,7 +543,7 @@ namespace laps::peering {
 
         }
 
-        SPDLOG_LOGGER_DEBUG(LOGGER,
+        SPDLOG_LOGGER_TRACE(LOGGER,
                             "Data object not complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} != "
                             "{} sbuf_size: {} pop_size: {} read_bytes: {}",
                             stream_id.has_value() ? *stream_id : 0,
