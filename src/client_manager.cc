@@ -322,6 +322,7 @@ namespace laps {
         object_headers.extensions = object.extensions;
         object_headers.object_id = object.object_id;
 
+        /*
         SPDLOG_DEBUG(
           "Processing peer data object tfn_hash: {} group_id: {} subgroup_id: {} object_id: {} data size: {}",
           data_object.track_full_name_hash,
@@ -329,6 +330,7 @@ namespace laps {
           data_object.sub_group_id,
           object.object_id,
           object.payload.size());
+          */
 
         // Fanout object to subscribers
         for (auto it = state_.subscribes.lower_bound({ data_object.track_full_name_hash, 0 });

@@ -172,7 +172,7 @@ namespace laps::peering {
 
         void ProcessControlMessage(std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
 
-        void ProcessReceivedData(std::optional<uint64_t> stream_id,
+        bool ProcessReceivedData(std::optional<uint64_t> stream_id,
                                  std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
 
       public:

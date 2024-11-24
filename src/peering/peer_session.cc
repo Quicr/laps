@@ -409,20 +409,23 @@ namespace laps::peering {
         }
     }
 
-    void PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
+    bool PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
                                           std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf)
     {
         quicr::ITransport::EnqueueFlags eflags;
 
         eflags.use_reliable = stream_id.has_value() ? true : false; // If stream isn't set, it's datagram
 
-        if (!stream_buf->Available(10)) {
-            return; // Wait for next callback as there isn't enough data
+        if (stream_buf->Empty()) {
+            return false; // Wait for next callback as there isn't enough data
         }
 
         if (!stream_buf->AnyHasValueB()) {
-            if (stream_buf->Front() > stream_buf->Size()) {
-                return; // Not enough bytes to parse the headers, wait till more arrives
+            if (!stream_buf->Available(*stream_buf->Front())) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Received new data object stream id: {}, not enough bytes yet to read headers {} > {}",
+                                    stream_id.has_value() ? *stream_id : 0, *stream_buf->Front(), stream_buf->Size());
+                return false; // Not enough bytes to parse the headers, wait till more arrives
             }
 
             SPDLOG_LOGGER_DEBUG(LOGGER,
@@ -449,7 +452,7 @@ namespace laps::peering {
                     SPDLOG_LOGGER_DEBUG(LOGGER,
                                         "Received new data on stream id: {}, that is not of type kNewStream",
                                         stream_id.has_value() ? *stream_id : 0);
-                    return;
+                    return false;
                 }
 
                 auto& sobj = stream_buf->GetAny<DataObject>();
@@ -487,30 +490,12 @@ namespace laps::peering {
 
                 stream_buf->ResetAnyB(); // Reset must be done after use of data
 
-            } else {
-                stream_buf->Pop(dobj.SizeBytes());
-                // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
-                manager_.ForwardPeerData(GetSessionId(),
-                                         stream_id.has_value() ? *stream_id : 0,
-                                         dobj.sns_id,
-                                         dobj.priority,
-                                         dobj.ttl,
-                                         { data.begin(), data.begin() + dobj.SizeBytes() },
-                                         eflags);
+                return !stream_buf->Empty(); // If stream buffer still has data, instruct to process again
+
             }
 
-            // TODO(tievens): loop to process remaining data in stream buffer
-        } else { // Existing data - append to data object AnyB
-            auto& dobj = stream_buf->GetAnyB<DataObject>();
-
-            if (!stream_buf->Size()) {
-                return; // Nothing to do if there is no data available
-            }
-
-            auto data = stream_buf->Front(stream_buf->Size());
-            const auto [read_bytes, is_complete] = dobj.AppendData(data);
-
-            stream_buf->Pop(read_bytes);
+            // Not complete yet
+            stream_buf->Pop(dobj.SizeBytes());
 
             // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
             manager_.ForwardPeerData(GetSessionId(),
@@ -518,37 +503,58 @@ namespace laps::peering {
                                      dobj.sns_id,
                                      dobj.priority,
                                      dobj.ttl,
-                                     { data.begin(), data.begin() + read_bytes },
+                                     { data.begin(), data.begin() + dobj.SizeBytes() },
                                      eflags);
 
-            // TODO(tievens): loop to process remaining data in stream buffer
-
-            if (is_complete) {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER,
-                  "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {} sbuf_size: {}",
-                  stream_id.has_value() ? *stream_id : 0,
-                  dobj.sns_id,
-                  dobj.track_full_name_hash,
-                  dobj.data_length,
-                  dobj.data.size(),
-                  stream_buf->Size());
-
-                manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-
-                stream_buf->ResetAnyB(); // Reset must be done after use of data
-            } else {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER,
-                  "Data object not complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} != {} sbuf_size: {}",
-                  stream_id.has_value() ? *stream_id : 0,
-                  dobj.sns_id,
-                  dobj.track_full_name_hash,
-                  dobj.data_length,
-                  dobj.data.size(),
-                  stream_buf->Size());
-            }
+            return false;
         }
+
+        // Existing data - append to data object AnyB
+        auto& dobj = stream_buf->GetAnyB<DataObject>();
+        auto data = stream_buf->Front(stream_buf->Size());
+        const auto [read_bytes, is_complete] = dobj.AppendData(data);
+
+        stream_buf->Pop(read_bytes);
+
+        // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
+        manager_.ForwardPeerData(GetSessionId(),
+                                 stream_id.has_value() ? *stream_id : 0,
+                                 dobj.sns_id,
+                                 dobj.priority,
+                                 dobj.ttl,
+                                 { data.begin(), data.begin() + read_bytes },
+                                 eflags);
+
+        if (is_complete) {
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER,
+              "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {} sbuf_size: {}",
+              stream_id.has_value() ? *stream_id : 0,
+              dobj.sns_id,
+              dobj.track_full_name_hash,
+              dobj.data_length,
+              dobj.data.size(),
+              stream_buf->Size());
+
+            manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
+
+            stream_buf->ResetAnyB(); // Reset must be done after use of data
+            return !stream_buf->Empty();
+
+        }
+
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Data object not complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} != "
+                            "{} sbuf_size: {} pop_size: {} read_bytes: {}",
+                            stream_id.has_value() ? *stream_id : 0,
+                            dobj.sns_id,
+                            dobj.track_full_name_hash,
+                            dobj.data_length,
+                            dobj.data.size(),
+                            stream_buf->Size(),
+                            data.size(),
+                            read_bytes);
+        return false;
     }
 
     void PeerSession::OnRecvStream(const quicr::TransportConnId& conn_id,
@@ -568,7 +574,7 @@ namespace laps::peering {
             ProcessControlMessage(stream_buf);
 
         } else {
-            ProcessReceivedData(stream_id, stream_buf);
+            while (ProcessReceivedData(stream_id, stream_buf));
         }
     }
 

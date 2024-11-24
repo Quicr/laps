@@ -256,7 +256,7 @@ namespace laps::peering {
                                       SubscribeNodeSetId in_sns_id,
                                       uint8_t priority,
                                       uint32_t ttl,
-                                      Span<uint8_t const> data,
+                                      Span<uint8_t> data,
                                       quicr::ITransport::EnqueueFlags eflags)
     {
 
@@ -270,6 +270,12 @@ namespace laps::peering {
                     continue; // Invalid, must be an old object
 
                 entry.stream_id = stream_id;
+
+                // TODO: Need to udpate the SNS ID
+                /*
+                auto sns_id_bytes = BytesOf(entry.sns_id);
+                std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data.begin() + 2);
+                */
 
                 auto out_peer_sess = entry.peer_session.lock();
                 out_peer_sess->SendData(priority, ttl, entry.sns_id, eflags, data);
@@ -334,7 +340,7 @@ namespace laps::peering {
                                         track_full_name_hash);
                     */
                     auto sns_id_bytes = BytesOf(fib_entry.sns_id);
-                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data.begin() + 1);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data.begin() + 2);
                 }
                 peer_sess->SendData(priority, ttl, fib_entry.sns_id, eflags, net_data);
             }
