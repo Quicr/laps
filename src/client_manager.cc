@@ -398,7 +398,7 @@ namespace laps {
             return false;
         }
 
-        return std::all_of(groups.begin(), groups.end(), [&](const auto& group) {
+        return std::any_of(groups.begin(), groups.end(), [&](const auto& group) {
             return !group.empty() && group.begin()->object_id <= attrs.start_object &&
                    std::prev(group.end())->object_id >= (attrs.end_object - 1);
         });
