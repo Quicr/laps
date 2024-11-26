@@ -14,11 +14,13 @@ namespace laps {
     ClientManager::ClientManager(State& state,
                                  const Config& config,
                                  const quicr::ServerConfig& cfg,
-                                 peering::PeerManager& peer_manager)
+                                 peering::PeerManager& peer_manager,
+                                 size_t cache_duration_ms)
       : quicr::Server(cfg)
       , state_(state)
       , config_(config)
       , peer_manager_(peer_manager)
+      , cache_duration_ms_(cache_duration_ms)
     {
     }
 
@@ -409,8 +411,8 @@ namespace laps {
                                   const quicr::FullTrackName& track_full_name,
                                   const quicr::FetchAttributes& attrs)
     {
-        auto pub_track_h =
-          std::make_shared<PublishTrackHandler>(track_full_name, quicr::TrackMode::kStream, attrs.priority, 60000);
+        auto pub_track_h = std::make_shared<PublishTrackHandler>(
+          track_full_name, quicr::TrackMode::kStream, attrs.priority, cache_duration_ms_);
         BindPublisherTrack(connection_handle, subscribe_id, pub_track_h);
 
         const auto th = quicr::TrackHash(track_full_name);
@@ -445,7 +447,8 @@ namespace laps {
         retrieve_cache_thread.detach();
     }
 
-    void ClientManager::FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id)
+    void ClientManager::FetchCancelReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
+                                            [[maybe_unused]] uint64_t subscribe_id)
     {
         // TODO(trigaux): Unbind publisher
         SPDLOG_INFO("Canceling fetch for subscribe_id: {0}", subscribe_id);

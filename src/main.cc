@@ -112,7 +112,10 @@ main(int argc, char* argv[])
         "e,endpoint_id", "This relay/server endpoint ID", cxxopts::value<std::string>()->default_value("moq-server"))(
         "c,cert", "Certificate file", cxxopts::value<std::string>()->default_value("./server-cert.pem"))(
         "k,key", "Certificate key file", cxxopts::value<std::string>()->default_value("./server-key.pem"))(
-        "q,qlog", "Enable qlog using path", cxxopts::value<std::string>()); // end of options
+        "q,qlog", "Enable qlog using path", cxxopts::value<std::string>())(
+        "cache_duration",
+        "Duration of cache objects in milliseconds",
+        cxxopts::value<size_t>()->default_value("60000")); // end of options
 
     options.add_options("Peering")("peer_port",
                                    "Listening port for peering connections",
@@ -139,7 +142,7 @@ main(int argc, char* argv[])
     peering::PeerManager peer_manager(laps_config, state, forwarding_info);
 
     try {
-        auto server = std::make_shared<ClientManager>(state, laps_config, server_config, peer_manager);
+        auto server = std::make_shared<ClientManager>(state, laps_config, server_config, peer_manager, result["cache_duration"].as<size_t>());
         peer_manager.SetClientManager(server); // Set pointer to client manager (e.g., server) after construct
 
         if (server->Start() != quicr::Transport::Status::kReady) {

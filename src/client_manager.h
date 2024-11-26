@@ -59,7 +59,8 @@ namespace laps {
         ClientManager(State& state,
                       const Config& config,
                       const quicr::ServerConfig& cfg,
-                      peering::PeerManager& peer_manager);
+                      peering::PeerManager& peer_manager,
+                      size_t cache_duration_ms = 60000);
 
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;
@@ -115,6 +116,7 @@ namespace laps {
         const Config& config_;
         peering::PeerManager& peer_manager_;
 
+        size_t cache_duration_ms_ = 0;
         std::map<quicr::TrackHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
 
         friend class SubscribeTrackHandler;
