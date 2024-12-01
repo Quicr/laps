@@ -23,9 +23,11 @@ TEST_CASE("Serialize Connect")
 
     auto net_data = connect.Serialize();
 
+    CHECK_EQ(net_data.size(), connect.SizeBytes() + kCommonHeadersSize);
     CHECK_EQ(net_data.size(), 80);
 
     Connect decoded_c({net_data.begin() + kCommonHeadersSize, net_data.end()});
+
 
     CHECK_EQ(decoded_c.mode, PeerMode::kBoth);
     CHECK_EQ(connect.node_info.id, decoded_c.node_info.id);
@@ -55,6 +57,7 @@ TEST_CASE("Serialize Connect Response")
 
     auto net_data = connect_resp.Serialize();
 
+    CHECK_EQ(net_data.size(), connect_resp.SizeBytes() + kCommonHeadersSize);
     CHECK_EQ(net_data.size(), 71);
 
     ConnectResponse decoded_cr({net_data.begin() + kCommonHeadersSize, net_data.end()});

@@ -19,7 +19,7 @@ namespace laps::peering {
         SPDLOG_LOGGER_INFO(LOGGER,
                            "Node peer_session_id: {} received id: {} contact: {} should delete = {}",
                            peer_session_id,
-                           node_info.id,
+                           NodeId().Value(node_info.id),
                            node_info.contact,
                            withdraw);
 

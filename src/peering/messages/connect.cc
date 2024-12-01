@@ -5,6 +5,8 @@
 
 namespace laps::peering {
 
+    constexpr uint16_t kConnectType = static_cast<uint16_t>(MsgType::kConnect);
+
     Connect::Connect(PeerMode mode, const NodeInfo& node_info)
       : mode(mode)
       , node_info(node_info)
@@ -33,8 +35,7 @@ namespace laps::peering {
 
         // Common header
         data.push_back(kProtocolVersion);
-        uint16_t type = static_cast<uint16_t>(MsgType::kConnect);
-        auto type_bytes = BytesOf(type);
+        auto type_bytes = BytesOf(kConnectType);
         data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
         auto data_len_bytes = BytesOf(size);
         data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());

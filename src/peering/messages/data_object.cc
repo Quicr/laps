@@ -52,14 +52,6 @@ namespace laps::peering {
     {
         auto it = serialized_data.begin();
 
-        /*
-        std::cerr << "bytes: ";
-        for (auto byte: serialized_data) {
-            std::cerr << " " << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(byte);
-        }
-        std::cerr << std::endl;
-        */
-
         header_len = *it++;
 
         if (header_len > serialized_data.size())

@@ -20,7 +20,9 @@ namespace laps::peering {
     class ConnectResponse : public CommonHeaders
     {
       public:
-        ProtocolError error; ///< NoError or error value for connect. If error, node_info is not set
+        ProtocolError error{
+            ProtocolError::kNoError
+        }; ///< NoError or error value for connect. If error, node_info is not set
 
         std::optional<NodeInfo> node_info; ///< This node information of server accepting the connection
 

@@ -9,6 +9,7 @@
 #include "peering/messages/subscribe_info.h"
 
 #include <sstream>
+#include <iomanip>
 
 namespace laps::peering {
 
@@ -231,6 +232,7 @@ namespace laps::peering {
         connect_resp.error = ProtocolError::kNoError;
         connect_resp.node_info = node_info_;
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect ok length: {}", connect_resp.Serialize().size());
+
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, connect_resp.Serialize(), 0, 1000);
     }
 
@@ -291,6 +293,7 @@ namespace laps::peering {
         if (stream_buf->Available(kCommonHeadersSize)) {
             auto bytes = stream_buf->Front(kCommonHeadersSize);
 
+            // TODO(tievens): Implement version checking and error handling
             auto version = bytes.front();
             auto type = ValueOf<uint16_t>({ bytes.begin() + 1, bytes.begin() + 3 });
             auto data_len = ValueOf<uint32_t>({ bytes.begin() + 3, bytes.begin() + 7 });
@@ -305,10 +308,10 @@ namespace laps::peering {
                     case MsgType::kConnect: {
                         peering::Connect connect(msg_bytes);
                         SPDLOG_LOGGER_DEBUG(config_.logger_,
-                                            "Connect from id: {} contact: {} mode: {}",
+                                            "Connect from id: {} contact: {} mode: {} version: {}",
                                             NodeId().Value(connect.node_info.id),
                                             connect.node_info.contact,
-                                            static_cast<int>(connect.mode));
+                                            static_cast<int>(connect.mode), static_cast<int>(version));
                         remote_node_info_ = connect.node_info;
 
                         status_ = StatusValue::kConnected;
@@ -332,9 +335,7 @@ namespace laps::peering {
 
                         } else {
                             SPDLOG_LOGGER_DEBUG(config_.logger_,
-                                                "Connect error response from id: {} contact: {} error: {}",
-                                                NodeId().Value(connect_resp.node_info->id),
-                                                connect_resp.node_info->contact,
+                                                "Connect error response from error: {}",
                                                 static_cast<int>(connect_resp.error));
                         }
                         status_ = StatusValue::kConnected;
@@ -412,8 +413,9 @@ namespace laps::peering {
     bool PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
                                           std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf)
     {
-        quicr::ITransport::EnqueueFlags eflags;
+        // TODO(tievens): Update to not buffer when node type is Via
 
+        quicr::ITransport::EnqueueFlags eflags;
         eflags.use_reliable = stream_id.has_value() ? true : false; // If stream isn't set, it's datagram
 
         if (stream_buf->Empty()) {
@@ -581,6 +583,8 @@ namespace laps::peering {
     void PeerSession::OnRecvDgram(const quicr::TransportConnId& conn_id,
                                   std::optional<quicr::DataContextId> data_ctx_id)
     {
+        constexpr quicr::ITransport::EnqueueFlags eflags {false, false, false, false };
+
         for (int i = 0; i < 80; i++) {
             auto data = transport_->Dequeue(conn_id, data_ctx_id);
 
@@ -588,13 +592,25 @@ namespace laps::peering {
                 return;
             }
 
-            DataObject data_object(*data);
+            DataObject dobj(*data);
+
+            if (node_info_.type != NodeType::kVia) {
+                manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
+            }
+
+            manager_.ForwardPeerData(GetSessionId(),
+                                     0,
+                                     dobj.sns_id,
+                                     dobj.priority,
+                                     dobj.ttl,
+                                     { data->begin(), data->begin() + dobj.SizeBytes() },
+                                     eflags);
+
             SPDLOG_LOGGER_TRACE(LOGGER,
                                 "Received dgram sns_id: {} track_full_name: {} data size: {}",
                                 data_object.sns_id,
                                 data_object.track_full_name_hash,
                                 data_object.data.size());
-            // TODO(tievens): implement datagram
         }
     }
 

@@ -5,6 +5,8 @@
 
 namespace laps::peering {
 
+    constexpr uint16_t kConnectResponseType = static_cast<uint16_t>(MsgType::kConnectResponse);
+
     uint32_t ConnectResponse::SizeBytes() const
     {
         return error == ProtocolError::kNoError ? sizeof(error) + node_info->SizeBytes() : sizeof(error);
@@ -30,12 +32,14 @@ namespace laps::peering {
 
         // Common header
         data.push_back(kProtocolVersion);
-        auto type_bytes = BytesOf(static_cast<uint16_t>(MsgType::kConnectResponse));
+
+        auto type_bytes = BytesOf(kConnectResponseType);
         data.insert(data.end(), type_bytes.rbegin(), type_bytes.rend());
         auto data_len_bytes = BytesOf(size);
         data.insert(data.end(), data_len_bytes.rbegin(), data_len_bytes.rend());
 
-        auto error_bytes = BytesOf(static_cast<uint16_t>(connect_resp.error));
+        auto error_code = static_cast<uint16_t>(connect_resp.error);
+        auto error_bytes = BytesOf(error_code);
         data.insert(data.end(), error_bytes.rbegin(), error_bytes.rend());
 
         if (connect_resp.error == ProtocolError::kNoError) {
