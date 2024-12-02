@@ -55,7 +55,8 @@ namespace laps::peering {
         auto full_name_bytes = BytesOf(subscribe_info.track_hash.track_fullname_hash);
         data.insert(data.end(), full_name_bytes.rbegin(), full_name_bytes.rend());
 
-        auto sub_size_bytes = BytesOf(uint32_t(subscribe_info.subscribe_data.size()));
+        uint32_t sub_size = subscribe_info.subscribe_data.size();
+        auto sub_size_bytes = BytesOf(sub_size);
         data.insert(data.end(), sub_size_bytes.rbegin(), sub_size_bytes.rend());
 
         data.insert(data.end(), subscribe_info.subscribe_data.begin(), subscribe_info.subscribe_data.end());

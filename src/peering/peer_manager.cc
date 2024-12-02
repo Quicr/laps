@@ -59,8 +59,9 @@ namespace laps::peering {
             return;
         }
 
-        if (withdraw) {
-            info_base_->RemoveSubscribe(subscribe_info);
+        if (withdraw && !info_base_->RemoveSubscribe(subscribe_info)) {
+            // Don't send to other peers if we have no state for it, such as being seen already
+            return;
         }
 
         for (const auto& sess : client_peer_sessions_) {
@@ -191,6 +192,11 @@ namespace laps::peering {
         auto peer_session = GetPeerSession(peer_session_id);
         if (not withdraw && !info_base_->AddAnnounce(announce_info)) {
             // Don't send to other peers if we have seen this before (loop)
+            return;
+        }
+
+        if (withdraw && !info_base_->RemoveAnnounce(announce_info)) {
+            // Don't send to other peers if we don't have state (loop)
             return;
         }
 
@@ -650,7 +656,7 @@ namespace laps::peering {
         std::lock_guard _(mutex_);
 
         // Send all node info
-        for (const auto& [key, node_item] : info_base_->nodes_) {
+        for (auto [key, node_item] : info_base_->nodes_) {
             if (key.first == peer_session.node_info_.id || key.second == peer_session.GetSessionId() ||
                 key.first == peer_session.remote_node_info_.id)
                 continue; // Skip, node is self, learned from peer, or peer is the node info
@@ -666,6 +672,7 @@ namespace laps::peering {
             if (skip)
                 continue;
 
+            node_item.node_info.path.push_back({ peer_session.node_info_.id, peer_session.metrics_.srtt_us });
             peer_session.SendNodeInfo(node_item.node_info);
         }
 

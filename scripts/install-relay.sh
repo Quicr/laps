@@ -33,7 +33,7 @@ Requires=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${INSTALL_DIR}/lapsRelay -d -e $(hostname)-$(hostid) -p 33435 -c ${INSTALL_DIR}/server-cert.pem -k ${INSTALL_DIR}/server-key.pem
+ExecStart=${INSTALL_DIR}/lapsRelay -d -e $(hostname)-$(hostid) -p 33435 -c ${INSTALL_DIR}/server-cert.pem -k ${INSTALL_DIR}/server-key.pem --peer_port 33436 --peer relay.m10x.org:33436
 Nice=15
 Restart=always
 RestartSec=1s
