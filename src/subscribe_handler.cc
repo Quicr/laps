@@ -31,8 +31,7 @@ namespace laps {
         peering::DataObjectType d_type;
         if (object_headers.track_mode.has_value() && *object_headers.track_mode == quicr::TrackMode::kDatagram) {
             d_type = peering::DataObjectType::kDatagram;
-        }
-        else {
+        } else {
             d_type = peering::DataObjectType::kExistingStream;
 
             if (prev_group_id_ != object_headers.group_id || prev_subgroup_id_ != object_headers.subgroup_id) {
@@ -100,9 +99,9 @@ namespace laps {
                           subgroup_id, object_id, extensions,           { data.begin(), data.end() },
                       };
 
-                      try {
-                          cache_entry.Get(group_id).insert(std::move(object));
-                      } catch (...) {
+                      if (auto group = cache_entry.Get(group_id)) {
+                          group->insert(std::move(object));
+                      } else {
                           cache_entry.Insert(group_id, { std::move(object) }, ttl);
                       }
                   };

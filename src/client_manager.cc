@@ -401,8 +401,8 @@ namespace laps {
         }
 
         return std::any_of(groups.begin(), groups.end(), [&](const auto& group) {
-            return !group.empty() && group.begin()->object_id <= attrs.start_object &&
-                   std::prev(group.end())->object_id >= (attrs.end_object - 1);
+            return !group->empty() && group->begin()->object_id <= attrs.start_object &&
+                   std::prev(group->end())->object_id >= (attrs.end_object - 1);
         });
     }
 
@@ -419,7 +419,7 @@ namespace laps {
 
         std::thread retrieve_cache_thread([=, cache_entries = cache_.at(th).Get(attrs.start_group, attrs.end_group)] {
             for (const auto& cache_entry : cache_entries) {
-                for (const auto& object : cache_entry) {
+                for (const auto& object : *cache_entry) {
                     if ((object.group_id < attrs.start_group || object.group_id >= attrs.end_group) ||
                         (object.object_id < attrs.start_object || object.object_id >= attrs.end_object))
                         continue;
