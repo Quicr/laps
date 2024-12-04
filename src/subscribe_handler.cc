@@ -95,8 +95,18 @@ namespace laps {
                       auto& cache_entry = server_.cache_.at(tnsh);
 
                       CacheObject object{
-                          priority,    ttl,       stream_header_needed, group_id,
-                          subgroup_id, object_id, extensions,           { data.begin(), data.end() },
+                          quicr::ObjectHeaders{
+                            group_id,
+                            object_id,
+                            subgroup_id,
+                            data.size(),
+                            quicr::ObjectStatus::kAvailable,
+                            priority,
+                            ttl,
+                            std::nullopt,
+                            extensions,
+                          },
+                          { data.begin(), data.end() },
                       };
 
                       if (auto group = cache_entry.Get(group_id)) {

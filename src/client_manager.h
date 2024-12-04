@@ -15,13 +15,7 @@ namespace laps {
      */
     struct CacheObject
     {
-        uint8_t priority;
-        uint32_t ttl;
-        bool stream_header_needed;
-        uint64_t group_id;
-        uint64_t subgroup_id;
-        uint64_t object_id;
-        std::optional<quicr::Extensions> extensions;
+        quicr::ObjectHeaders headers;
         quicr::Bytes data;
     };
 }
@@ -43,7 +37,7 @@ struct std::less<laps::CacheObject>
 {
     constexpr bool operator()(const laps::CacheObject& lhs, const laps::CacheObject& rhs) const noexcept
     {
-        return lhs.object_id < rhs.object_id;
+        return lhs.headers.object_id < rhs.headers.object_id;
     }
 };
 
