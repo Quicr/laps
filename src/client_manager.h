@@ -13,7 +13,10 @@ namespace laps {
     class ClientManager : public quicr::Server
     {
       public:
-        ClientManager(State& state, const quicr::ServerConfig& cfg, peering::PeerManager& peer_manager);
+        ClientManager(State& state,
+                      const Config& config,
+                      const quicr::ServerConfig& cfg,
+                      peering::PeerManager& peer_manager);
 
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;
@@ -56,6 +59,7 @@ namespace laps {
         void PurgePublishState(quicr::ConnectionHandle connection_handle);
 
         State& state_;
+        const Config& config_;
         peering::PeerManager& peer_manager_;
 
         friend class SubscribeTrackHandler;

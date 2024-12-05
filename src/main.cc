@@ -98,10 +98,10 @@ main(int argc, char* argv[])
 {
     int result_code = EXIT_SUCCESS;
 
-    laps::Config cfg;
+    laps::Config laps_config;
     State state;
 
-    SPDLOG_LOGGER_INFO(cfg.logger_, "Starting LAPS Relay (version {0})", cfg.Version());
+    SPDLOG_LOGGER_INFO(laps_config.logger_, "Starting LAPS Relay (version {0})", laps_config.Version());
 
     cxxopts::Options options("qclient", "MOQ Example Client");
     options.set_width(75).set_tab_expansion().allow_unrecognised_options().add_options()("h,help", "Print help")(
@@ -132,13 +132,13 @@ main(int argc, char* argv[])
     // Lock the mutex so that main can then wait on it
     std::unique_lock<std::mutex> lock(gvars::main_mutex);
 
-    quicr::ServerConfig config = InitConfig(result, cfg);
+    quicr::ServerConfig server_config = InitConfig(result, laps_config);
 
     std::shared_ptr<peering::InfoBase> forwarding_info = std::make_shared<peering::InfoBase>();
-    peering::PeerManager peer_manager(cfg, state, forwarding_info);
+    peering::PeerManager peer_manager(laps_config, state, forwarding_info);
 
     try {
-        auto server = std::make_shared<ClientManager>(state, config, peer_manager);
+        auto server = std::make_shared<ClientManager>(state, laps_config, server_config, peer_manager);
         peer_manager.SetClientManager(server); // Set pointer to client manager (e.g., server) after construct
 
         if (server->Start() != quicr::Transport::Status::kReady) {

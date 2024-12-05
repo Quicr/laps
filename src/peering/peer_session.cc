@@ -61,6 +61,8 @@ namespace laps::peering {
         if (transport_)
             transport_ = nullptr;
 
+        peer_sns_.clear();
+
         transport_ = quicr::ITransport::MakeClientTransport(
           peer_config_, transport_config_, *this, manager_.tick_service_, LOGGER);
         t_conn_id_ = transport_->Start();
@@ -221,6 +223,8 @@ namespace laps::peering {
         peering::Connect connect;
         connect.mode = PeerMode::kBoth;
         connect.node_info = node_info_;
+
+        peer_sns_.clear();
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect length: {}", connect.Serialize().size());
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, connect.Serialize(), 0, 1000);

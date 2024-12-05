@@ -63,8 +63,22 @@ namespace laps::peering {
             nodes_by_peer_session_.erase(ids_it);
         }
 
-        // TODO: Remove subscribes
-        // TODO: Remove announces
+        std::vector<std::pair<PeerSessionId, SubscribeNodeSetId>> fib_entries;
+        for (auto it = peer_fib_.lower_bound({ peer_session_id, 0 }); it != peer_fib_.end(); it++) {
+            auto& [key, fib_entry] = *it;
+
+            if (key.first != peer_session_id) {
+                break;
+            }
+
+            fib_entries.push_back(key);
+        }
+
+        for (const auto& key: fib_entries) {
+            peer_fib_.erase(key);
+        }
+
+        // TODO(tievens): Revisit sending node withdraws
     }
 
     bool InfoBase::AddSubscribe(const SubscribeInfo& subscribe_info)

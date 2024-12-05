@@ -210,6 +210,14 @@ namespace laps::peering {
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
         }
 
+        if (not withdraw) {
+            state_.announce_active[{ announce_info.full_name.namespace_hash, 0 }];
+        } else {
+            state_.announce_active.erase({ announce_info.full_name.namespace_hash, 0 });
+        }
+
+        SPDLOG_LOGGER_DEBUG(LOGGER, "We need to notify client manager about new announce for namespace {}", announce_info.full_name.namespace_hash);
+
     } catch (const std::exception&) {
         // ignore
     }
@@ -240,6 +248,30 @@ namespace laps::peering {
                 SPDLOG_LOGGER_INFO(LOGGER, "Peer session not connected peer_session_id: {}", peer_session_id);
 
                 PropagateNodeInfo(remote_node_info, true);
+
+                std::vector<SubscribeInfo> sub_info;
+                for (const auto& subs: info_base_->subscribes_) {
+                    auto sub_it = subs.second.find(remote_node_info.id);
+                    if (sub_it != subs.second.end()) {
+                        sub_info.emplace_back(sub_it->second);
+                    }
+                }
+
+                for (const auto& si: sub_info) {
+                    SubscribeInfoReceived(peer_session_id, si, true);
+                }
+
+                std::vector<AnnounceInfo> anno_info;
+                for (const auto& annos: info_base_->announces_) {
+                    auto anno_it = annos.second.find(remote_node_info.id);
+                    if (anno_it != annos.second.end()) {
+                        anno_info.emplace_back(anno_it->second);
+                    }
+                }
+
+                for (const auto& ai: anno_info) {
+                    AnnounceInfoReceived(peer_session_id, ai, true);
+                }
 
                 if (!stop_)
                     info_base_->PurgePeerSessionInfo(peer_session_id);
@@ -679,8 +711,7 @@ namespace laps::peering {
         // Send all announces
         for (const auto& [th, anno_item] : info_base_->announces_) {
             for (const auto& [_, anno_info] : anno_item) {
-                if (peer_session.GetSessionId() == anno_info.source_node_id ||
-                    peer_session.remote_node_info_.id == anno_info.source_node_id)
+                if (peer_session.remote_node_info_.id == anno_info.source_node_id)
                     continue; // Skip, don't send self or remote to self
 
                 peer_session.SendAnnounceInfo(anno_info);
@@ -690,8 +721,7 @@ namespace laps::peering {
         // Send all subscribes
         for (const auto& [tfh, sub_item] : info_base_->subscribes_) {
             for (const auto& [_, sub_info] : sub_item) {
-                if (peer_session.GetSessionId() == sub_info.source_node_id ||
-                    peer_session.remote_node_info_.id == sub_info.source_node_id)
+                if (peer_session.remote_node_info_.id == sub_info.source_node_id)
                     continue; // Skip, don't send self or remote to self
 
                 peer_session.SendSubscribeInfo(sub_info);

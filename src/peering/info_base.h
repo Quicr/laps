@@ -106,6 +106,7 @@ namespace laps::peering {
          *    peering session.
          */
         std::unordered_map<NodeIdValueType, std::weak_ptr<PeerSession>> nodes_best_;
+
         std::map<quicr::TrackFullNameHash, std::map<NodeIdValueType, SubscribeInfo>> subscribes_;
 
         struct FibEntry
