@@ -3,7 +3,7 @@
 #---------------------------------------------------------------------
 
 # Build layer
-FROM alpine:latest as builder
+FROM alpine:3.20.3 as builder
 
 RUN apk update
 RUN apk add --no-cache cmake alpine-sdk openssl-dev go perl clang lld curl

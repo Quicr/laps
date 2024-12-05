@@ -83,7 +83,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.server_bind_ip = cli_opts["bind_ip"].as<std::string>();
     config.server_port = cli_opts["port"].as<uint16_t>();
 
-    config.transport_config.debug = cfg.debug;
+    config.transport_config.debug = false; // cfg.debug;
     config.transport_config.tls_cert_filename = cfg.tls_cert_filename_;
     config.transport_config.tls_key_filename = cfg.tls_key_filename_;
     config.transport_config.use_reset_wait_strategy = false;

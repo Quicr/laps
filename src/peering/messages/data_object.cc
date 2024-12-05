@@ -50,6 +50,8 @@ namespace laps::peering {
 
     bool DataObject::Deserialize(Span<const uint8_t> serialized_data)
     {
+        if (serialized_data.empty()) false;
+
         auto it = serialized_data.begin();
 
         header_len = *it++;

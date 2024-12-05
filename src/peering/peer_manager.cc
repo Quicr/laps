@@ -253,6 +253,8 @@ namespace laps::peering {
 
                 // Remove or find new best peer for subscribe info
                 std::vector<SubscribeInfo> remove_sub;
+                std::vector<std::pair<PeerSessionId, SubscribeInfo>> update_sub;
+                std::unique_lock<std::mutex> ib_lock(info_base_->mutex_);
                 for (const auto& subs : info_base_->subscribes_) {
                     auto sub_it = subs.second.find(remote_node_info.id);
                     if (sub_it != subs.second.end()) {
@@ -269,7 +271,7 @@ namespace laps::peering {
                                 auto best_peer = info_base_->GetBestPeerSession(si.source_node_id);
                                 if (const auto& peer_sess = best_peer.lock()) {
                                     // best path found, update entry to use new path
-                                    SubscribeInfoReceived(peer_sess->GetSessionId(), si, false);
+                                    update_sub.emplace_back(peer_sess->GetSessionId(), si);
                                 } else {
                                     // No best path found, remove
                                     remove_sub.emplace_back(sub_it->second);
@@ -278,9 +280,14 @@ namespace laps::peering {
                         }
                     }
                 }
+                ib_lock.unlock();
 
                 for (const auto& si : remove_sub) {
                     SubscribeInfoReceived(peer_session_id, si, true);
+                }
+
+                for (const auto& [id, si]: update_sub) {
+                    SubscribeInfoReceived(id, si, false);
                 }
 
                 // Remove all announces if no active peering sessions exists
@@ -328,7 +335,7 @@ namespace laps::peering {
                                       Span<uint8_t> data,
                                       quicr::ITransport::EnqueueFlags eflags)
     {
-
+        std::lock_guard _(info_base_->mutex_); // TODO: See about removing this lock
         auto it = info_base_->peer_fib_.find({ peer_ession_id, in_sns_id });
         if (it != info_base_->peer_fib_.end()) {
             for (auto& [out_peer_sess_id, entry] : it->second) {
@@ -566,7 +573,7 @@ namespace laps::peering {
         quicr::TransportRemote server{ "0.0.0.0", config_.peering.listening_port, quicr::TransportProtocol::kQuic };
 
         quicr::TransportConfig tconfig;
-        tconfig.debug = cfg.debug;
+        tconfig.debug = false; //cfg.debug;
         tconfig.tls_cert_filename = config_.tls_cert_filename_;
         tconfig.tls_key_filename = config_.tls_key_filename_;
         tconfig.time_queue_init_queue_size = config_.peering.init_queue_size;

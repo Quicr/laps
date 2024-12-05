@@ -435,10 +435,20 @@ namespace laps::peering {
         }
 
         if (!stream_buf->AnyHasValueB()) {
-            if (!stream_buf->Available(*stream_buf->Front())) {
+            const auto hdr_len = stream_buf->Front();
+
+            if (!hdr_len.has_value() || !stream_buf->Available(*hdr_len)) {
                 SPDLOG_LOGGER_DEBUG(LOGGER,
                                     "Received new data object stream id: {}, not enough bytes yet to read headers {} > {}",
                                     stream_id.has_value() ? *stream_id : 0, *stream_buf->Front(), stream_buf->Size());
+                return false; // Not enough bytes to parse the headers, wait till more arrives
+            }
+
+            std::vector<uint8_t> data = std::move(stream_buf->Front(stream_buf->Size()));
+            if (data.size() < hdr_len) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                    "Received new data object stream id: {}, not enough bytes yet to read headers {} > {} ..",
+                    stream_id.has_value() ? *stream_id : 0, *stream_buf->Front(), stream_buf->Size());
                 return false; // Not enough bytes to parse the headers, wait till more arrives
             }
 
@@ -448,7 +458,6 @@ namespace laps::peering {
             stream_buf->InitAnyB<DataObject>();
 
             auto& dobj = stream_buf->GetAnyB<DataObject>();
-            std::vector<uint8_t> data = std::move(stream_buf->Front(stream_buf->Size()));
             auto is_complete = dobj.Deserialize(data);
 
             // Set Any object if new stream
