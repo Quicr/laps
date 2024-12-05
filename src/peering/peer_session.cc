@@ -182,11 +182,14 @@ namespace laps::peering {
     {
         //SPDLOG_LOGGER_DEBUG(LOGGER, "Sending data SNS id: {} data size: {}", sns_id, data.size());
 
+        if (status_ != StatusValue::kConnected) return;
         transport_->Enqueue(t_conn_id_, sns_id, data, priority, ttl, 0, eflags);
     }
 
     void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw)
     {
+        if (status_ != StatusValue::kConnected) return;
+
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending SNS id: {} set size: {} withdraw: {}", sns.id, sns.nodes.size(), withdraw);
 
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, sns.Serialize(true, withdraw), 0, 1000);
@@ -194,6 +197,7 @@ namespace laps::peering {
 
     void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
     {
+        if (status_ != StatusValue::kConnected) return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending announce info id: {} source_node_id: {} withdraw: {}",
                             announce_info.full_name.full_name_hash,
@@ -204,6 +208,7 @@ namespace laps::peering {
 
     void PeerSession::SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw)
     {
+        if (status_ != StatusValue::kConnected) return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending subscribe fullname: {} source_node_id: {} withdraw: {}",
                             subscribe_info.track_hash.track_fullname_hash,
@@ -214,6 +219,7 @@ namespace laps::peering {
 
     void PeerSession::SendNodeInfo(const NodeInfo& node_info, bool withdraw)
     {
+        if (status_ != StatusValue::kConnected) return;
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending node info id: {}", node_info.id);
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, node_info.Serialize(true, withdraw), 0, 1000);
     }
@@ -344,6 +350,8 @@ namespace laps::peering {
                         }
                         status_ = StatusValue::kConnected;
                         manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
+
+                        manager_.InfoBaseSyncPeer(*this);
                         break;
                     }
 

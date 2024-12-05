@@ -40,7 +40,11 @@ namespace laps::peering {
             PropagateNodeInfo(adv_node_info, true);
         }
     } catch (const std::exception&) {
-        // ignore
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Cannot find peer session {} to process node info received id: {} contact: {}",
+                            peer_session_id,
+                            NodeId().Value(node_info.id),
+                            node_info.contact);
     }
 
     void PeerManager::SubscribeInfoReceived(PeerSessionId peer_session_id,
@@ -48,30 +52,24 @@ namespace laps::peering {
                                             bool withdraw)
     try {
         SPDLOG_LOGGER_INFO(LOGGER,
-                           "Subscribe info received peer_session_id: {} fullname: {} withdraw: {}",
+                           "Subscribe info received peer_session_id: {} fullname: {} namespace: {} withdraw: {}",
                            peer_session_id,
                            subscribe_info.track_hash.track_fullname_hash,
+                           subscribe_info.track_hash.track_namespace_hash,
                            withdraw);
 
         auto peer_session = GetPeerSession(peer_session_id);
-        if (not withdraw && !info_base_->AddSubscribe(subscribe_info)) {
-            // Don't send to other peers if we have seen this before (loop)
-            return;
-        }
 
-        if (withdraw && !info_base_->RemoveSubscribe(subscribe_info)) {
-            // Don't send to other peers if we have no state for it, such as being seen already
-            return;
-        }
+        if (withdraw ? info_base_->RemoveSubscribe(subscribe_info) : info_base_->AddSubscribe(subscribe_info)) {
+            for (const auto& sess : client_peer_sessions_) {
+                if (peer_session_id != sess.first)
+                    sess.second->SendSubscribeInfo(subscribe_info, withdraw);
+            }
 
-        for (const auto& sess : client_peer_sessions_) {
-            if (peer_session_id != sess.first)
-                sess.second->SendSubscribeInfo(subscribe_info, withdraw);
-        }
-
-        for (const auto& sess : server_peer_sessions_) {
-            if (peer_session_id != sess.first)
-                sess.second->SendSubscribeInfo(subscribe_info, withdraw);
+            for (const auto& sess : server_peer_sessions_) {
+                if (peer_session_id != sess.first)
+                    sess.second->SendSubscribeInfo(subscribe_info, withdraw);
+            }
         }
 
         /*
@@ -81,6 +79,14 @@ namespace laps::peering {
          */
         if (not withdraw) {
             uint64_t update_ref = rand();
+
+
+            for (const auto& [key, track_set]: state_.announce_active) {
+                SPDLOG_LOGGER_DEBUG(LOGGER, "ns: {}", key.first);
+                for (const auto& tfn: track_set) {
+                    SPDLOG_LOGGER_DEBUG(LOGGER, "ns: {} tfn: {}", key.first, tfn);
+                }
+            }
 
             auto it = state_.announce_active.lower_bound({ subscribe_info.track_hash.track_namespace_hash, 0 });
             if (it != state_.announce_active.end()) {
@@ -210,14 +216,6 @@ namespace laps::peering {
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
         }
 
-        if (not withdraw) {
-            state_.announce_active[{ announce_info.full_name.namespace_hash, 0 }];
-        } else {
-            state_.announce_active.erase({ announce_info.full_name.namespace_hash, 0 });
-        }
-
-        SPDLOG_LOGGER_DEBUG(LOGGER, "We need to notify client manager about new announce for namespace {}", announce_info.full_name.namespace_hash);
-
     } catch (const std::exception&) {
         // ignore
     }
@@ -228,7 +226,7 @@ namespace laps::peering {
     {
         switch (status) {
             case PeerSession::StatusValue::kConnected: {
-                SPDLOG_LOGGER_INFO(LOGGER, "Peer session connected peer_session_id: ", peer_session_id);
+                SPDLOG_LOGGER_INFO(LOGGER, "Peer session connected peer_session_id: {}", peer_session_id);
 
                 std::lock_guard _(info_base_->mutex_);
 
@@ -244,38 +242,71 @@ namespace laps::peering {
             }
             case PeerSession::StatusValue::kConnecting:
                 break;
-            default:
+
+            default: {
                 SPDLOG_LOGGER_INFO(LOGGER, "Peer session not connected peer_session_id: {}", peer_session_id);
 
                 PropagateNodeInfo(remote_node_info, true);
 
-                std::vector<SubscribeInfo> sub_info;
-                for (const auto& subs: info_base_->subscribes_) {
+                if (!stop_)
+                    info_base_->PurgePeerSessionInfo(peer_session_id);
+
+                // Remove or find new best peer for subscribe info
+                std::vector<SubscribeInfo> remove_sub;
+                for (const auto& subs : info_base_->subscribes_) {
                     auto sub_it = subs.second.find(remote_node_info.id);
                     if (sub_it != subs.second.end()) {
-                        sub_info.emplace_back(sub_it->second);
+                        remove_sub.emplace_back(sub_it->second);
+                    } else {
+                        /*
+                         * check if peer session was used as best path for subscription. If so, try to find another
+                         *      best path. If no best path can be found, remove subscribe info.
+                         */
+                        for (const auto& [_, si]: subs.second) {
+                            auto cfib_it = info_base_->client_fib_.find({si.track_hash.track_fullname_hash, peer_session_id});
+                            if (cfib_it != info_base_->client_fib_.end()) {
+                                info_base_->client_fib_.erase(cfib_it);
+                                auto best_peer = info_base_->GetBestPeerSession(si.source_node_id);
+                                if (const auto& peer_sess = best_peer.lock()) {
+                                    // best path found, update entry to use new path
+                                    SubscribeInfoReceived(peer_sess->GetSessionId(), si, false);
+                                } else {
+                                    // No best path found, remove
+                                    remove_sub.emplace_back(sub_it->second);
+                                }
+                            }
+                        }
                     }
                 }
 
-                for (const auto& si: sub_info) {
+                for (const auto& si : remove_sub) {
                     SubscribeInfoReceived(peer_session_id, si, true);
                 }
 
-                std::vector<AnnounceInfo> anno_info;
-                for (const auto& annos: info_base_->announces_) {
-                    auto anno_it = annos.second.find(remote_node_info.id);
-                    if (anno_it != annos.second.end()) {
-                        anno_info.emplace_back(anno_it->second);
+                // Remove all announces if no active peering sessions exists
+                bool remove_announce { true };
+                for (const auto& [id, peer_sess]: client_peer_sessions_) {
+                    if (peer_sess->Status() == PeerSession::StatusValue::kConnected) {
+                        remove_announce = false;
+                        break;
                     }
                 }
 
-                for (const auto& ai: anno_info) {
-                    AnnounceInfoReceived(peer_session_id, ai, true);
+                if (remove_announce) {
+                    for (const auto& [id, peer_sess]: server_peer_sessions_) {
+                        if (peer_sess->Status() == PeerSession::StatusValue::kConnected) {
+                            remove_announce = false;
+                            break;
+                        }
+                    }
                 }
 
-                if (!stop_)
-                    info_base_->PurgePeerSessionInfo(peer_session_id);
+                if (remove_announce) {
+                    info_base_->announces_.clear();
+                }
+
                 break;
+            }
         }
     }
 
@@ -425,11 +456,9 @@ namespace laps::peering {
                                      const quicr::PublishAnnounceAttributes&,
                                      bool withdraw)
     {
-        quicr::TrackHash th(track_full_name);
-
         AnnounceInfo ai;
 
-        ai.full_name.full_name_hash = th.track_fullname_hash;
+        ai.full_name.full_name_hash = std::hash<quicr::TrackNamespace>{}(track_full_name.name_space);
         ai.full_name.namespace_tuples.reserve(track_full_name.name_space.GetHashes().size());
         ai.source_node_id = node_info_.id;
 
@@ -443,17 +472,17 @@ namespace laps::peering {
             ai.full_name.namespace_tuples.push_back(ns_item);
         }
 
-        ai.full_name.name_hash = th.track_name_hash;
+        ai.full_name.name_hash = 0;
 
         for (const auto& sess : client_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(
-              LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
+              LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
             sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
         for (const auto& sess : server_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(
-              LOGGER, "Sending announce hash: {} peer_session_id: {}", th.track_fullname_hash, sess.first);
+              LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
             sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
@@ -542,6 +571,7 @@ namespace laps::peering {
         tconfig.tls_key_filename = config_.tls_key_filename_;
         tconfig.time_queue_init_queue_size = config_.peering.init_queue_size;
         tconfig.time_queue_max_duration = config_.peering.max_ttl_expiry_ms;
+        tconfig.idle_timeout_ms = 5000;
 
         server_transport_ =
           quicr::ITransport::MakeServerTransport(std::move(server), std::move(tconfig), *this, tick_service_, LOGGER);
@@ -836,12 +866,18 @@ namespace laps::peering {
             if (std::chrono::duration_cast<std::chrono::milliseconds>(check - start).count() >= interval_ms) {
                 start = std::chrono::system_clock::now();
 
-                for (auto& [_, sess] : client_peer_sessions_) {
+                std::vector<PeerSessionId> remove_peer_sess;
+                for (auto& [id, sess] : client_peer_sessions_) {
                     if (sess->Status() == PeerSession::StatusValue::kDisconnected) {
                         SPDLOG_LOGGER_INFO(LOGGER, "Peer session {} disconnected, reconnecting", sess->GetSessionId());
-
                         sess->Connect();
+                        client_peer_sessions_.try_emplace(sess->GetSessionId(), std::move(sess));
+                        remove_peer_sess.push_back(id); // New connect has new session ID, remove old
                     }
+                }
+
+                for (const auto id: remove_peer_sess) {
+                    client_peer_sessions_.erase(id);
                 }
             }
 

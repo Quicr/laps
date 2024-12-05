@@ -89,6 +89,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.transport_config.use_reset_wait_strategy = false;
     config.transport_config.time_queue_max_duration = 5000;
     config.transport_config.quic_qlog_path = qlog_path;
+    config.transport_config.idle_timeout_ms = 10000;
 
     return config;
 }

@@ -102,9 +102,10 @@ namespace laps {
         bool notify_peering_manager{ false };
 
         SPDLOG_LOGGER_INFO(LOGGER,
-                           "Received announce from connection handle: {0} for namespace_hash: {1}",
+                           "Received announce from connection handle: {0} for namespace_hash: {} fullname_hash: {}",
                            connection_handle,
-                           th.track_namespace_hash);
+                           th.track_namespace_hash,
+                           th.track_fullname_hash);
 
         // Add to state if not exist
         auto it = state_.announce_active.find({ th.track_namespace_hash, connection_handle });

@@ -77,8 +77,6 @@ namespace laps::peering {
         for (const auto& key: fib_entries) {
             peer_fib_.erase(key);
         }
-
-        // TODO(tievens): Revisit sending node withdraws
     }
 
     bool InfoBase::AddSubscribe(const SubscribeInfo& subscribe_info)
@@ -147,8 +145,7 @@ namespace laps::peering {
         if (it != nodes_best_.end()) {
             return it->second;
         }
-
-        throw std::runtime_error("Peer session not found");
+        return {};
     }
 
     bool InfoBase::SelectBestNode(NodeIdValueType node_id)
