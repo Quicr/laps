@@ -6,11 +6,12 @@
 
 BUILD_JOBS?=4
 BUILD_DIR?=build
+ECR_NAME?=laps-relay
 CLANG_FORMAT=clang-format -i
 
 PROJECTNAME := laps
 
-.PHONY: all clean cclean format
+.PHONY: all clean cclean format docs
 
 # -----------------------------------------
 # Help/other targets
@@ -28,7 +29,7 @@ help: Makefile
 all: build
 
 build-prep: CMakeLists.txt
-	cmake -S . -B${BUILD_DIR} -DBUILD_TESTING=OFF -DLAPS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+	cmake -S . -B${BUILD_DIR} -DBUILD_TESTING=OFF -DLAPS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Debug
 
 ## build: Builds the project
 build: build-prep
@@ -44,10 +45,16 @@ clean:
 cclean:
 	rm -rf ${BUILD_DIR}
 
+## docs: Make docs
+docs:
+	 @echo "Creating docs/peering.pdf"
+	 @pandoc docs/peering.md -f markdown -V geometry:landscape --toc=true -o docs/peering.pdf --filter=mermaid-filter
+
 ## format: Format c/c++ code
 format:
 	find src -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
 	find test -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
+
 
 ## lint: Lint code
 lint:
@@ -70,7 +77,7 @@ docker-prep:
 image-amd64: docker-prep
 	@docker buildx build --progress=plain \
 			--output type=docker --platform linux/amd64 \
-			-f Dockerfile -t quicr/laps-relay:${DOCKER_TAG}-amd64 .
+			-f Dockerfile -t quicr/${ECR_NAME}:${DOCKER_TAG}-amd64 .
 
 ## image-pi-v7: Create ARM/v7 PI binary in build-pi/
 image-pi-32: docker-prep
@@ -78,9 +85,9 @@ image-pi-32: docker-prep
 	@mkdir build-pi
 	@docker buildx build --progress=plain \
 			--output type=docker --platform linux/arm/v7 \
-			-f debian.Dockerfile -t quicr/laps-relay:pi-armv7 .
+			-f debian.Dockerfile -t quicr/${ECR_NAME}:pi-armv7 .
 	@docker rm -f laps-relay-pi
-	@docker create --name laps-relay-pi quicr/laps-relay:pi-armv7
+	@docker create --name laps-relay-pi quicr/${ECR_NAME}:pi-armv7
 	@docker cp laps-relay-pi:/usr/local/bin/lapsRelay ./build-pi/lapsRelay
 	@docker rm -f laps-relay-pi
 
@@ -90,9 +97,9 @@ image-pi: docker-prep
 	@mkdir build-pi
 	@docker buildx build --progress=plain \
 			--output type=docker --platform linux/arm64 \
-			-f debian.Dockerfile -t quicr/laps-relay:pi-arm64 .
+			-f debian.Dockerfile -t quicr/${ECR_NAME}:pi-arm64 .
 	@docker rm -f laps-relay-pi
-	@docker create --name laps-relay-pi quicr/laps-relay:pi-arm64
+	@docker create --name laps-relay-pi quicr/${ECR_NAME}:pi-arm64
 	@docker cp laps-relay-pi:/usr/local/bin/lapsRelay ./build-pi/lapsRelay
 	@docker rm -f laps-relay-pi
 
@@ -101,7 +108,7 @@ image-pi: docker-prep
 image-arm64: docker-prep
 	@docker buildx build --progress=plain \
 			--output type=docker --platform linux/arm64 \
-			-f Dockerfile -t quicr/laps-relay:${DOCKER_TAG}-arm64 .
+			-f Dockerfile -t quicr/${ECR_NAME}:${DOCKER_TAG}-arm64 .
 
 ecr-login:
 	@echo "==> Logging into ECR using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
@@ -113,10 +120,10 @@ ecr-login:
 
 ## publish-image: Publish amd64 image to ECR
 publish-image: ecr-login
-	@echo "==> Tagging docker image to 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64"
-	@docker tag quicr/laps-relay:${DOCKER_TAG}-amd64 \
-    	017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
-	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64 to ECR"
-	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/laps-relay:${DOCKER_TAG}-amd64
+	@echo "==> Tagging docker image to 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-amd64"
+	@docker tag quicr/${ECR_NAME}:${DOCKER_TAG}-amd64 \
+    	017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-amd64
+	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-amd64 to ECR"
+	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-amd64
 
 

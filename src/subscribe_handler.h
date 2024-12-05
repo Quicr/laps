@@ -1,8 +1,7 @@
 #pragma once
 
-#include "server.h"
+#include "client_manager.h"
 
-#include "state.h"
 #include <quicr/common.h>
 #include <quicr/object.h>
 #include <quicr/subscribe_track_handler.h>
@@ -18,11 +17,14 @@ namespace laps {
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               quicr::messages::ObjectPriority priority,
                               quicr::messages::GroupOrder group_order,
-                              LapsServer& server);
+                              ClientManager& server);
         void ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data) override;
         void StatusChanged(Status status) override;
 
       private:
-        LapsServer& server_;
+        ClientManager& server_;
+
+        uint64_t prev_group_id_{ 0 };
+        uint64_t prev_subgroup_id_{ 0 };
     };
 } // namespace laps

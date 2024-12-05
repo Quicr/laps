@@ -13,12 +13,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.5.21
+        VERSION 0.6.9
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
 configure_file( version_config.h.in ${CMAKE_BINARY_DIR}/generated/version_config.h )
-include_directories( ${CMAKE_BINARY_DIR}/generated/ )
+include_directories( ${CMAKE_BINARY_DIR}/generated/ ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 ###
 ### Global Config

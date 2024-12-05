@@ -11,7 +11,7 @@ namespace laps {
     SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                                                  quicr::messages::ObjectPriority priority,
                                                  quicr::messages::GroupOrder group_order,
-                                                 LapsServer& server)
+                                                 ClientManager& server)
       : quicr::SubscribeTrackHandler(full_track_name, priority, group_order)
       , server_(server)
     {
@@ -26,6 +26,37 @@ namespace laps {
             SPDLOG_DEBUG("Data without valid track alias");
             return;
         }
+
+        // Send to peers
+        peering::DataObjectType d_type;
+        if (object_headers.track_mode.has_value() && *object_headers.track_mode == quicr::TrackMode::kDatagram) {
+            d_type = peering::DataObjectType::kDatagram;
+        }
+        else {
+            d_type = peering::DataObjectType::kExistingStream;
+
+            if (prev_group_id_ != object_headers.group_id || prev_subgroup_id_ != object_headers.subgroup_id) {
+                d_type = peering::DataObjectType::kNewStream;
+            }
+        }
+
+        prev_group_id_ = object_headers.group_id;
+        prev_subgroup_id_ = object_headers.subgroup_id;
+
+        std::vector<uint8_t> peer_data;
+        quicr::messages::MoqStreamSubGroupObject object;
+        object.object_id = object_headers.object_id;
+        object.extensions = object_headers.extensions;
+        object.payload.assign(data.begin(), data.end());
+        peer_data << object;
+
+        server_.peer_manager_.ClientDataObject(*track_alias,
+                                               object_headers.priority.has_value() ? *object_headers.priority : 2,
+                                               object_headers.ttl.has_value() ? *object_headers.ttl : 2000,
+                                               object_headers.group_id,
+                                               object_headers.subgroup_id,
+                                               d_type,
+                                               peer_data);
 
         // Fanout object to subscribers
         for (auto it = server_.state_.subscribes.lower_bound({ track_alias.value(), 0 });
@@ -65,7 +96,7 @@ namespace laps {
                 case Status::kNotConnected:
                     reason = "not connected";
                     break;
-                case Status::kSubscribeError:
+                case Status::kError:
                     reason = "subscribe error";
                     break;
                 case Status::kNotAuthorized:
@@ -74,7 +105,7 @@ namespace laps {
                 case Status::kNotSubscribed:
                     reason = "not subscribed";
                     break;
-                case Status::kPendingSubscribeResponse:
+                case Status::kPendingResponse:
                     reason = "pending subscribe response";
                     break;
                 case Status::kSendingUnsubscribe:

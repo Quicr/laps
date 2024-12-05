@@ -9,9 +9,21 @@ endif()
 add_executable(lapsRelay
         main.cc
         config.cc
-        server.cc
+        client_manager.cc
         subscribe_handler.cc
         publish_handler.cc
+
+        peering/messages/connect.cc
+        peering/messages/connect_response.cc
+        peering/messages/subscribe_info.cc
+        peering/messages/announce_info.cc
+        peering/messages/node_info.cc
+        peering/messages/subscribe_node_set.cc
+        peering/messages/data_object.cc
+
+        peering/peer_manager.cc
+        peering/peer_session.cc
+        peering/info_base.cc
 )
 
 target_link_libraries(lapsRelay PRIVATE quicr)

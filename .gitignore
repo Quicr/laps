@@ -38,7 +38,7 @@ build*
 
 # IDEA
 .idea
-cmake-build-debug
+cmake-build-*
 
 # Editor files/directories
 /.vscode
@@ -52,3 +52,7 @@ cmake-build-debug
 # Other
 .tmp.dprobes.h
 libquicr.spdx
+
+# Generated docs
+docs/*.pdf
+mermaid-filter.err

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "state.h"
+
+#include <peering/peer_manager.h>
 #include <quicr/server.h>
 
 namespace laps {
@@ -8,10 +10,13 @@ namespace laps {
      * @brief MoQ Server
      * @details Implementation of the MoQ Server
      */
-    class LapsServer : public quicr::Server
+    class ClientManager : public quicr::Server
     {
       public:
-        LapsServer(State& state, const quicr::ServerConfig& cfg);
+        ClientManager(State& state,
+                      const Config& config,
+                      const quicr::ServerConfig& cfg,
+                      peering::PeerManager& peer_manager);
 
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;
@@ -35,13 +40,27 @@ namespace laps {
                                const quicr::FullTrackName& track_full_name,
                                const quicr::SubscribeAttributes&) override;
 
+        void ProcessSubscribe(quicr::ConnectionHandle connection_handle,
+                              uint64_t subscribe_id,
+                              const quicr::TrackHash& th,
+                              const quicr::FullTrackName& track_full_name,
+                              const quicr::SubscribeAttributes&);
+
+        void ProcessPeerDataObject(const peering::DataObject& data_object);
+
+        void RemovePublisherSubscribe(const quicr::TrackHash& track_hash);
+
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;
+
+        void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id) override {}
 
       private:
         void PurgePublishState(quicr::ConnectionHandle connection_handle);
 
         State& state_;
+        const Config& config_;
+        peering::PeerManager& peer_manager_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;
