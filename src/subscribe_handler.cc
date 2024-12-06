@@ -118,7 +118,7 @@ namespace laps {
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(
-                  connection_handle, sub_info.subscribe_id, pub_track_h, std::move(cache_message_callback));
+                  connection_handle, sub_info.subscribe_id, pub_track_h, false, std::move(cache_message_callback));
                 sub_info.publish_handler = pub_track_h;
             }
 
