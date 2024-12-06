@@ -109,6 +109,8 @@ namespace laps {
         State& state_;
         const Config& config_;
         peering::PeerManager& peer_manager_;
+        const int subscription_refresh_interval_ms = 500;
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_subscription_refresh_time;
 
         size_t cache_duration_ms_ = 0;
         std::map<quicr::TrackHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
