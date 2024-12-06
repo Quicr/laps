@@ -104,7 +104,7 @@ namespace laps::peering {
                     SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
                     cm->ProcessSubscribe(
-                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
+                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, quicr::messages::FilterType::LatestObject, s_attrs);
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
@@ -511,7 +511,7 @@ namespace laps::peering {
                         SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
                         cm->ProcessSubscribe(
-                          0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name, 0 }, s_attrs);
+                          0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name, 0 }, quicr::messages::FilterType::LatestObject, s_attrs);
                     }
 
                     auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);

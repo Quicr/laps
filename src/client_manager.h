@@ -95,6 +95,7 @@ namespace laps {
                               uint64_t subscribe_id,
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
+                              quicr::messages::FilterType filter_type,
                               const quicr::SubscribeAttributes&);
 
         void ProcessPeerDataObject(const peering::DataObject& data_object);

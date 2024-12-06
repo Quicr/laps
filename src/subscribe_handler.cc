@@ -112,7 +112,7 @@ namespace laps {
                       if (auto group = cache_entry.Get(group_id)) {
                           group->insert(std::move(object));
                       } else {
-                          cache_entry.Insert(group_id, { std::move(object) }, ttl);
+                          cache_entry.Insert(group_id, { std::move(object) }, server_.cache_duration_ms_);
                       }
                   };
 
