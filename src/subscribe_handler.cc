@@ -89,7 +89,7 @@ namespace laps {
                           server_.cache_.insert(
                             std::make_pair(tnsh,
                                            quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                                             ttl, 1, server_.GetTickService() }));
+                                             server_.cache_duration_ms_, 1, server_.GetTickService() }));
                       }
 
                       auto& cache_entry = server_.cache_.at(tnsh);
