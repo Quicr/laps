@@ -6,6 +6,8 @@
 #include <quicr/object.h>
 #include <quicr/subscribe_track_handler.h>
 
+#include <map>
+
 namespace laps {
     /**
      * @brief  Subscribe track handler

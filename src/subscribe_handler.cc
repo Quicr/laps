@@ -31,8 +31,7 @@ namespace laps {
         peering::DataObjectType d_type;
         if (object_headers.track_mode.has_value() && *object_headers.track_mode == quicr::TrackMode::kDatagram) {
             d_type = peering::DataObjectType::kDatagram;
-        }
-        else {
+        } else {
             d_type = peering::DataObjectType::kExistingStream;
 
             if (prev_group_id_ != object_headers.group_id || prev_subgroup_id_ != object_headers.subgroup_id) {
@@ -71,14 +70,55 @@ namespace laps {
 
             if (sub_info.publish_handler == nullptr) {
                 // Create the publish track handler and bind it on first object received
-                auto pub_track_h =
-                  std::make_shared<PublishTrackHandler>(sub_info.track_full_name,
-                                                        *object_headers.track_mode,
-                                                        sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
-                                                        object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
+                auto pub_track_h = std::make_shared<PublishTrackHandler>(
+                  sub_info.track_full_name,
+                  *object_headers.track_mode,
+                  sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
+                  object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
+
+                auto&& cache_message_callback =
+                  [&, tnsh = quicr::TrackHash(sub_info.track_full_name)](uint8_t priority,
+                                                                         uint32_t ttl,
+                                                                         bool stream_header_needed,
+                                                                         uint64_t group_id,
+                                                                         uint64_t subgroup_id,
+                                                                         uint64_t object_id,
+                                                                         std::optional<quicr::Extensions> extensions,
+                                                                         quicr::BytesSpan data) {
+                      if (server_.cache_.count(tnsh) == 0) {
+                          server_.cache_.insert(
+                            std::make_pair(tnsh,
+                                           quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                                             server_.cache_duration_ms_, 1, server_.GetTickService() }));
+                      }
+
+                      auto& cache_entry = server_.cache_.at(tnsh);
+
+                      CacheObject object{
+                          quicr::ObjectHeaders{
+                            group_id,
+                            object_id,
+                            subgroup_id,
+                            data.size(),
+                            quicr::ObjectStatus::kAvailable,
+                            priority,
+                            ttl,
+                            std::nullopt,
+                            extensions,
+                          },
+                          { data.begin(), data.end() },
+                      };
+
+                      if (auto group = cache_entry.Get(group_id)) {
+                          group->insert(std::move(object));
+                      } else {
+                          cache_entry.Insert(group_id, { std::move(object) }, ttl);
+                      }
+                  };
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h);
+                server_.BindPublisherTrack(
+                  connection_handle, sub_info.subscribe_id, pub_track_h, std::move(cache_message_callback));
                 sub_info.publish_handler = pub_track_h;
             }
 

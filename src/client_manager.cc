@@ -14,11 +14,13 @@ namespace laps {
     ClientManager::ClientManager(State& state,
                                  const Config& config,
                                  const quicr::ServerConfig& cfg,
-                                 peering::PeerManager& peer_manager)
+                                 peering::PeerManager& peer_manager,
+                                 size_t cache_duration_ms)
       : quicr::Server(cfg)
       , state_(state)
       , config_(config)
       , peer_manager_(peer_manager)
+      , cache_duration_ms_(cache_duration_ms)
     {
     }
 
@@ -377,6 +379,67 @@ namespace laps {
 
             sub_info.publish_handler->PublishObject(object_headers, object.payload);
         }
+    }
+    bool ClientManager::FetchReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
+                                      [[maybe_unused]] uint64_t subscribe_id,
+                                      const quicr::FullTrackName& track_full_name,
+                                      const quicr::FetchAttributes& attrs)
+    {
+        const auto th = quicr::TrackHash(track_full_name);
+
+        auto cache_entry_it = cache_.find(th);
+        if (cache_entry_it == cache_.end()) {
+            return false;
+        }
+
+        auto& [_, cache_entry] = *cache_entry_it;
+
+        const auto& groups = cache_entry.Get(attrs.start_group, attrs.end_group);
+
+        if (groups.empty()) {
+            return false;
+        }
+
+        return std::any_of(groups.begin(), groups.end(), [&](const auto& group) {
+            return !group->empty() && group->begin()->headers.object_id <= attrs.start_object &&
+                   std::prev(group->end())->headers.object_id >= (attrs.end_object - 1);
+        });
+    }
+
+    void ClientManager::OnFetchOk(quicr::ConnectionHandle connection_handle,
+                                  uint64_t subscribe_id,
+                                  const quicr::FullTrackName& track_full_name,
+                                  const quicr::FetchAttributes& attrs)
+    {
+        auto pub_track_h = std::make_shared<PublishTrackHandler>(
+          track_full_name, quicr::TrackMode::kStream, attrs.priority, cache_duration_ms_);
+        BindPublisherTrack(connection_handle, subscribe_id, pub_track_h);
+
+        const auto th = quicr::TrackHash(track_full_name);
+
+        std::thread retrieve_cache_thread([=, cache_entries = cache_.at(th).Get(attrs.start_group, attrs.end_group)] {
+            for (const auto& cache_entry : cache_entries) {
+                for (const auto& object : *cache_entry) {
+                    if ((object.headers.group_id < attrs.start_group || object.headers.group_id >= attrs.end_group) ||
+                        (object.headers.object_id < attrs.start_object || object.headers.object_id >= attrs.end_object))
+                        continue;
+
+                    pub_track_h->PublishObject(object.headers, object.data);
+
+                    // TODO(trigaux): Figure out if this value is correct.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+        });
+
+        retrieve_cache_thread.detach();
+    }
+
+    void ClientManager::FetchCancelReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
+                                            [[maybe_unused]] uint64_t subscribe_id)
+    {
+        // TODO(trigaux): Unbind publisher
+        SPDLOG_INFO("Canceling fetch for subscribe_id: {0}", subscribe_id);
     }
 
     void ClientManager::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
