@@ -112,13 +112,13 @@ namespace laps {
                       if (auto group = cache_entry.Get(group_id)) {
                           group->insert(std::move(object));
                       } else {
-                          cache_entry.Insert(group_id, { std::move(object) }, ttl);
+                          cache_entry.Insert(group_id, { std::move(object) }, server_.cache_duration_ms_);
                       }
                   };
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(
-                  connection_handle, sub_info.subscribe_id, pub_track_h, std::move(cache_message_callback));
+                  connection_handle, sub_info.subscribe_id, pub_track_h, false, std::move(cache_message_callback));
                 sub_info.publish_handler = pub_track_h;
             }
 
