@@ -12,7 +12,7 @@ namespace laps {
                                                  quicr::messages::ObjectPriority priority,
                                                  quicr::messages::GroupOrder group_order,
                                                  ClientManager& server)
-      : quicr::SubscribeTrackHandler(full_track_name, priority, group_order)
+      : quicr::SubscribeTrackHandler(full_track_name, priority, group_order, quicr::messages::FilterType::LatestObject)
       , server_(server)
     {
     }
