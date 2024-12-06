@@ -61,6 +61,8 @@ namespace laps {
         State& state_;
         const Config& config_;
         peering::PeerManager& peer_manager_;
+        const int subscription_refresh_interval_ms = 500;
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_subscription_refresh_time;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

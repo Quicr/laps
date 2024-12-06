@@ -439,27 +439,50 @@ namespace laps {
 
         // Subscribe to announcer if announcer is active
         for (auto it = state_.announce_active.lower_bound({ th.track_namespace_hash, 0 });
-             it != state_.announce_active.end();
-             ++it) {
+             it != state_.announce_active.end(); ++it)
+        {
             auto& [key, track_aliases] = *it;
 
-            if (key.first != th.track_namespace_hash)
+            if (key.first != th.track_namespace_hash) {
                 break;
+            }
 
-            SPDLOG_LOGGER_INFO(LOGGER,
-                               "Sending subscribe to announcer connection handler: {0} subscribe track_alias: {1}",
-                               key.second,
-                               th.track_fullname_hash);
+            // if we have already forwarded subscription for the track alias
+            // don't forward unless we have expired the refresh period
+            if(state_.pub_subscribes.count({th.track_fullname_hash, key.second}) == 0) {
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "Sending subscribe to announcer connection handler: {0} subscribe track_alias: {1}",
+                                   key.second,
+                                   th.track_fullname_hash);
 
-            track_aliases.insert(th.track_fullname_hash); // Add track alias to state
+                track_aliases.insert(th.track_fullname_hash); // Add track alias to state
+                auto sub_track_h =
+                  std::make_shared<SubscribeTrackHandler>(track_full_name,
+                                                          0 /* use zero to indicate to use publisher priority */,
+                                                          quicr::messages::GroupOrder::kAscending,
+                                                          *this);
+                SubscribeTrack(key.second, sub_track_h);
+                state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
+            } else {
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed =
+                  std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value()).count();
+                if (elapsed > subscription_refresh_interval_ms) {
+                    SPDLOG_LOGGER_INFO(LOGGER,
+                                       "Sending subscribe-update to announcer connection handler: {0} subscribe track_alias: {1}",
+                                       key.second,
+                                       th.track_fullname_hash);
 
-            auto sub_track_h =
-              std::make_shared<SubscribeTrackHandler>(track_full_name,
-                                                      0 /* use zero to indicate to use publisher priority */,
-                                                      quicr::messages::GroupOrder::kAscending,
-                                                      *this);
-            SubscribeTrack(key.second, sub_track_h);
-            state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
+                    auto sub_track_h = state_.pub_subscribes[{ th.track_fullname_hash, key.second }];
+                    if (sub_track_h == nullptr) {
+                        SPDLOG_LOGGER_INFO(LOGGER, "Subscription Handler is null");
+                        return;
+                    }
+                    UpdateTrackSubscription(key.second, sub_track_h);
+                }
+            }
+
+            last_subscription_refresh_time = std::chrono::steady_clock::now();
         }
     }
 
