@@ -308,6 +308,7 @@ namespace laps {
     void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                           uint64_t subscribe_id,
                                           [[maybe_unused]] uint64_t proposed_track_alias,
+                                          quicr::messages::FilterType filter_type,
                                           const quicr::FullTrackName& track_full_name,
                                           const quicr::SubscribeAttributes& attrs)
     {
@@ -320,7 +321,7 @@ namespace laps {
                            th.track_fullname_hash,
                            attrs.priority);
 
-        ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, attrs);
+        ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, filter_type, attrs);
     }
 
     void ClientManager::ProcessPeerDataObject(const peering::DataObject& data_object)
@@ -446,6 +447,7 @@ namespace laps {
                                          uint64_t subscribe_id,
                                          const quicr::TrackHash& th,
                                          const quicr::FullTrackName& track_full_name,
+                                         quicr::messages::FilterType filter_type,
                                          const quicr::SubscribeAttributes& attrs)
     {
         bool is_from_peer{ false };
@@ -526,7 +528,7 @@ namespace laps {
                                                           *this);
                 SubscribeTrack(key.second, sub_track_h);
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
-            } else {
+            } else if (filter_type != quicr::messages::FilterType::LatestGroup) {
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed =
                   std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value()).count();
@@ -547,6 +549,48 @@ namespace laps {
 
             last_subscription_refresh_time = std::chrono::steady_clock::now();
         }
+
+
+        if (filter_type == quicr::messages::FilterType::LatestGroup) {
+            SPDLOG_INFO("Subscribe: Attempting to retrieve objects from cache for track: {0}",
+                        th.track_fullname_hash);
+            auto cache_entry_it = cache_.find(th);
+            if (cache_entry_it == cache_.end()) {
+                SPDLOG_INFO("Subscribe: No entries in cache found for track: {0}",
+                            th.track_fullname_hash);
+                return;
+            }
+
+            auto &[_, cache_entry] = *cache_entry_it;
+            // TODO: Revisit the lambda capture (by value)
+            std::thread retrieve_cache_thread([=, priority=attrs.priority, group = cache_entry.Last()] {
+                if(group->empty()) {
+                    SPDLOG_INFO("Subscribe: Cache entries for latest group is missing for track: {0}",
+                                th.track_fullname_hash);
+                    return;
+                }
+
+                auto pub_track_h = std::make_shared<PublishTrackHandler>(
+                  track_full_name,
+                  quicr::TrackMode::kStream, // TODO: This is wrong to be default
+                  priority,
+                  5000);
+
+                BindPublisherTrack(connection_handle, subscribe_id, pub_track_h, true);
+
+                for (const auto &object: *group) {
+                    SPDLOG_INFO("Subscribe: Publishing object from cache: Group {0} is Object {1}",
+                                object.headers.group_id, object.headers.object_id);
+                    pub_track_h->PublishObject(object.headers, object.data);
+                    // TODO: Check the reason for sleep. If not, we are missing few objects
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                // TODO: Fix with issue 332 - unbind publisher
+            });
+
+            retrieve_cache_thread.detach();
+        }
+
     }
 
     void ClientManager::MetricsSampled(const quicr::ConnectionHandle connection_handle,
