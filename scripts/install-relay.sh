@@ -15,6 +15,7 @@
 #
 INSTALL_DIR=/usr/local/laps
 LAPS_UNIT_SERVICE_FILE=/etc/systemd/system/laps.service
+AVAHI_SERVICE_FILE=/etc/avahi/services/laps.service
 USER=$(id -u)
 
 # ----------------------------------------------------------------------------------
@@ -51,6 +52,23 @@ END_LAPS_UNIT_SERVICE
 # ----------------------------------------------------------------------------------
 # Functions
 #
+update_mdns() {
+  echo "Updating MDNS Config"
+  cat << END > /tmp/avahi_laps.service
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">%h LAPS</name>
+  <service>
+    <type>_laps._udp</type>
+    <port>33435</port>
+  </service>
+ </service-group>
+END
+
+  sudo mv -f /tmp/avahi_laps.service $AVAHI_SERVICE_FILE
+}
+
 update_systemd_unit_service() {
 
   if [[ -f $LAPS_UNIT_SERVICE_FILE ]]; then
@@ -74,6 +92,8 @@ upgrade_laps() {
     echo "Copying ~/lapsRelay to $INSTALL_DIR/lapsRelay"
 
     sudo cp ~/lapsRelay $INSTALL_DIR/lapsRelay
+
+    update_mdns
   else
     echo "Missing ~/lapsRelay, no upgrade/install of laps relay"
   fi
@@ -107,7 +127,6 @@ main() {
   create_cert
 
   sudo chown -R $USER $INSTALL_DIR
-
 
   sudo systemctl start laps.service
 
