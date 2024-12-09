@@ -80,10 +80,9 @@ namespace laps::peering {
         if (not withdraw) {
             uint64_t update_ref = rand();
 
-
-            for (const auto& [key, track_set]: state_.announce_active) {
+            for (const auto& [key, track_set] : state_.announce_active) {
                 SPDLOG_LOGGER_DEBUG(LOGGER, "ns: {}", key.first);
-                for (const auto& tfn: track_set) {
+                for (const auto& tfn : track_set) {
                     SPDLOG_LOGGER_DEBUG(LOGGER, "ns: {} tfn: {}", key.first, tfn);
                 }
             }
@@ -103,8 +102,12 @@ namespace laps::peering {
 
                     SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
-                    cm->ProcessSubscribe(
-                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, quicr::messages::FilterType::LatestObject, s_attrs);
+                    cm->ProcessSubscribe(0,
+                                         0,
+                                         subscribe_info.track_hash,
+                                         { sub.track_namespace, sub.track_name },
+                                         quicr::messages::FilterType::LatestObject,
+                                         s_attrs);
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
@@ -264,8 +267,9 @@ namespace laps::peering {
                          * check if peer session was used as best path for subscription. If so, try to find another
                          *      best path. If no best path can be found, remove subscribe info.
                          */
-                        for (const auto& [_, si]: subs.second) {
-                            auto cfib_it = info_base_->client_fib_.find({si.track_hash.track_fullname_hash, peer_session_id});
+                        for (const auto& [_, si] : subs.second) {
+                            auto cfib_it =
+                              info_base_->client_fib_.find({ si.track_hash.track_fullname_hash, peer_session_id });
                             if (cfib_it != info_base_->client_fib_.end()) {
                                 info_base_->client_fib_.erase(cfib_it);
                                 auto best_peer = info_base_->GetBestPeerSession(si.source_node_id);
@@ -286,13 +290,13 @@ namespace laps::peering {
                     SubscribeInfoReceived(peer_session_id, si, true);
                 }
 
-                for (const auto& [id, si]: update_sub) {
+                for (const auto& [id, si] : update_sub) {
                     SubscribeInfoReceived(id, si, false);
                 }
 
                 // Remove all announces if no active peering sessions exists
-                bool remove_announce { true };
-                for (const auto& [id, peer_sess]: client_peer_sessions_) {
+                bool remove_announce{ true };
+                for (const auto& [id, peer_sess] : client_peer_sessions_) {
                     if (peer_sess->Status() == PeerSession::StatusValue::kConnected) {
                         remove_announce = false;
                         break;
@@ -300,7 +304,7 @@ namespace laps::peering {
                 }
 
                 if (remove_announce) {
-                    for (const auto& [id, peer_sess]: server_peer_sessions_) {
+                    for (const auto& [id, peer_sess] : server_peer_sessions_) {
                         if (peer_sess->Status() == PeerSession::StatusValue::kConnected) {
                             remove_announce = false;
                             break;
@@ -498,20 +502,37 @@ namespace laps::peering {
 
             // TODO: change to not iterate over all subscribes to find a match
             for (const auto& [ftn, sub_map] : info_base_->subscribes_) {
-                const auto& sub_info = sub_map.begin()->second; // Only need the first entry in the set
+
+                auto si_it =
+                  std::find_if(sub_map.begin(),
+                               sub_map.end(),
+                               [local_nid = node_info_.id](const std::pair<NodeIdValueType, SubscribeInfo>& e) {
+                                   return e.first != local_nid;
+                               });
+
+                if (si_it == sub_map.end()) {
+                    continue;
+                }
+
+                const auto& sub_info = si_it->second;
 
                 quicr::messages::MoqSubscribe sub;
                 sub_info.subscribe_data >> sub;
 
                 if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
-                    if (auto cm = client_manager_.lock()) {
+
+                    if (auto cm = client_manager_.lock(); sub_info.source_node_id != node_info_.id) {
                         quicr::SubscribeAttributes s_attrs;
                         s_attrs.priority = 10;
 
                         SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
-                        cm->ProcessSubscribe(
-                          0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name, 0 }, quicr::messages::FilterType::LatestObject, s_attrs);
+                        cm->ProcessSubscribe(0,
+                                             0,
+                                             sub_info.track_hash,
+                                             { sub.track_namespace, sub.track_name, 0 },
+                                             quicr::messages::FilterType::LatestObject,
+                                             s_attrs);
                     }
 
                     auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);
@@ -573,7 +594,7 @@ namespace laps::peering {
         quicr::TransportRemote server{ "0.0.0.0", config_.peering.listening_port, quicr::TransportProtocol::kQuic };
 
         quicr::TransportConfig tconfig;
-        tconfig.debug = false; //cfg.debug;
+        tconfig.debug = false; // cfg.debug;
         tconfig.tls_cert_filename = config_.tls_cert_filename_;
         tconfig.tls_key_filename = config_.tls_key_filename_;
         tconfig.time_queue_init_queue_size = config_.peering.init_queue_size;
@@ -883,7 +904,7 @@ namespace laps::peering {
                     }
                 }
 
-                for (const auto id: remove_peer_sess) {
+                for (const auto id : remove_peer_sess) {
                     client_peer_sessions_.erase(id);
                 }
             }
