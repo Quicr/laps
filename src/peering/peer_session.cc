@@ -206,7 +206,7 @@ namespace laps::peering {
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, announce_info.Serialize(true, withdraw), 0, 1000);
     }
 
-    void PeerSession::SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw)
+    void PeerSession::SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw)
     {
         if (status_ != StatusValue::kConnected) return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
@@ -214,6 +214,7 @@ namespace laps::peering {
                             subscribe_info.track_hash.track_fullname_hash,
                             subscribe_info.source_node_id,
                             withdraw);
+
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, subscribe_info.Serialize(true, withdraw), 0, 1000);
     }
 
@@ -444,7 +445,8 @@ namespace laps::peering {
                 return false; // Not enough bytes to parse the headers, wait till more arrives
             }
 
-            std::vector<uint8_t> data = std::move(stream_buf->Front(stream_buf->Size()));
+            std::vector<uint8_t> data =
+                std::move(stream_buf->Front(stream_buf->Size()));
             if (data.size() < hdr_len) {
                 SPDLOG_LOGGER_DEBUG(LOGGER,
                     "Received new data object stream id: {}, not enough bytes yet to read headers {} > {} ..",

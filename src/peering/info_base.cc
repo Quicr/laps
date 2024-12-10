@@ -83,29 +83,44 @@ namespace laps::peering {
     {
         std::lock_guard _(mutex_);
 
-        auto [__, is_new] =
-          subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id, subscribe_info);
+        auto it = subscribes_[subscribe_info.track_hash.track_fullname_hash].find(subscribe_info.source_node_id);
+        if (it != subscribes_[subscribe_info.track_hash.track_fullname_hash].end()) {
+            if (subscribe_info.seq && it->second.seq > subscribe_info.seq) {
+                return false; // Old; ignore
+            }
 
-        // TODO: If not new, update metrics in existing entry
-        return is_new;
+            it->second = subscribe_info;
+            return true;
+        }
+
+        subscribes_[subscribe_info.track_hash.track_fullname_hash].emplace(subscribe_info.source_node_id,
+                                                                           subscribe_info);
+        return true;
     }
 
     bool InfoBase::RemoveSubscribe(const SubscribeInfo& subscribe_info)
     {
         std::lock_guard _(mutex_);
-        bool removed{ false };
 
         auto it = subscribes_.find(subscribe_info.track_hash.track_fullname_hash);
         if (it != subscribes_.end()) {
-            removed = it->second.erase(subscribe_info.source_node_id) ? true : false;
+            auto sub_it = it->second.find(subscribe_info.source_node_id);
+            if (sub_it != it->second.end()) {
+                if (sub_it->second.seq > subscribe_info.seq) {
+                    return false; // Old; ignore
+                }
 
-            if (it->second.empty()) {
-                subscribes_.erase(it);
+                it->second.erase(sub_it);
+
+                if (it->second.empty()) {
+                    subscribes_.erase(it);
+                }
+
+                return true;
             }
         }
 
-
-        return removed;
+        return false;
     }
 
     bool InfoBase::AddAnnounce(const AnnounceInfo& announce_info)

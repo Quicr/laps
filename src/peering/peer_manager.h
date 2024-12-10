@@ -34,7 +34,7 @@ namespace laps::peering {
         // -------------------------------------------------------------------------------
 
         void NodeReceived(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw);
-        void SubscribeInfoReceived(PeerSessionId peer_session_id, const SubscribeInfo& subscribe_info, bool withdraw);
+        void SubscribeInfoReceived(PeerSessionId peer_session_id, SubscribeInfo& subscribe_info, bool withdraw);
         void AnnounceInfoReceived(PeerSessionId peer_session_id, const AnnounceInfo& announce_info, bool withdraw);
 
         void SessionChanged(PeerSessionId peer_session_id,

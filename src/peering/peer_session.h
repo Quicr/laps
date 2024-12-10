@@ -83,7 +83,7 @@ namespace laps::peering {
         PeerSessionId GetSessionId() const { return t_conn_id_; }
 
         void SendNodeInfo(const NodeInfo& node_info, bool withdraw = false);
-        void SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw = false);
+        void SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw = false);
         void SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw = false);
         void SendSns(const SubscribeNodeSet& sns, bool withdraw = false);
         void SendData(uint8_t priority,

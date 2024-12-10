@@ -479,7 +479,8 @@ namespace laps {
               State::SubscribePublishHandlerInfo{
                 track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, nullptr });
 
-            if (is_new && not is_from_peer) {
+            // Always send updates to peers to support subscribe updates and refresh group support
+            if (not is_from_peer) {
                 quicr::messages::MoqSubscribe sub;
                 sub.group_order = attrs.group_order;
                 sub.priority = attrs.priority;
@@ -562,7 +563,7 @@ namespace laps {
             auto& [_, cache_entry] = *cache_entry_it;
             // TODO: Revisit the lambda capture (by value)
             std::thread retrieve_cache_thread([=, priority = attrs.priority, group = cache_entry.Last()] {
-                if (group->empty()) {
+                if (group == nullptr || group->empty()) {
                     SPDLOG_INFO("Subscribe: Cache entries for latest group is missing for track: {0}",
                                 th.track_fullname_hash);
                     return;

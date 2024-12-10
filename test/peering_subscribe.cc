@@ -20,7 +20,8 @@ TEST_CASE("Serialize Subscribe Info")
 
     auto net_data = subscribe_info.Serialize(false);
 
-    CHECK_EQ(net_data.size(), 36);
+    CHECK_EQ(net_data.size(), 38);
+    CHECK_EQ(subscribe_info.seq, 1);
 
     SubscribeInfo decoded_si(net_data);
 

@@ -48,7 +48,7 @@ namespace laps::peering {
     }
 
     void PeerManager::SubscribeInfoReceived(PeerSessionId peer_session_id,
-                                            const SubscribeInfo& subscribe_info,
+                                            SubscribeInfo& subscribe_info,
                                             bool withdraw)
     try {
         SPDLOG_LOGGER_INFO(LOGGER,
@@ -60,7 +60,9 @@ namespace laps::peering {
 
         auto peer_session = GetPeerSession(peer_session_id);
 
-        if (withdraw ? info_base_->RemoveSubscribe(subscribe_info) : info_base_->AddSubscribe(subscribe_info)) {
+        const auto is_updated = withdraw ? info_base_->RemoveSubscribe(subscribe_info) : info_base_->AddSubscribe(subscribe_info);
+
+        if (is_updated) {
             for (const auto& sess : client_peer_sessions_) {
                 if (peer_session_id != sess.first)
                     sess.second->SendSubscribeInfo(subscribe_info, withdraw);
@@ -80,6 +82,7 @@ namespace laps::peering {
         if (not withdraw) {
             uint64_t update_ref = rand();
 
+            // TODO(tievens): remove the below for loop that is used for debug only
             for (const auto& [key, track_set] : state_.announce_active) {
                 SPDLOG_LOGGER_DEBUG(LOGGER, "ns: {}", key.first);
                 for (const auto& tfn : track_set) {
@@ -267,7 +270,7 @@ namespace laps::peering {
                          * check if peer session was used as best path for subscription. If so, try to find another
                          *      best path. If no best path can be found, remove subscribe info.
                          */
-                        for (const auto& [_, si] : subs.second) {
+                        for (auto& [_, si] : subs.second) {
                             auto cfib_it =
                               info_base_->client_fib_.find({ si.track_hash.track_fullname_hash, peer_session_id });
                             if (cfib_it != info_base_->client_fib_.end()) {
@@ -286,11 +289,11 @@ namespace laps::peering {
                 }
                 ib_lock.unlock();
 
-                for (const auto& si : remove_sub) {
+                for (auto& si : remove_sub) {
                     SubscribeInfoReceived(peer_session_id, si, true);
                 }
 
-                for (const auto& [id, si] : update_sub) {
+                for (auto& [id, si] : update_sub) {
                     SubscribeInfoReceived(id, si, false);
                 }
 
@@ -777,8 +780,8 @@ namespace laps::peering {
         }
 
         // Send all subscribes
-        for (const auto& [tfh, sub_item] : info_base_->subscribes_) {
-            for (const auto& [_, sub_info] : sub_item) {
+        for (auto& [tfh, sub_item] : info_base_->subscribes_) {
+            for (auto& [_, sub_info] : sub_item) {
                 if (peer_session.remote_node_info_.id == sub_info.source_node_id)
                     continue; // Skip, don't send self or remote to self
 
