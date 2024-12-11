@@ -338,12 +338,12 @@ namespace laps::peering {
 
                 // Update SNS_ID if new stream header included or if datagram (both have sns_id)
                 if (eflags.new_stream || eflags.use_reliable == false) {
-                    auto sns_id_bytes = BytesOf(entry.sns_id);
+                    auto sns_id_bytes = BytesOf(entry.out_sns_id);
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data.begin() + 2);
                 }
 
                 auto out_peer_sess = entry.peer_session.lock();
-                out_peer_sess->SendData(priority, ttl, entry.sns_id, eflags, data);
+                out_peer_sess->SendData(priority, ttl, entry.out_sns_id, eflags, data);
             }
         }
     }
@@ -404,10 +404,10 @@ namespace laps::peering {
                                         fib_entry.sns_id,
                                         track_full_name_hash);
                     */
-                    auto sns_id_bytes = BytesOf(fib_entry.sns_id);
+                    auto sns_id_bytes = BytesOf(fib_entry.out_sns_id);
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data.begin() + 2);
                 }
-                peer_sess->SendData(priority, ttl, fib_entry.sns_id, eflags, net_data);
+                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, eflags, net_data);
             }
         }
     }
@@ -645,7 +645,7 @@ namespace laps::peering {
 
                 if (node_id == node_info_.id) {
                     // Self
-                    fib_it->second.try_emplace(0, InfoBase::FibEntry{ 0, {} });
+                    fib_it->second[0] = InfoBase::FibEntry{ update_ref, {} };
                     continue;
                 }
 
@@ -667,6 +667,12 @@ namespace laps::peering {
               LOGGER, "Update to ingress SNS peer session: {} sns id: {}", peer_session.GetSessionId(), sns.id);
 
             for (const auto& node_id : sns.nodes) {
+                if (node_id == node_info_.id) {
+                    // Self
+                    fib_it->second[0] = InfoBase::FibEntry{ update_ref, {} };
+                    continue;
+                }
+
                 auto peer_sess_weak = info_base_->GetBestPeerSession(node_id);
 
                 if (auto peer_sess = peer_sess_weak.lock()) {
@@ -711,10 +717,13 @@ namespace laps::peering {
 
                 SPDLOG_LOGGER_DEBUG(LOGGER,
                                     "SNS update remove peer session: {} sns id: {}",
-                                    entry.peer_session.lock()->GetSessionId(),
-                                    entry.sns_id);
+                                    peer_sess_id,
+                                    entry.out_sns_id);
 
-                entry.peer_session.lock()->RemovePeerSnsSourceNode(peer_session.GetSessionId(), sns.id, 0);
+                if (const auto peer_sess = entry.peer_session.lock()) {
+                    peer_sess->RemovePeerSnsSourceNode(peer_sess->GetSessionId(), sns.id, 0);
+                }
+
                 remove_peers.push_back(peer_sess_id);
             }
 
