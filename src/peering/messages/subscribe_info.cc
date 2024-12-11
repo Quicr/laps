@@ -15,7 +15,7 @@ namespace laps::peering {
 
     uint32_t SubscribeInfo::SizeBytes() const
     {
-        return sizeof(source_node_id) + 24 /* namespace, name, and full name hashes */
+        return sizeof(seq) + sizeof(source_node_id) + 24 /* namespace, name, and full name hashes */
                + 4 /* size of sub data */ + subscribe_data.size();
     }
 
@@ -23,6 +23,9 @@ namespace laps::peering {
       : track_hash({})
     {
         auto it = serialized_data.begin();
+
+        seq = ValueOf<uint16_t>({ it, it + 2 });
+        it += 2;
 
         source_node_id = ValueOf<uint64_t>({ it, it + 8 });
         it += 8;
@@ -43,6 +46,9 @@ namespace laps::peering {
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeInfo& subscribe_info)
     {
+        auto seq_bytes = BytesOf(subscribe_info.seq);
+        data.insert(data.end(), seq_bytes.rbegin(), seq_bytes.rend());
+
         auto src_node_bytes = BytesOf(subscribe_info.source_node_id);
         data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
 
@@ -64,9 +70,14 @@ namespace laps::peering {
         return data;
     }
 
-    std::vector<uint8_t> SubscribeInfo::Serialize(bool include_common_header, bool withdraw) const
+    std::vector<uint8_t> SubscribeInfo::Serialize(bool include_common_header, bool withdraw)
     {
         std::vector<uint8_t> data;
+
+        if (seq < 0xFFFF)
+            seq++;  // Bump the sequence number
+        else
+            seq = 0;
 
         if (include_common_header) {
             data.reserve(kCommonHeadersSize + SizeBytes());

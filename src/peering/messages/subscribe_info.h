@@ -19,6 +19,10 @@ namespace laps::peering {
     class SubscribeInfo
     {
       public:
+
+        ///< Incremental sequence number for subscribe info. Less value from current can be ignored, unless zero/wrap
+        uint16_t seq{ 0 };
+
         NodeIdValueType source_node_id; ///< Id of the originating source node
 
         quicr::TrackHash track_hash; ///< Full name hash
@@ -28,7 +32,7 @@ namespace laps::peering {
         /**
          * @brief Encode node object into bytes that can be written on the wire
          */
-        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
+        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false);
 
         SubscribeInfo()
           : track_hash({})

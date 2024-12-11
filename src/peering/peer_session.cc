@@ -102,7 +102,6 @@ namespace laps::peering {
         auto& sns = it->second;
 
         if (it->second.id == 0) { // If not set, create the data context
-            // TODO(tievens): Add datagram support - update transport to allow changing reliable state
             // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
             it->second.id = transport_->CreateDataContext(t_conn_id_, true, 2, false);
         }
@@ -206,7 +205,7 @@ namespace laps::peering {
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, announce_info.Serialize(true, withdraw), 0, 1000);
     }
 
-    void PeerSession::SendSubscribeInfo(const SubscribeInfo& subscribe_info, bool withdraw)
+    void PeerSession::SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw)
     {
         if (status_ != StatusValue::kConnected) return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
@@ -214,6 +213,7 @@ namespace laps::peering {
                             subscribe_info.track_hash.track_fullname_hash,
                             subscribe_info.source_node_id,
                             withdraw);
+
         transport_->Enqueue(t_conn_id_, control_data_ctx_id_, subscribe_info.Serialize(true, withdraw), 0, 1000);
     }
 
@@ -325,9 +325,10 @@ namespace laps::peering {
                         remote_node_info_ = connect.node_info;
 
                         status_ = StatusValue::kConnected;
-                        manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
 
                         manager_.NodeReceived(GetSessionId(), connect.node_info, false);
+                        manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
+
                         SendConnectOk();
 
                         manager_.InfoBaseSyncPeer(*this);
@@ -428,7 +429,7 @@ namespace laps::peering {
         // TODO(tievens): Update to not buffer when node type is Via
 
         quicr::ITransport::EnqueueFlags eflags;
-        eflags.use_reliable = stream_id.has_value() ? true : false; // If stream isn't set, it's datagram
+        eflags.use_reliable = stream_id.has_value(); // If stream isn't set, it's datagram
 
         if (stream_buf->Empty()) {
             return false; // Wait for next callback as there isn't enough data
@@ -444,7 +445,8 @@ namespace laps::peering {
                 return false; // Not enough bytes to parse the headers, wait till more arrives
             }
 
-            std::vector<uint8_t> data = std::move(stream_buf->Front(stream_buf->Size()));
+            std::vector<uint8_t> data =
+                std::move(stream_buf->Front(stream_buf->Size()));
             if (data.size() < hdr_len) {
                 SPDLOG_LOGGER_DEBUG(LOGGER,
                     "Received new data object stream id: {}, not enough bytes yet to read headers {} > {} ..",
