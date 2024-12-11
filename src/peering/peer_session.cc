@@ -102,7 +102,6 @@ namespace laps::peering {
         auto& sns = it->second;
 
         if (it->second.id == 0) { // If not set, create the data context
-            // TODO(tievens): Add datagram support - update transport to allow changing reliable state
             // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
             it->second.id = transport_->CreateDataContext(t_conn_id_, true, 2, false);
         }
@@ -326,9 +325,10 @@ namespace laps::peering {
                         remote_node_info_ = connect.node_info;
 
                         status_ = StatusValue::kConnected;
-                        manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
 
                         manager_.NodeReceived(GetSessionId(), connect.node_info, false);
+                        manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
+
                         SendConnectOk();
 
                         manager_.InfoBaseSyncPeer(*this);
@@ -429,7 +429,7 @@ namespace laps::peering {
         // TODO(tievens): Update to not buffer when node type is Via
 
         quicr::ITransport::EnqueueFlags eflags;
-        eflags.use_reliable = stream_id.has_value() ? true : false; // If stream isn't set, it's datagram
+        eflags.use_reliable = stream_id.has_value(); // If stream isn't set, it's datagram
 
         if (stream_buf->Empty()) {
             return false; // Wait for next callback as there isn't enough data

@@ -85,8 +85,10 @@ namespace laps::peering {
 
         auto it = subscribes_[subscribe_info.track_hash.track_fullname_hash].find(subscribe_info.source_node_id);
         if (it != subscribes_[subscribe_info.track_hash.track_fullname_hash].end()) {
-            if (subscribe_info.seq && it->second.seq > subscribe_info.seq) {
-                return false; // Old; ignore
+            const int seq_diff = it->second.seq - subscribe_info.seq;
+            if (seq_diff == 0) {
+                // TODO(tievens): Revisit to check on order of received or delayed messages
+                return false; // ignore
             }
 
             it->second = subscribe_info;
@@ -106,10 +108,7 @@ namespace laps::peering {
         if (it != subscribes_.end()) {
             auto sub_it = it->second.find(subscribe_info.source_node_id);
             if (sub_it != it->second.end()) {
-                if (sub_it->second.seq > subscribe_info.seq) {
-                    return false; // Old; ignore
-                }
-
+                // TODO(tievens): Revisit to check on order of received or delayed messages
                 it->second.erase(sub_it);
 
                 if (it->second.empty()) {
