@@ -64,7 +64,7 @@ namespace laps::peering {
         peer_sns_.clear();
 
         transport_ = quicr::ITransport::MakeClientTransport(
-          peer_config_, transport_config_, *this, manager_.tick_service_, LOGGER);
+          peer_config_, transport_config_, *this, config_.tick_service_, LOGGER);
         t_conn_id_ = transport_->Start();
 
         // Create the control data context

@@ -29,7 +29,7 @@ help: Makefile
 all: build
 
 build-prep: CMakeLists.txt
-	cmake -S . -B${BUILD_DIR} -DBUILD_TESTING=OFF -DLAPS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Debug
+	cmake -S . -B${BUILD_DIR} -DBUILD_TESTING=OFF -DLAPS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 
 ## build: Builds the project
 build: build-prep

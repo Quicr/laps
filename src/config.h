@@ -5,6 +5,7 @@
 #include "version_config.h"
 
 #include <list>
+#include <quicr/detail/tick_service.h>
 #include <quicr/config.h>
 #include <spdlog/spdlog.h>
 
@@ -32,6 +33,8 @@ namespace laps {
         std::string qlog_path_;
 
         peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
+
+        std::shared_ptr<quicr::ThreadedTickService> tick_service_;
 
         struct Peering
         {

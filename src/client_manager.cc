@@ -16,7 +16,7 @@ namespace laps {
                                  const quicr::ServerConfig& cfg,
                                  peering::PeerManager& peer_manager,
                                  size_t cache_duration_ms)
-      : quicr::Server(cfg)
+      : quicr::Server(cfg, config.tick_service_)
       , state_(state)
       , config_(config)
       , peer_manager_(peer_manager)
