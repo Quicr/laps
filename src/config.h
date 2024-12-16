@@ -5,8 +5,8 @@
 #include "version_config.h"
 
 #include <list>
-#include <quicr/detail/tick_service.h>
 #include <quicr/config.h>
+#include <quicr/detail/tick_service.h>
 #include <spdlog/spdlog.h>
 
 namespace laps {
