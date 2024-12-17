@@ -19,7 +19,6 @@ namespace laps::peering {
     class SubscribeInfo
     {
       public:
-
         ///< Incremental sequence number for subscribe info. Less value from current can be ignored, unless zero/wrap
         uint16_t seq{ 0 };
 

@@ -48,8 +48,6 @@ namespace laps::peering {
          * @param conn_id                   Connection ID from the transport for the connection
          * @param cfg                       Global config
          * @param remote                    Transport remote peer config/parameters
-         * @param callbacks                 Peer Manager callbacks
-         * @param tick_service              Tick service
          */
         PeerSession(const bool is_inbound,
                     const quicr::TransportConnId conn_id,

@@ -559,7 +559,7 @@ namespace laps::peering {
 
     PeerManager::PeerManager(const Config& cfg, State& state, std::shared_ptr<InfoBase> info_base)
       : info_base_(info_base)
-      , tick_service_(std::make_shared<quicr::ThreadedTickService>())
+      , tick_service_(cfg.tick_service_)
       , config_(cfg)
       , state_(state)
     {
