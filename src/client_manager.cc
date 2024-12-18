@@ -56,6 +56,7 @@ namespace laps {
                 UnsubscribeTrack(connection_handle, ptd);
             }
             state_.pub_subscribes.erase({ track_alias, connection_handle });
+
         }
 
         state_.announce_active.erase({ th.track_namespace_hash, connection_handle });
@@ -250,7 +251,8 @@ namespace laps {
         auto th = quicr::TrackHash(sub_it->second.track_full_name);
 
         if (sub_it->second.publish_handler != nullptr) {
-            // TODO(tievens): Clean up publish track handler by adding unbind
+            UnbindPublisherTrack(connection_handle, sub_it->second.publish_handler);
+            sub_it->second.publish_handler = nullptr;
         }
 
         state_.subscribes.erase(sub_it);
@@ -578,14 +580,13 @@ namespace laps {
                 BindPublisherTrack(connection_handle, subscribe_id, pub_track_h, true);
 
                 for (const auto& object : *group) {
-                    SPDLOG_INFO("Subscribe: Publishing object from cache: Group {0} is Object {1}",
+                    SPDLOG_DEBUG("Subscribe: Publishing object from cache: Group {0} is Object {1}",
                                 object.headers.group_id,
                                 object.headers.object_id);
                     pub_track_h->PublishObject(object.headers, object.data);
                     // TODO: Check the reason for sleep. If not, we are missing few objects
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
-                // TODO: Fix with issue 332 - unbind publisher
             });
 
             retrieve_cache_thread.detach();
