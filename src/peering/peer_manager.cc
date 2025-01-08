@@ -204,6 +204,11 @@ namespace laps::peering {
             return;
         }
 
+        if (node_info_.type != NodeType::kStub) {
+            // Only send announce info if this node is a STUB
+            return;
+        }
+
         for (const auto& sess : client_peer_sessions_) {
             if (peer_session_id != sess.first)
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
@@ -470,16 +475,18 @@ namespace laps::peering {
 
         ai.full_name.name_hash = 0;
 
-        for (const auto& sess : client_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(
-              LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
-            sess.second->SendAnnounceInfo(ai, withdraw);
-        }
+        if (node_info_.type == NodeType::kStub) { // Only send if node type is STUB
+            for (const auto& sess : client_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
+                sess.second->SendAnnounceInfo(ai, withdraw);
+            }
 
-        for (const auto& sess : server_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(
-              LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
-            sess.second->SendAnnounceInfo(ai, withdraw);
+            for (const auto& sess : server_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
+                sess.second->SendAnnounceInfo(ai, withdraw);
+            }
         }
 
         if (not withdraw) {
@@ -758,13 +765,15 @@ namespace laps::peering {
             peer_session.SendNodeInfo(node_item.node_info);
         }
 
-        // Send all announces
-        for (const auto& [th, anno_item] : info_base_->announces_) {
-            for (const auto& [_, anno_info] : anno_item) {
-                if (peer_session.remote_node_info_.id == anno_info.source_node_id)
-                    continue; // Skip, don't send self or remote to self
+        // Send all announces if STUB node
+        if (node_info_.type == NodeType::kStub) {
+            for (const auto& [th, anno_item] : info_base_->announces_) {
+                for (const auto& [_, anno_info] : anno_item) {
+                    if (peer_session.remote_node_info_.id == anno_info.source_node_id)
+                        continue; // Skip, don't send self or remote to self
 
-                peer_session.SendAnnounceInfo(anno_info);
+                    peer_session.SendAnnounceInfo(anno_info);
+                }
             }
         }
 
