@@ -5,7 +5,7 @@
 # Build layer
 FROM debian:12-slim as builder
 
-RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake ca-certificates
+RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake ca-certificates libssl-dev
 
 WORKDIR /tmp
 
