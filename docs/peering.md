@@ -230,7 +230,15 @@ Edge relay that the stub is connected to becomes the s-relay for the subscriber 
 
 #### e-relay = General edge relay
 
+An edge relay is of **type** [Edge](#edge). It implements MoQ and accepts inbound client connections as well as implement peering to act as a Via relay. Edge relays can peer with each other, with STUBs and Via relays.  An edge relay is
+a do all relay. The term e-relay is a general term for an edge relay that may be an o-relay, s-relay, or acting
+as a Via. 
+
 #### v-relay = Via relay
+
+A via relay is a relay that of **type** [Via](#via). It implements peering but not client access. A Via relay is
+intended to be an aggregator (reduce bandwidth by optimized fan-out) and hairpin for traffic steering. It's lightweight
+and has higher vertical scale supporting very low latency. 
 
 #### Node
 
