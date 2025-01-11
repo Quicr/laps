@@ -137,7 +137,7 @@ namespace laps::peering {
         std::vector<NodePathItem> path;
 
         /**
-         * @brief  Best via relays that thd e node woulperfer to use if not direct
+         * @brief  Best via relays that thd e node would prefer to use if not direct
          * @details Lists in ascending order of preference, the nodes
          *      that are closest and best choices to itself. Node updates will update
          *      this list based on best selection algorithm.

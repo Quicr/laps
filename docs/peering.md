@@ -242,6 +242,8 @@ and has higher vertical scale supporting very low latency.
 
 #### Node
 
+Relay could be implemented in a client, such as a Stub relay in the client. In this case, the client relay would not be called a node.  Node term is used to clarify that the relay of any type is an infrastructure level relay that participates
+in peering. 
 
 
 ## Topologies
@@ -263,9 +265,9 @@ the subscribers connected.
 
 The [selection algorithm](#selection-algorithm) attempts to use hub-and-spoke if all the below are true:
 
-* administrative policy permits it
-* network path has enough bandwidth and has little to no loss and acceptable latency
-* publish origin relay is not overloaded with connections to other edges
+* Administrative policy permits it
+* Network path has enough bandwidth and has little to no loss and acceptable latency
+* Publish origin relay is not overloaded with connections to other edges
 * Duplication fan-out is not more than configured maximum with a default of 2
 
 ```mermaid
@@ -284,15 +286,15 @@ flowchart TD
 ```
 
 In the above diagram, there are two subscribers in different regions, so aggregation using a Via relay is not needed.
-The seattle edge relay establishes peering to the subscriber relay and forwards data. 
+The seattle origin relay establishes peering to the subscriber relay and forwards data. 
 
 ### Typical Topology
 
 The typical topology is used to support optimized data forwarding with bandwidth and network forwarding efficiency. It uses
-hub-and-spoke when it make sense and adds Via(s) when needed. Via relays are a resource that is engaged on-demand or via pre-defined peering to establish hairpin/aggregation points in an optimized fashion. The Via(s) that are used are ones that are not overloaded and have optimal forwarding to the target subscriber edge relays. 
-A Via is added upon [selection]](#selection-algorithm) of peering to establish the data forwarding.  Vias can be
+hub-and-spoke when it make sense and adds Via(s) when needed. Via relays are a resource that is engaged on-demand or via predefined peering to establish hairpin/aggregation points in an optimized fashion. The Via(s) that are used are ones that are not overloaded and have optimal forwarding to the target subscriber edge relays. 
+A Via is added upon [selection](#selection-algorithm) of peering to establish the data forwarding.  Vias can be
 added or removed with zero-loss in data forwarding. For example, the data forwarding-plane may start off as
-hub-and-spoke and then transition to use a Via to aggregate Edges in a region. 
+hub-and-spoke and then transition to use a Via to aggregate e-relays in a region. 
 
 ```mermaid
 ---
@@ -345,7 +347,6 @@ flowchart TD
 ```
 
 
-
 ## Peering Modes
 
 Peering connections operate in one of three modes.
@@ -354,9 +355,9 @@ Peering connections operate in one of three modes.
 
 In this mode, only control messages are exchanged. Mostly [Information Base](#information-bases) messages are exchanged
 in this mode. This mode allows a single connection for control plane functions without requiring the control signaling
-to follow data forwarding paths. Control signaling does not often need more than a single (can include redundant
-connection for HA) while [data peering](#2-data-peering) messages can benefit from having more than one QUIC connection to scale
-data forwarding.
+to follow data forwarding paths. Control signaling does not often need more than a single connection
+(can include redundant connection for HA) while [data peering](#2-data-peering) messages can benefit
+from having more than one QUIC connection to scale data forwarding over network ECMP paths. 
 
 ```mermaid
 ---
@@ -382,15 +383,27 @@ flowchart TD
     end
 ```
 
+#### Sending/Receiving Control Messages
+
+Control messages are exchanged over a QUIC bi-directional stream. The peer that makes the connection is required
+to create the bi-directional stream that will be used for control messaging. All control messages will
+go over this QUIC stream. [Connect](#connect-message) is required to be the first message exchanged on a new
+connection. To exchange this message, the client **MUST** create the control bi-directional QUIC stream. The
+server side will latch onto this stream to send back responses and subsequent control messages to the client. 
+The latching allows the client to recreate the control bi-directional stream if needed. The server will
+latch and move to the new stream based on received control messages from the client. At no point can
+two bi-directional controls streams be in use. To ensure this, the server will reset the previous control
+bidir stream if it wasn't already reset/fin closed. 
+
 ### (2) Data Peering
 
 Data peering is used to forward data objects in a [pipeline fashion](#pipelining). Data peering can operate in
-**one-way** or **two-way** modes.
+**uni-directional** or **bi-directional** modes.
 
-In two-way mode, data peering will reuse the connection to send data back to the peer. This is to
+In bi-directional mode, data peering will reuse the connection to send data back to the peer. This is to
 support NAT and/or firewall constraints.
 
-In one-way mode, the peer is used only for receiving data.
+In uni-directional mode, the peer is used only for receiving data.
 
 Data peering mode is indicated in the `connect` and `connect_response` messages.
 
@@ -399,18 +412,19 @@ Data peering mode is indicated in the `connect` and `connect_response` messages.
 title: Data Peer Multiple Connections between Relays
 ---
 flowchart LR
-    E1[Edge 1] -- "one-way 1" --> E2[Edge 2]
-    E1 -- "one-way 2" --> E2
-    E2 -- "one-way" --> E1
-    E1 <-- "two-way" --> E3[Edge 3]
+    E1[Edge 1] -- "unidir 1" --> E2[Edge 2]
+    E1 -- "unidir 2" --> E2
+    E2 -- "unidir" --> E1
+    E1 <-- "bidir" --> E3[Edge 3]
 ```
 
-[Stub](#peering-modes) peers always operate in two-way mode because it is assumed that they are behind NAT.
+[Stub](#peering-modes) peers always operate in bi-directional mode because it is assumed that they are behind NAT/FW.
+Stub relays also do not have the scale that requires multiple connections to support network ECMP. 
 
 ### (3) Both control and data peering
 
 When multiple parallel connections are used, only a single peer **MUST** be used in this mode. The peer can opperate
-in one-way or two-way modes.
+in uni-directional or bi-directional modes. 
 
 ```mermaid
 ---
@@ -418,15 +432,12 @@ title: Control & Data Peer Multiple Connections between Relays
 ---
 flowchart LR
     E1[Edge 1] -- "one-way 1 (CONTROL)" --> E2[Edge 2]
-    E1 -- "one-way 2" --> E2
-    E2 -- "one-way" --> E1
-    E1 <-- "two-way (CONTROL)" --> E3[Edge 3]
+    E1 -- "unidir 2" --> E2
+    E2 -- "unidir" --> E1
+    E1 <-- "bidir (CONTROL)" --> E3[Edge 3]
 ```
 
-Control peering is always bidirectional and uses the same peering session between two nodes.
-
-
-
+Control peering is always bi-directional and uses the same peering session. 
 
 ## Information Bases
 
@@ -435,29 +446,34 @@ information bases.
 
 ### Node Information
 
-Node information base (NIB) conveys information about a node itself. It is exchanged in `connect` and `connect_response` messages
-to indicate the peer info of the nodes connecting. If the peer is a control peer, node information of other nodes are sent to the
-peer. Upon transmission of the node information, the path is appended with self information. Node information is not
-flooded to a peer if peer is within the node path. Upon receiving a node, if the node sees itself in the path, it is
-dropped. Only best nodes selected are advertised. If it was already advertised to the same peer, it is not advertised
-again, unless there is a change in the node information.
+Node information base (NIB) conveys information about a node itself. It is exchanged in [connect](#connect-message) 
+and [connect_response](#connect-response-message) messages to indicate the peer info of the nodes
+connecting. If the peer is a control peer, node information of other nodes are sent to the peer. 
+Upon transmission of the node information, the path is appended with self node ID. This forms a node path so
+that forwarding can stop when it sees remote or itself in the path list. Only best nodes selected are advertised. 
+Nodes information is not sent if it's the same as received before, duplicate. It will be advertised if there is
+a change. This is to support metric changes, such as load and reachability information changing in node information.
 
-Removal of `node_info` happens when the direct peering session is terminated. Upon receiving a withdrawal of
-`node_info`, the `node_info` will be removed for that peer session. The best path selection will take place to
-find another path. If a new best path is found and the removal was toward the peer session that withdrew it, the
-node will advertise the new best path `node_info` to all other peers. If no best path is found, it will send a withdrawal
-to all other peers.
+Currently a version of the node update is not required, but may be added in the future if race conditions arise. 
+
+Removal of `node_info` is performed when the direct peering session is terminated or upon receiving a withdraw of
+the node information.  The node withdraw will be sent to all peers except the one that sent it and if the peer
+is in the path. 
+
+The best path selection will take place to find another path for active subscribes that are using the 
+node that is withdrawn. 
 
 The NIB contains the following:
 
-| Field/Attributes                | Description                                                                         |
-| ------------------------------- | ----------------------------------------------------------------------------------- |
-| [NodeId](#node-id)              | Node ID of the node as a unsigned 64bit integer                                     |
-| **Contact**                     | FQDN or IP to reach the node. This maybe an FQDN of the load balancer or anycast IP |
-| **Longitude**                   | Longitude of the node location as a double 64bit value                              |
-| **latitude**                    | Latitude of the node location as a double 64bit value                               |
-| [Node Relay Type](#relay-types) | Type of the node relay                                                              |
-| [Node Path](#node-path)         | Path of nodes the node information has traversed                                    |
+| Field/Attributes          | Description                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------ |
+| [NodeId](#node-id)        | Node ID of the node as a unsigned 64bit integer                                      |
+| [Node Type](#relay-types) | Node Relay Type                                                                      |
+| **Contact**               | FQDN or IP to reach the node. This maybe an FQDN of the load balancer or anycast IP  |
+| **Longitude**             | Longitude of the node location as a double 64bit value                               |
+| **latitude**              | Latitude of the node location as a double 64bit value                                |
+| [Node Path](#node-path)   | Path of nodes the node information has traversed                                     |
+| SumSrtt                   | Sum of SRTT in microseconds for peering sessions in the path, zero if peer is direct |
 
 > [!NOTE]
 > Other fields will be added in the future to further describe the node to support administrative policies
@@ -494,10 +510,10 @@ of zero when advertising self to a peer session.
 
 NPIs contain the following fields.
 
-| Field               | Description                                                                      |
-| ------------------- | -------------------------------------------------------------------------------- |
-| [Node ID](#node-id) | Node ID of the node sending the advertisement                                    |
-| **sRTT**            | Smooth round trip time of the peering session the node info was **received via** |
+| Field               | Description                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| [Node ID](#node-id) | Node ID of the node sending the advertisement                                                    |
+| **sRTT**            | Smooth round trip time in microseconds of the peering session the node info was **received via** |
 
 > [!NOTE]
 > Other fields will be added in the future based on changes to [selection algorithm](#selection-algorithm)
