@@ -550,8 +550,11 @@ select the path via `1:6` with a path length of `2` and sum(sRTT) of less than `
 ### Announcement Information
 
 MoQT announce of namespace tuple and name are advertised in `announce_info` messages. Only the hash of each namespace
-item and name are sent. `announce_info` is advertised to all peers. Loop prevention is performed by not forwarding
-`announce_info` messages that have already been seen.
+item and name are advertised. `announce_info` is advertised to all peers from Stub relays only. Announce information
+is not used by the other relays because they have all subscribe information. Stubs do not have all subscribes, so
+the o-relay needs the announce info so that it can send only the subscribes matching the announces to the stub.
+
+Loop prevention is performed by not forwarding `announce_info` messages that have already been seen. 
 
 Withdraw of `announce_info` is sent to all peers to remove an entry upon MoQT unannounce.
 
