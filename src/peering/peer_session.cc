@@ -214,7 +214,11 @@ namespace laps::peering {
                             subscribe_info.source_node_id,
                             withdraw);
 
-        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, subscribe_info.Serialize(true, withdraw), 0, 1000);
+        transport_->Enqueue(t_conn_id_,
+                            control_data_ctx_id_,
+                            subscribe_info.Serialize(true, withdraw, node_info_.id == subscribe_info.source_node_id),
+                            0,
+                            1000);
     }
 
     void PeerSession::SendNodeInfo(const NodeInfo& node_info, bool withdraw)

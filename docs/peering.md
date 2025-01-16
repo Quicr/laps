@@ -969,10 +969,8 @@ all the subscribe tuples up to the announce set, a match is considered found and
 the subscribe. This will trigger SNS and forwarding plane to be built. This is performed based on the subscribe
 and publisher accepting that subscribe by sending a subscribe OK back to the s-relay. 
 
-
 ## Messages Formats
-Peering transmits wire format messages.  This section defines all the peering messages and their encoded
-wire format. 
+This section defines all the peering messages and their encoded wire format. 
 
 ### Connect Message
 
@@ -994,7 +992,6 @@ QUIC unidirectional data streams start with the following header fields:
 | ttl                  | Time in milliseconds that this object should last in queue before being dropped                                                      |
 
 
-
 ### Node Information Advertisement Message
 
 ### Node Information Withdraw Message
@@ -1010,6 +1007,7 @@ QUIC unidirectional data streams start with the following header fields:
 ### Subscribe Node Set Advertisement Message
 
 ### Subscribe Node Set Withdraw Message
+
 
 ## Considerations
 
@@ -1078,6 +1076,10 @@ sequenceDiagram
 
 ```
 
+### Node Advertisement
+
+### Node Withdraw
+
 ### Publish Announcement
 
 Announces are flooded to all control peers, except to STUB peers. STUB peers do not require announces as they use
@@ -1104,7 +1106,7 @@ CS -->> PM: ClientAnnounce
     end
 ```
 
-### Subscribe Request
+### Subscribe Advertisement
 
 Subscribes are only sent to best peer sessions based on announce source node.
 
@@ -1128,3 +1130,29 @@ sequenceDiagram
         PS ->> R: AdvertiseSubscribe
     end
 ```
+
+### Publish Announce Withdraw
+
+### Subscribe Withdraw
+
+### Subscriber Node Set Advertisement
+
+### Subscriber Node Set Withdraw
+
+### Data Object Fan-out
+
+### Subscribe Add
+
+
+### TODO Implementaton
+
+Items to be implemented still
+
+* Stub relay type with configuration option
+* Via relay type with configuration option
+* Distributed control peering servers
+* Add dynamic peering
+* Add reachability probing and detection of location
+* Update selection algorithm to include dynamic peering as well as load and reachability
+* Add administrative policy support
+

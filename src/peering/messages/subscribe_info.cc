@@ -70,14 +70,16 @@ namespace laps::peering {
         return data;
     }
 
-    std::vector<uint8_t> SubscribeInfo::Serialize(bool include_common_header, bool withdraw)
+    std::vector<uint8_t> SubscribeInfo::Serialize(bool include_common_header, bool withdraw, bool is_origin)
     {
         std::vector<uint8_t> data;
 
-        if (seq < 0xFFFF)
-            seq++;  // Bump the sequence number
-        else
-            seq = 0;
+        if (is_origin) {
+            if (seq < 0xFFFF)
+                seq++;  // Bump the sequence number
+            else
+                seq = 0;
+        }
 
         if (include_common_header) {
             data.reserve(kCommonHeadersSize + SizeBytes());
