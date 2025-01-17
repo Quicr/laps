@@ -970,9 +970,38 @@ the subscribe. This will trigger SNS and forwarding plane to be built. This is p
 and publisher accepting that subscribe by sending a subscribe OK back to the s-relay. 
 
 ## Messages Formats
+
 This section defines all the peering messages and their encoded wire format. 
 
+The number in parentheses refers to the number of bytes encoded or how it is encoded,
+such as [QUIC VAR INT](https://datatracker.ietf.org/doc/html/rfc9000#name-variable-length-integer-enc). If there is
+a fixed value, then that is indicated with an equals value.
+
+### Common Headers
+
+Common headers are added to every control message as the first header in the message. They are also added to data object
+messages that are of type datagram and to start of a QUIC stream. Data objects within a stream do not
+contain the common header.
+
+```
+COMMON_HEADER {
+    protocol_version(1) = 1,        // Version of this protocol
+    message_type(2),                // Message type to follow
+    message_length(4),              // Length of the message in bytes that follows    
+}
+```
+
 ### Connect Message
+
+```
+CONNECT_MESSAGE {
+    COMMON_HEADER,
+
+    peer_mode(1),                   // Peer Mode
+    self_node_info(variable),       // Node information
+}
+```
+
 
 ### Connect Response Message
 
@@ -993,6 +1022,8 @@ QUIC unidirectional data streams start with the following header fields:
 
 
 ### Node Information Advertisement Message
+
+
 
 ### Node Information Withdraw Message
 
