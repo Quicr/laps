@@ -76,45 +76,45 @@ namespace laps {
                   sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
                   object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
 
-                auto&& cache_message_callback =
-                  [&, tnsh = quicr::TrackHash(sub_info.track_full_name)](uint8_t priority,
-                                                                         uint32_t ttl,
-                                                                         bool stream_header_needed,
-                                                                         uint64_t group_id,
-                                                                         uint64_t subgroup_id,
-                                                                         uint64_t object_id,
-                                                                         std::optional<quicr::Extensions> extensions,
-                                                                         quicr::BytesSpan data) {
-                      if (server_.cache_.count(tnsh) == 0) {
-                          server_.cache_.insert(
-                            std::make_pair(tnsh,
-                                           quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                                             server_.cache_duration_ms_, 1, server_.GetTickService() }));
-                      }
+                auto&& cache_message_callback = [&server = server_, tnsh = quicr::TrackHash(sub_info.track_full_name)](
+                                                  uint8_t priority,
+                                                  uint32_t ttl,
+                                                  [[maybe_unused]] bool stream_header_needed,
+                                                  uint64_t group_id,
+                                                  uint64_t subgroup_id,
+                                                  uint64_t object_id,
+                                                  std::optional<quicr::Extensions> extensions,
+                                                  quicr::BytesSpan data) {
+                    if (server.cache_.count(tnsh) == 0) {
+                        server.cache_.insert(
+                          std::make_pair(tnsh,
+                                         quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                                           server.cache_duration_ms_, 1, server.GetTickService() }));
+                    }
 
-                      auto& cache_entry = server_.cache_.at(tnsh);
+                    auto& cache_entry = server.cache_.at(tnsh);
 
-                      CacheObject object{
-                          quicr::ObjectHeaders{
-                            group_id,
-                            object_id,
-                            subgroup_id,
-                            data.size(),
-                            quicr::ObjectStatus::kAvailable,
-                            priority,
-                            ttl,
-                            std::nullopt,
-                            extensions,
-                          },
-                          { data.begin(), data.end() },
-                      };
+                    CacheObject object{
+                        quicr::ObjectHeaders{
+                          group_id,
+                          object_id,
+                          subgroup_id,
+                          data.size(),
+                          quicr::ObjectStatus::kAvailable,
+                          priority,
+                          ttl,
+                          std::nullopt,
+                          extensions,
+                        },
+                        { data.begin(), data.end() },
+                    };
 
-                      if (auto group = cache_entry.Get(group_id)) {
-                          group->insert(std::move(object));
-                      } else {
-                          cache_entry.Insert(group_id, { std::move(object) }, server_.cache_duration_ms_);
-                      }
-                  };
+                    if (auto group = cache_entry.Get(group_id)) {
+                        group->insert(std::move(object));
+                    } else {
+                        cache_entry.Insert(group_id, { std::move(object) }, server.cache_duration_ms_);
+                    }
+                };
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(
