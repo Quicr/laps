@@ -583,10 +583,15 @@ namespace laps {
                     SPDLOG_DEBUG("Subscribe: Publishing object from cache: Group {0} is Object {1}",
                                 object.headers.group_id,
                                 object.headers.object_id);
+                    if (!config_.cache_key.has_value()) {
+                        pub_track_h->PublishObject(object.headers, object.data);
+                        continue;
+                    }
+
+                    // Mark as cached.
                     auto headers = object.headers;
                     auto extensions = headers.extensions.value_or(quicr::Extensions());
-                    const std::uint64_t cached = 100;
-                    extensions[cached] = {0x01};
+                    extensions[*config_.cache_key] = {0x01};
                     headers.extensions = extensions;
                     pub_track_h->PublishObject(headers, object.data);
                 }
