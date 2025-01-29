@@ -367,7 +367,7 @@ namespace laps::peering {
         data_object.data_length = data->size();
         data_object.track_full_name_hash = track_full_name_hash;
 
-        auto net_data = make_shared<std::vector<uint8_t>>(data_object.Serialize());
+        auto net_data = std::make_shared<std::vector<uint8_t>>(data_object.Serialize());
 
         quicr::ITransport::EnqueueFlags eflags;
 
