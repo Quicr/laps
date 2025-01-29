@@ -329,8 +329,6 @@ namespace laps {
         quicr::ObjectHeaders object_headers;
         object_headers.track_mode = data_object.type == peering::DataObjectType::kDatagram ? quicr::TrackMode::kDatagram
                                                                                            : quicr::TrackMode::kStream;
-        object_headers.group_id = data_object.group_id;
-        object_headers.subgroup_id = data_object.sub_group_id;
         object_headers.priority = data_object.priority;
         object_headers.ttl = data_object.ttl;
 

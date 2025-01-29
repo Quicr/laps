@@ -16,6 +16,7 @@
 #include <sys/param.h>
 
 namespace laps::peering {
+
     class PeerManager;
 
     /**
@@ -26,6 +27,8 @@ namespace laps::peering {
     class PeerSession : public quicr::ITransport::TransportDelegate
     {
       public:
+        static constexpr std::size_t kControlMessageBufferSize = 4096;
+
         enum class StatusValue : uint8_t
         {
             kConnecting = 0,
@@ -88,7 +91,7 @@ namespace laps::peering {
                       uint32_t ttl,
                       SubscribeNodeSetId sns_id,
                       const quicr::ITransport::EnqueueFlags& eflags,
-                      Span<uint8_t const> data);
+                      std::shared_ptr<const std::vector<uint8_t>> data);
 
         /**
          * @brief Add subscriber source node to the peer SNS state
@@ -168,10 +171,11 @@ namespace laps::peering {
         void SendConnect();
         void SendConnectOk();
 
-        void ProcessControlMessage(std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
+        void ProcessControlMessage();
 
         bool ProcessReceivedData(std::optional<uint64_t> stream_id,
-                                 std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
+                                 std::any& ctx,
+                                 std::shared_ptr<std::vector<uint8_t>> data);
 
       public:
         quicr::TransportRemote peer_config_;
@@ -207,7 +211,9 @@ namespace laps::peering {
 
         quicr::TransportConnId t_conn_id_;         /// Transport connection context ID (aka peer session id)
         quicr::DataContextId control_data_ctx_id_; /// Control data context ID
+        std::vector<uint8_t> controL_msg_buffer_;  /// Working buffer of control message being processed
 
+        std::map<quicr::TrackFullNameHash, SubscribeNodeSet> control_sns_;
         std::shared_ptr<quicr::ITransport> transport_; /// Transport used for the peering connection
     };
 

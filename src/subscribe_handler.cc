@@ -52,10 +52,8 @@ namespace laps {
         server_.peer_manager_.ClientDataObject(*track_alias,
                                                object_headers.priority.has_value() ? *object_headers.priority : 2,
                                                object_headers.ttl.has_value() ? *object_headers.ttl : 2000,
-                                               object_headers.group_id,
-                                               object_headers.subgroup_id,
                                                d_type,
-                                               peer_data);
+                                               std::make_shared<std::vector<uint8_t>>(peer_data));
 
         // Fanout object to subscribers
         for (auto it = server_.state_.subscribes.lower_bound({ track_alias.value(), 0 });

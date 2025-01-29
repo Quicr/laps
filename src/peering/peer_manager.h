@@ -46,7 +46,7 @@ namespace laps::peering {
                              SubscribeNodeSetId in_sns_id,
                              uint8_t priority,
                              uint32_t ttl,
-                             Span<uint8_t> data,
+                             std::shared_ptr<std::vector<uint8_t>> data,
                              quicr::ITransport::EnqueueFlags eflags);
 
         void CompleteDataObjectReceived(PeerSessionId peer_session_id, const DataObject& data_object);
@@ -54,10 +54,8 @@ namespace laps::peering {
         void ClientDataObject(quicr::TrackFullNameHash track_full_name_hash,
                               uint8_t priority,
                               uint32_t ttl,
-                              quicr::messages::GroupId group_id,
-                              quicr::messages::SubGroupId sub_group_id,
                               DataObjectType type,
-                              Span<uint8_t const> data);
+                              std::shared_ptr<const std::vector<uint8_t>> data);
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,
                             const quicr::PublishAnnounceAttributes&,

@@ -326,7 +326,7 @@ namespace laps::peering {
                                       SubscribeNodeSetId in_sns_id,
                                       uint8_t priority,
                                       uint32_t ttl,
-                                      Span<uint8_t> data,
+                                      std::shared_ptr<std::vector<uint8_t>> data,
                                       quicr::ITransport::EnqueueFlags eflags)
     {
         std::lock_guard _(info_base_->mutex_); // TODO: See about removing this lock
@@ -344,7 +344,7 @@ namespace laps::peering {
                 // Update SNS_ID if new stream header included or if datagram (both have sns_id)
                 if (eflags.new_stream || eflags.use_reliable == false) {
                     auto sns_id_bytes = BytesOf(entry.out_sns_id);
-                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data.begin() + 2);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data->begin() + 2);
                 }
 
                 auto out_peer_sess = entry.peer_session.lock();
@@ -356,22 +356,18 @@ namespace laps::peering {
     void PeerManager::ClientDataObject(quicr::TrackFullNameHash track_full_name_hash,
                                        uint8_t priority,
                                        uint32_t ttl,
-                                       quicr::messages::GroupId group_id,
-                                       quicr::messages::SubGroupId sub_group_id,
                                        DataObjectType type,
-                                       Span<uint8_t const> data)
+                                       std::shared_ptr<const std::vector<uint8_t>> data)
     {
         DataObject data_object;
         data_object.type = type;
         data_object.priority = priority;
         data_object.ttl = ttl;
-        data_object.group_id = group_id;
-        data_object.sub_group_id = sub_group_id;
-        data_object.data = data;
-        data_object.data_length = data.size();
+        data_object.data = *data;
+        data_object.data_length = data->size();
         data_object.track_full_name_hash = track_full_name_hash;
 
-        auto net_data = data_object.Serialize();
+        auto net_data = make_shared<std::vector<uint8_t>>(data_object.Serialize());
 
         quicr::ITransport::EnqueueFlags eflags;
 
@@ -410,7 +406,7 @@ namespace laps::peering {
                                         track_full_name_hash);
                     */
                     auto sns_id_bytes = BytesOf(fib_entry.out_sns_id);
-                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data.begin() + 2);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data->begin() + 2);
                 }
                 peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, eflags, net_data);
             }

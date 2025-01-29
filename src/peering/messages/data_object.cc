@@ -27,7 +27,6 @@ namespace laps::peering {
         switch (type) {
             case DataObjectType::kDatagram:
                 size += sizeof(sns_id) + sizeof(track_full_name_hash);
-                size += quicr::UintVar(group_id).Size() + quicr::UintVar(sub_group_id).Size();
                 break;
 
             case DataObjectType::kExistingStream:
@@ -36,7 +35,6 @@ namespace laps::peering {
             case DataObjectType::kNewStream:
                 size += sizeof(sns_id) + sizeof(track_full_name_hash);
                 size += sizeof(priority) + sizeof(ttl);
-                size += quicr::UintVar(group_id).Size() + quicr::UintVar(sub_group_id).Size();
                 break;
         }
 
@@ -48,7 +46,7 @@ namespace laps::peering {
         Deserialize(serialized_data);
     }
 
-    bool DataObject::Deserialize(Span<const uint8_t> serialized_data)
+    bool DataObject::Deserialize(Span<const uint8_t> serialized_data, bool parse_payload)
     {
         if (serialized_data.empty()) false;
 
@@ -72,14 +70,6 @@ namespace laps::peering {
                 track_full_name_hash = ValueOf<uint64_t>({ it, it + 8 });
                 it += 8;
 
-                auto group_id_size = quicr::UintVar::Size(*it);
-                group_id = uint64_t(quicr::UintVar({ it, it + group_id_size }));
-                it += group_id_size;
-
-                auto subgroup_id_size = quicr::UintVar::Size(*it);
-                sub_group_id = uint64_t(quicr::UintVar({ it, it + subgroup_id_size }));
-                it += subgroup_id_size;
-
                 break;
             }
 
@@ -89,14 +79,6 @@ namespace laps::peering {
 
                 track_full_name_hash = ValueOf<uint64_t>({ it, it + 8 });
                 it += 8;
-
-                auto group_id_size = quicr::UintVar::Size(*it);
-                group_id = uint64_t(quicr::UintVar({ it, it + group_id_size }));
-                it += group_id_size;
-
-                auto subgroup_id_size = quicr::UintVar::Size(*it);
-                sub_group_id = uint64_t(quicr::UintVar({ it, it + subgroup_id_size }));
-                it += subgroup_id_size;
 
                 priority = *it++;
                 ttl = ValueOf<uint32_t>({ it, it + 4 });
@@ -109,21 +91,26 @@ namespace laps::peering {
         data_length = uint64_t(quicr::UintVar({ it, it + data_len_uv_size }));
         it += data_len_uv_size;
 
-        auto remaining_data_size = serialized_data.end() - it;
-        if (data_length <= remaining_data_size) {
-            data = {it, it + data_length};
+        if (parse_payload) {
+            auto remaining_data_size = serialized_data.end() - it;
+            if (data_length <= remaining_data_size) {
+                data = {it, it + data_length};
+                return true;
+            }
+
+            if (data_length >= 2'000'000) {
+                SPDLOG_WARN("Received data object is very large size: {}", data_length);
+                return false;
+            }
+
+            data_storage.reserve(data_length);
+            data_storage.insert(data_storage.end(), it, serialized_data.end());
+
+            data = {data_storage.begin(), data_storage.end()};
+
+        } else {
             return true;
         }
-
-        if (data_length >= 2'000'000) {
-            SPDLOG_WARN("Received data object is very large size: {}", data_length);
-            return false;
-        }
-
-        data_storage.reserve(data_length);
-        data_storage.insert(data_storage.end(), it, serialized_data.end());
-
-        data = {data_storage.begin(), data_storage.end()};
 
         return false;
     }
@@ -167,14 +154,6 @@ namespace laps::peering {
                 auto tfn_bytes = BytesOf(data_object.track_full_name_hash);
                 data.insert(data.end(), tfn_bytes.rbegin(), tfn_bytes.rend());
 
-                auto group_id_bytes = quicr::UintVar(data_object.group_id);
-                data.insert(data.end(), group_id_bytes.begin(), group_id_bytes.end());
-
-                auto subgroup_id_bytes = quicr::UintVar(data_object.sub_group_id);
-                data.insert(data.end(), subgroup_id_bytes.begin(), subgroup_id_bytes.end());
-
-                *header_len += sns_id_bytes.size() + tfn_bytes.size() + group_id_bytes.size() +
-                               subgroup_id_bytes.size();
                 break;
             }
 
@@ -185,19 +164,10 @@ namespace laps::peering {
                 auto tfn_bytes = BytesOf(data_object.track_full_name_hash);
                 data.insert(data.end(), tfn_bytes.rbegin(), tfn_bytes.rend());
 
-                auto group_id_bytes = quicr::UintVar(data_object.group_id);
-                data.insert(data.end(), group_id_bytes.begin(), group_id_bytes.end());
-
-                auto subgroup_id_bytes = quicr::UintVar(data_object.sub_group_id);
-                data.insert(data.end(), subgroup_id_bytes.begin(), subgroup_id_bytes.end());
-
                 data.push_back(data_object.priority);
 
                 auto ttl_bytes = BytesOf(data_object.ttl);
                 data.insert(data.end(), ttl_bytes.rbegin(), ttl_bytes.rend());
-
-                *header_len += sns_id_bytes.size() + tfn_bytes.size() + group_id_bytes.size() +
-                               subgroup_id_bytes.size() + sizeof(data_object.priority) + ttl_bytes.size();
 
                 break;
             }

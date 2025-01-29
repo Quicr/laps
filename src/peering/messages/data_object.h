@@ -37,8 +37,6 @@ namespace laps::peering {
         DataObjectType type;            ///< Type of the data object
         SubscribeNodeSetId sns_id{ 0 }; ///< SNS ID used by the peer
         quicr::TrackFullNameHash track_full_name_hash{ 0 }; ///< Full Track name (aka track alias)
-        quicr::messages::GroupId group_id{ 0 };
-        quicr::messages::SubGroupId sub_group_id{ 0 };
 
         uint8_t priority{ 1 }; ///< Stream only; Priority for new stream
         uint32_t ttl{ 2000 };  ///< Stream only; Time to live in millis for stream objects
@@ -60,7 +58,7 @@ namespace laps::peering {
          */
         std::vector<uint8_t> Serialize();
 
-        bool Deserialize(Span<uint8_t const> serialized_data);
+        bool Deserialize(Span<uint8_t const> serialized_data, bool parse_payload=true);
 
         DataObject() = default;
         DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type);
