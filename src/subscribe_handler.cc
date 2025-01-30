@@ -17,7 +17,27 @@ namespace laps {
     {
     }
 
-    void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
+    void SubscribeTrackHandler::ObjectReceived([[maybe_unused]] const quicr::ObjectHeaders& object_headers,
+                                               [[maybe_unused]] quicr::BytesSpan data)
+    {
+    }
+
+    void SubscribeTrackHandler::StreamDataRecv(bool is_start, std::shared_ptr<const std::vector<uint8_t>> data)
+    {
+        is_datagram_ = false;
+
+        ForwardReceivedData(is_start, data);
+    }
+
+    void SubscribeTrackHandler::DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data)
+    {
+        is_datagram_ = true;
+
+        ForwardReceivedData(false, data);
+    }
+
+    void SubscribeTrackHandler::ForwardReceivedData(bool is_new_stream,
+                                                    std::shared_ptr<const std::vector<uint8_t>> data)
     {
         std::lock_guard<std::mutex> _(server_.state_.state_mutex);
 
@@ -29,31 +49,24 @@ namespace laps {
 
         // Send to peers
         peering::DataObjectType d_type;
-        if (object_headers.track_mode.has_value() && *object_headers.track_mode == quicr::TrackMode::kDatagram) {
+        auto track_mode = quicr::TrackMode::kStream;
+
+        if (is_datagram_) {
             d_type = peering::DataObjectType::kDatagram;
+            track_mode = quicr::TrackMode::kDatagram;
         } else {
             d_type = peering::DataObjectType::kExistingStream;
 
-            if (prev_group_id_ != object_headers.group_id || prev_subgroup_id_ != object_headers.subgroup_id) {
+            if (is_new_stream) {
                 d_type = peering::DataObjectType::kNewStream;
             }
         }
 
-        prev_group_id_ = object_headers.group_id;
-        prev_subgroup_id_ = object_headers.subgroup_id;
-
-        std::vector<uint8_t> peer_data;
-        quicr::messages::MoqStreamSubGroupObject object;
-        object.object_id = object_headers.object_id;
-        object.extensions = object_headers.extensions;
-        object.payload.assign(data.begin(), data.end());
-        peer_data << object;
-
         server_.peer_manager_.ClientDataObject(*track_alias,
-                                               object_headers.priority.has_value() ? *object_headers.priority : 2,
-                                               object_headers.ttl.has_value() ? *object_headers.ttl : 2000,
+                                               GetPriority(),
+                                               server_.config_.object_ttl_, /* TODO: Update this when MoQ adds TTL */
                                                d_type,
-                                               std::make_shared<std::vector<uint8_t>>(peer_data));
+                                               data);
 
         // Fanout object to subscribers
         for (auto it = server_.state_.subscribes.lower_bound({ track_alias.value(), 0 });
@@ -70,9 +83,9 @@ namespace laps {
                 // Create the publish track handler and bind it on first object received
                 auto pub_track_h = std::make_shared<PublishTrackHandler>(
                   sub_info.track_full_name,
-                  *object_headers.track_mode,
-                  sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
-                  object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
+                  track_mode,
+                  sub_info.priority == 0 ? GetPriority() : sub_info.priority,
+                  server_.config_.object_ttl_ /* TODO: Update this when MoQ adds TTL */);
 
                 auto&& cache_message_callback = [&server = server_, tnsh = quicr::TrackHash(sub_info.track_full_name)](
                                                   uint8_t priority,
@@ -83,6 +96,7 @@ namespace laps {
                                                   uint64_t object_id,
                                                   std::optional<quicr::Extensions> extensions,
                                                   quicr::BytesSpan data) {
+                    /* TODO: Caching moves to Object Receive handling of this subscribe handler
                     if (server.cache_.count(tnsh) == 0) {
                         server.cache_.insert(
                           std::make_pair(tnsh,
@@ -112,6 +126,7 @@ namespace laps {
                     } else {
                         cache_entry.Insert(group_id, { std::move(object) }, server.cache_duration_ms_);
                     }
+                    */
                 };
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
@@ -120,7 +135,7 @@ namespace laps {
                 sub_info.publish_handler = pub_track_h;
             }
 
-            sub_info.publish_handler->PublishObject(object_headers, data);
+            sub_info.publish_handler->ForwardPublishedData(is_new_stream, data);
         }
     }
 

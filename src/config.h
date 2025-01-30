@@ -16,6 +16,7 @@ namespace laps {
     constexpr uint64_t kDefaultPeerCheckIntervalMs = 5'000;
     constexpr uint32_t kDefaultPeerInitQueueSize = 5'000;
     constexpr uint32_t kDefaultPeerTtlExpiryMs = 5'000;
+    constexpr uint32_t kDefaultObjectTtl = 2'000;
 
     class Config
     {
@@ -31,6 +32,7 @@ namespace laps {
         std::string tls_cert_filename_;
         std::string tls_key_filename_;
         std::string qlog_path_;
+        uint32_t object_ttl_;
 
         peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
 
