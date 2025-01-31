@@ -34,8 +34,11 @@ function run_perf() {
     echo "Running perf script $PERF_FILE.${tid} to $SCRIPT_FILE.${tid}"
     sudo perf script -i $PERF_FILE.${tid} > $SCRIPT_FILE.${tid}
 
-    echo "Creating flame graph, otput to $SVG_FILE.${tid}.svg"
-    ~/FlameGraph/stackcollapse-perf.pl $SCRIPT_FILE.${tid} | ~/FlameGraph/flamegraph.pl > $SVG_FILE.${tid}.svg
+    echo "Creating flame graph, output to $SVG_FILE.${tid}.svg"
+
+    ~/FlameGraph/stackcollapse-perf.pl $SCRIPT_FILE.${tid} | ~/FlameGraph/flamegraph.pl \
+            --title "LAPS (pid=$lapsPID) Thread=${tid} $START_TIME"
+            --subtitle "${1}" > $SVG_FILE.${tid}.svg
 
     sudo rm -f $PERF_FILE.${tid} $SCRIPT_FILE.${tid}
     echo "Done with tid ${tid}"
