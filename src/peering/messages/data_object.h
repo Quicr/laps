@@ -58,7 +58,7 @@ namespace laps::peering {
          */
         std::vector<uint8_t> Serialize();
 
-        bool Deserialize(Span<uint8_t const> serialized_data, bool parse_payload=true);
+        bool Deserialize(Span<uint8_t const> serialized_data, bool parse_payload = true);
 
         DataObject() = default;
         DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type);

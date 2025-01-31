@@ -115,7 +115,7 @@ namespace laps {
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_subscription_refresh_time;
 
         size_t cache_duration_ms_ = 0;
-        std::map<quicr::TrackHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
+        std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

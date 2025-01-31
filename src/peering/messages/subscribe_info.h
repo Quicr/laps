@@ -31,7 +31,7 @@ namespace laps::peering {
         /**
          * @brief Encode node object into bytes that can be written on the wire
          */
-        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false, bool is_origin=false);
+        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false, bool is_origin = false);
 
         SubscribeInfo()
           : track_hash({})

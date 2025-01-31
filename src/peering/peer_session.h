@@ -3,10 +3,10 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <quicr/detail/quic_transport.h>
 #include <set>
-#include <memory>
 
 #include "config.h"
 #include "messages/announce_info.h"

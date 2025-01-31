@@ -35,6 +35,7 @@ namespace laps {
         uint64_t prev_group_id_{ 0 };
         uint64_t prev_subgroup_id_{ 0 };
 
-        bool is_datagram_ { false };
+        bool is_datagram_{ false };
+        quicr::StreamBuffer<uint8_t> stream_buffer_;
     };
 } // namespace laps

@@ -20,20 +20,107 @@ namespace laps {
     void SubscribeTrackHandler::ObjectReceived([[maybe_unused]] const quicr::ObjectHeaders& object_headers,
                                                [[maybe_unused]] quicr::BytesSpan data)
     {
+        // Cache Object
+        if (server_.cache_.count(GetTrackAlias().value()) == 0) {
+            server_.cache_.insert(std::make_pair(
+              GetTrackAlias().value(),
+              quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{ 10000, 1, server_.config_.tick_service_ }));
+        }
+
+        auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
+
+        CacheObject object{ object_headers, { data.begin(), data.end() } };
+
+        if (auto group = cache_entry.Get(object_headers.group_id)) {
+            group->insert(std::move(object));
+        } else {
+            cache_entry.Insert(object_headers.group_id, { std::move(object) }, 6000);
+        }
     }
 
     void SubscribeTrackHandler::StreamDataRecv(bool is_start, std::shared_ptr<const std::vector<uint8_t>> data)
     {
         is_datagram_ = false;
 
+        // Pipeline forward immediately to subscribers/peers
         ForwardReceivedData(is_start, data);
+
+        // Process MoQ object from stream data
+        if (is_start) {
+            stream_buffer_.Clear();
+
+            stream_buffer_.InitAny<quicr::messages::MoqStreamHeaderSubGroup>();
+            stream_buffer_.Push(*data);
+            stream_buffer_.Pop(); // Remove type header
+
+            // Expect that on initial start of stream, there is enough data to process the stream headers
+
+            auto& s_hdr = stream_buffer_.GetAny<quicr::messages::MoqStreamHeaderSubGroup>();
+            if (not(stream_buffer_ >> s_hdr)) {
+                SPDLOG_ERROR("Not enough data to process new stream headers, stream is invalid");
+                // TODO: Add metrics to track this
+                return;
+            }
+        } else {
+            stream_buffer_.Push(*data);
+        }
+
+        auto& s_hdr = stream_buffer_.GetAny<quicr::messages::MoqStreamHeaderSubGroup>();
+
+        if (not stream_buffer_.AnyHasValueB()) {
+            stream_buffer_.InitAnyB<quicr::messages::MoqStreamSubGroupObject>();
+        }
+
+        auto& obj = stream_buffer_.GetAnyB<quicr::messages::MoqStreamSubGroupObject>();
+        if (stream_buffer_ >> obj) {
+            subscribe_track_metrics_.objects_received++;
+
+            ObjectReceived({ s_hdr.group_id,
+                             obj.object_id,
+                             s_hdr.subgroup_id,
+                             obj.payload.size(),
+                             obj.object_status,
+                             s_hdr.priority,
+                             std::nullopt,
+                             quicr::TrackMode::kStream,
+                             obj.extensions },
+                           obj.payload);
+
+            stream_buffer_.ResetAnyB<quicr::messages::MoqStreamSubGroupObject>();
+        }
     }
 
     void SubscribeTrackHandler::DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data)
     {
         is_datagram_ = true;
 
+        // Pipeline forward immediately to subscribers/peers
         ForwardReceivedData(false, data);
+
+        // Process MoQ object from stream data
+        stream_buffer_.Clear();
+
+        stream_buffer_.Push(*data);
+        stream_buffer_.Pop(); // Remove type header
+
+        quicr::messages::MoqObjectDatagram msg;
+        if (stream_buffer_ >> msg) {
+            subscribe_track_metrics_.objects_received++;
+            subscribe_track_metrics_.bytes_received += msg.payload.size();
+            ObjectReceived(
+              {
+                msg.group_id,
+                msg.object_id,
+                0, // datagrams don't have subgroups
+                msg.payload.size(),
+                quicr::ObjectStatus::kAvailable,
+                msg.priority,
+                std::nullopt,
+                quicr::TrackMode::kDatagram,
+                msg.extensions,
+              },
+              std::move(msg.payload));
+        }
     }
 
     void SubscribeTrackHandler::ForwardReceivedData(bool is_new_stream,
@@ -87,51 +174,8 @@ namespace laps {
                   sub_info.priority == 0 ? GetPriority() : sub_info.priority,
                   server_.config_.object_ttl_ /* TODO: Update this when MoQ adds TTL */);
 
-                auto&& cache_message_callback = [&server = server_, tnsh = quicr::TrackHash(sub_info.track_full_name)](
-                                                  uint8_t priority,
-                                                  uint32_t ttl,
-                                                  [[maybe_unused]] bool stream_header_needed,
-                                                  uint64_t group_id,
-                                                  uint64_t subgroup_id,
-                                                  uint64_t object_id,
-                                                  std::optional<quicr::Extensions> extensions,
-                                                  quicr::BytesSpan data) {
-                    /* TODO: Caching moves to Object Receive handling of this subscribe handler
-                    if (server.cache_.count(tnsh) == 0) {
-                        server.cache_.insert(
-                          std::make_pair(tnsh,
-                                         quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                                           server.cache_duration_ms_, 1, server.GetTickService() }));
-                    }
-
-                    auto& cache_entry = server.cache_.at(tnsh);
-
-                    CacheObject object{
-                        quicr::ObjectHeaders{
-                          group_id,
-                          object_id,
-                          subgroup_id,
-                          data.size(),
-                          quicr::ObjectStatus::kAvailable,
-                          priority,
-                          ttl,
-                          std::nullopt,
-                          extensions,
-                        },
-                        { data.begin(), data.end() },
-                    };
-
-                    if (auto group = cache_entry.Get(group_id)) {
-                        group->insert(std::move(object));
-                    } else {
-                        cache_entry.Insert(group_id, { std::move(object) }, server.cache_duration_ms_);
-                    }
-                    */
-                };
-
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(
-                  connection_handle, sub_info.subscribe_id, pub_track_h, false, std::move(cache_message_callback));
+                server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h, false);
                 sub_info.publish_handler = pub_track_h;
             }
 
