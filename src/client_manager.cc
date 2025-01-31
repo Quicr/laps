@@ -583,9 +583,17 @@ namespace laps {
                     SPDLOG_DEBUG("Subscribe: Publishing object from cache: Group {0} is Object {1}",
                                 object.headers.group_id,
                                 object.headers.object_id);
-                    pub_track_h->PublishObject(object.headers, object.data);
-                    // TODO: Check the reason for sleep. If not, we are missing few objects
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    if (!config_.cache_key.has_value()) {
+                        pub_track_h->PublishObject(object.headers, object.data);
+                        continue;
+                    }
+
+                    // Mark as cached.
+                    auto headers = object.headers;
+                    auto extensions = headers.extensions.value_or(quicr::Extensions());
+                    extensions[*config_.cache_key] = {0x01};
+                    headers.extensions = extensions;
+                    pub_track_h->PublishObject(headers, object.data);
                 }
             });
 
