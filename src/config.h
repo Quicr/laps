@@ -37,6 +37,7 @@ namespace laps {
         peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
 
         std::shared_ptr<quicr::ThreadedTickService> tick_service_;
+        std::optional<std::uint64_t> cache_key = std::nullopt;
 
         struct Peering
         {

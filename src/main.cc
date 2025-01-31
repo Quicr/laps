@@ -80,6 +80,10 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
 
     cfg.relay_id_ = cli_opts["endpoint_id"].as<std::string>();
 
+    if (cli_opts.count("cache_key")) {
+        cfg.cache_key = cli_opts["cache_key"].as<std::uint64_t>();
+    }
+
     config.endpoint_id = cfg.relay_id_;
     config.server_bind_ip = cli_opts["bind_ip"].as<std::string>();
     config.server_port = cli_opts["port"].as<uint16_t>();
@@ -119,7 +123,9 @@ main(int argc, char* argv[])
         cxxopts::value<uint32_t>()->default_value(std::to_string(kDefaultObjectTtl)))(
         "cache_duration",
         "Duration of cache objects in milliseconds",
-        cxxopts::value<size_t>()->default_value("60000")); // end of options
+        cxxopts::value<size_t>()->default_value("60000"))("cache_key",
+                                                          "Value of isCached extension key",
+                                                          cxxopts::value<std::uint64_t>()); // end of options
 
     options.add_options("Peering")("peer_port",
                                    "Listening port for peering connections",
