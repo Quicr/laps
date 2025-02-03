@@ -154,6 +154,7 @@ namespace laps::peering {
                 auto tfn_bytes = BytesOf(data_object.track_full_name_hash);
                 data.insert(data.end(), tfn_bytes.rbegin(), tfn_bytes.rend());
 
+                *header_len += sns_id_bytes.size() + tfn_bytes.size();
                 break;
             }
 
@@ -168,6 +169,8 @@ namespace laps::peering {
 
                 auto ttl_bytes = BytesOf(data_object.ttl);
                 data.insert(data.end(), ttl_bytes.rbegin(), ttl_bytes.rend());
+
+                *header_len += sns_id_bytes.size() + tfn_bytes.size() + sizeof(data_object.priority) + ttl_bytes.size();
 
                 break;
             }
