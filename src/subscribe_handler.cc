@@ -62,7 +62,7 @@ namespace laps {
                 return;
             }
         } else {
-            stream_buffer_.Push(*data);
+            stream_buffer_.Push({data->data(), data->size()});
         }
 
         auto& s_hdr = stream_buffer_.GetAny<quicr::messages::MoqStreamHeaderSubGroup>();
@@ -119,7 +119,7 @@ namespace laps {
                 quicr::TrackMode::kDatagram,
                 msg.extensions,
               },
-              std::move(msg.payload));
+              msg.payload);
         }
     }
 

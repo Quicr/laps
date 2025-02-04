@@ -326,12 +326,14 @@ namespace laps::peering {
                                       SubscribeNodeSetId in_sns_id,
                                       uint8_t priority,
                                       uint32_t ttl,
-                                      std::shared_ptr<std::vector<uint8_t>> data,
+                                      std::shared_ptr<const std::vector<uint8_t>> data,
                                       quicr::ITransport::EnqueueFlags eflags)
     {
         std::lock_guard _(info_base_->mutex_); // TODO: See about removing this lock
         auto it = info_base_->peer_fib_.find({ peer_session_id, in_sns_id });
         if (it != info_base_->peer_fib_.end()) {
+            std::vector<uint8_t> data_out (data->begin(), data->end());
+
             for (auto& [out_peer_sess_id, entry] : it->second) {
                 if (out_peer_sess_id == 0 || out_peer_sess_id == peer_session_id)
                     continue; // Skip; don't send back to same peer or if it's self
@@ -344,11 +346,12 @@ namespace laps::peering {
                 // Update SNS_ID if new stream header included or if datagram (both have sns_id)
                 if (eflags.new_stream || eflags.use_reliable == false) {
                     auto sns_id_bytes = BytesOf(entry.out_sns_id);
-                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data->begin() + 2);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data_out.begin() + 2);
                 }
 
                 auto out_peer_sess = entry.peer_session.lock();
-                out_peer_sess->SendData(priority, ttl, entry.out_sns_id, eflags, data);
+                auto data_out_shared = std::make_shared<const std::vector<uint8_t>>(data_out);
+                out_peer_sess->SendData(priority, ttl, entry.out_sns_id, eflags, std::move(data_out_shared));
             }
         }
     }
@@ -363,7 +366,7 @@ namespace laps::peering {
         data_object.type = type;
         data_object.priority = priority;
         data_object.ttl = ttl;
-        data_object.data = *data;
+        data_object.data = {data->data(), data->size()};
         data_object.data_length = data->size();
         data_object.track_full_name_hash = track_full_name_hash;
 

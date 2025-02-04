@@ -46,7 +46,7 @@ namespace laps::peering {
                              SubscribeNodeSetId in_sns_id,
                              uint8_t priority,
                              uint32_t ttl,
-                             std::shared_ptr<std::vector<uint8_t>> data,
+                             std::shared_ptr<const std::vector<uint8_t>> data,
                              quicr::ITransport::EnqueueFlags eflags);
 
         void CompleteDataObjectReceived(PeerSessionId peer_session_id, const DataObject& data_object);

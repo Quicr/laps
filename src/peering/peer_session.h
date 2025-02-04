@@ -176,7 +176,7 @@ namespace laps::peering {
 
         bool ProcessReceivedData(std::optional<uint64_t> stream_id,
                                  std::any& ctx,
-                                 std::shared_ptr<std::vector<uint8_t>> data);
+                                 std::shared_ptr<const std::vector<uint8_t>> data);
 
       public:
         quicr::TransportRemote peer_config_;

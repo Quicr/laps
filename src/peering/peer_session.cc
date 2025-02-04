@@ -445,7 +445,7 @@ namespace laps::peering {
 
     bool PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
                                           std::any& ctx,
-                                          std::shared_ptr<std::vector<uint8_t>> data)
+                                          std::shared_ptr<const std::vector<uint8_t>> data)
     {
         // TODO(tievens): Update to not buffer when node type is Via
 
