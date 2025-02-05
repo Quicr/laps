@@ -556,7 +556,7 @@ namespace laps::peering {
                 return;
             }
 
-            DataObject dobj(*data.value());
+            DataObject dobj(*data);
 
             if (node_info_.type != NodeType::kVia) {
                 manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
@@ -567,7 +567,7 @@ namespace laps::peering {
                                      dobj.sns_id,
                                      dobj.priority,
                                      dobj.ttl,
-                                     *data,
+                                     data,
                                      eflags);
 
             SPDLOG_LOGGER_TRACE(LOGGER,
