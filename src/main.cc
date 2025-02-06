@@ -88,13 +88,14 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.server_bind_ip = cli_opts["bind_ip"].as<std::string>();
     config.server_port = cli_opts["port"].as<uint16_t>();
 
-    config.transport_config.debug = false; // cfg.debug;
+    config.transport_config.debug = cfg.debug;
     config.transport_config.tls_cert_filename = cfg.tls_cert_filename_;
     config.transport_config.tls_key_filename = cfg.tls_key_filename_;
     config.transport_config.use_reset_wait_strategy = false;
-    config.transport_config.time_queue_max_duration = 5000;
+    config.transport_config.time_queue_max_duration = 8000;
     config.transport_config.quic_qlog_path = qlog_path;
     config.transport_config.idle_timeout_ms = 10000;
+    config.transport_config.time_queue_rx_size = 10'000;
 
     return config;
 }
