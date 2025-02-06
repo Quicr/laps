@@ -553,52 +553,6 @@ namespace laps {
 
             last_subscription_refresh_time = std::chrono::steady_clock::now();
         }
-
-        if (filter_type == quicr::messages::FilterType::LatestGroup) {
-            SPDLOG_INFO("Subscribe: Attempting to retrieve objects from cache for track: {0}", th.track_fullname_hash);
-            auto cache_entry_it = cache_.find(th);
-            if (cache_entry_it == cache_.end()) {
-                SPDLOG_INFO("Subscribe: No entries in cache found for track: {0}", th.track_fullname_hash);
-                return;
-            }
-
-            auto& [_, cache_entry] = *cache_entry_it;
-            // TODO: Revisit the lambda capture (by value)
-            std::thread retrieve_cache_thread([=, priority = attrs.priority, group = cache_entry.Last()] {
-                if (group == nullptr || group->empty()) {
-                    SPDLOG_INFO("Subscribe: Cache entries for latest group is missing for track: {0}",
-                                th.track_fullname_hash);
-                    return;
-                }
-
-                auto pub_track_h =
-                  std::make_shared<PublishTrackHandler>(track_full_name,
-                                                        quicr::TrackMode::kStream, // TODO: This is wrong to be default
-                                                        priority,
-                                                        5000);
-
-                BindPublisherTrack(connection_handle, subscribe_id, pub_track_h, true);
-
-                for (const auto& object : *group) {
-                    SPDLOG_DEBUG("Subscribe: Publishing object from cache: Group {0} is Object {1}",
-                                object.headers.group_id,
-                                object.headers.object_id);
-                    if (!config_.cache_key.has_value()) {
-                        pub_track_h->PublishObject(object.headers, object.data);
-                        continue;
-                    }
-
-                    // Mark as cached.
-                    auto headers = object.headers;
-                    auto extensions = headers.extensions.value_or(quicr::Extensions());
-                    extensions[*config_.cache_key] = {0x01};
-                    headers.extensions = extensions;
-                    pub_track_h->PublishObject(headers, object.data);
-                }
-            });
-
-            retrieve_cache_thread.detach();
-        }
     }
 
     void ClientManager::MetricsSampled(const quicr::ConnectionHandle connection_handle,
