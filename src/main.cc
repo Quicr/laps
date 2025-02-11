@@ -92,10 +92,10 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.transport_config.tls_cert_filename = cfg.tls_cert_filename_;
     config.transport_config.tls_key_filename = cfg.tls_key_filename_;
     config.transport_config.use_reset_wait_strategy = false;
-    config.transport_config.time_queue_max_duration = 8000;
     config.transport_config.quic_qlog_path = qlog_path;
     config.transport_config.idle_timeout_ms = 10000;
     config.transport_config.time_queue_rx_size = 10'000;
+    config.transport_config.time_queue_max_duration = cfg.object_ttl_ * 2;
 
     return config;
 }
