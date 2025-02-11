@@ -514,14 +514,14 @@ namespace laps::peering {
                                    std::optional<quicr::DataContextId> data_ctx_id,
                                    const bool is_bidir)
     {
-        auto& rx_ctx = transport_->GetStreamRxContext(conn_id, stream_id);
+        auto rx_ctx = transport_->GetStreamRxContext(conn_id, stream_id);
 
         for (int i=0; i < 60; i++) {
-            if (rx_ctx.data_queue.Empty()) {
+            if (rx_ctx->data_queue.Empty()) {
                 break;
             }
 
-            auto data_opt = rx_ctx.data_queue.Pop();
+            auto data_opt = rx_ctx->data_queue.Pop();
             if (not data_opt.has_value()) {
                 break;
             }
@@ -536,7 +536,7 @@ namespace laps::peering {
                 ProcessControlMessage();
 
             } else {
-                if (! ProcessReceivedData(stream_id, rx_ctx.caller_any, data_opt.value())) {
+                if (! ProcessReceivedData(stream_id, rx_ctx->caller_any, data_opt.value())) {
                     i = 59;
                     continue; // Try once more
                 }

@@ -21,7 +21,9 @@ namespace laps {
                               quicr::messages::GroupOrder group_order,
                               ClientManager& server);
 
-        void StreamDataRecv(bool is_start, std::shared_ptr<const std::vector<uint8_t>> data) override;
+        void StreamDataRecv(bool is_start,
+                            uint64_t stream_id,
+                            std::shared_ptr<const std::vector<uint8_t>> data) override;
         void DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data) override;
         void ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data) override;
 
@@ -34,6 +36,7 @@ namespace laps {
 
         uint64_t prev_group_id_{ 0 };
         uint64_t prev_subgroup_id_{ 0 };
+        uint64_t current_stream_id_{ 0 };
 
         bool is_datagram_{ false };
         quicr::StreamBuffer<uint8_t> stream_buffer_;
