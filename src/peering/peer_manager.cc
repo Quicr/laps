@@ -3,10 +3,12 @@
 #include "peer_manager.h"
 #include "client_manager.h"
 #include "messages/data_object.h"
+#include "subscribe_handler.h"
 #include "state.h"
 
 #include <chrono>
 #include <sstream>
+#include "subscribe_handler.h"
 
 namespace laps::peering {
 
@@ -87,7 +89,7 @@ namespace laps::peering {
                 SPDLOG_LOGGER_INFO(
                   LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
-                if (auto cm = client_manager_.lock()) {
+                if (auto cm = client_manager_) {
 
                     quicr::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
@@ -100,7 +102,7 @@ namespace laps::peering {
                     cm->ProcessSubscribe(0,
                                          0,
                                          subscribe_info.track_hash,
-                                         { sub.track_namespace, sub.track_name },
+                                         { sub.track_namespace, sub.track_name, std::nullopt },
                                          quicr::messages::FilterType::LatestObject,
                                          s_attrs);
                 }
@@ -171,7 +173,7 @@ namespace laps::peering {
                                            "No peers left for subscribe fullname: {}, removing client subscribe state",
                                            subscribe_info.track_hash.track_fullname_hash);
 
-                        if (auto cm = client_manager_.lock()) {
+                        if (auto cm = client_manager_) {
                             cm->RemovePublisherSubscribe(subscribe_info.track_hash);
                         }
                     }
@@ -311,33 +313,43 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::CompleteDataObjectReceived(PeerSessionId peer_session_id, const DataObject& data_object)
-    {
-        auto it = info_base_->peer_fib_.find({ peer_session_id, data_object.sns_id });
-        if (it != info_base_->peer_fib_.end()) {
-            if (it->second.count(0)) { // client manager is interested
-                client_manager_.lock()->ProcessPeerDataObject(data_object);
-            }
-        }
-    }
-
     void PeerManager::ForwardPeerData(PeerSessionId peer_session_id,
+                                      bool is_new_stream,
                                       uint64_t stream_id,
                                       SubscribeNodeSetId in_sns_id,
                                       uint8_t priority,
                                       uint32_t ttl,
+                                      quicr::TrackFullNameHash track_full_name_hash,
                                       std::shared_ptr<const std::vector<uint8_t>> data,
                                       quicr::ITransport::EnqueueFlags eflags)
     {
         std::lock_guard _(info_base_->mutex_); // TODO: See about removing this lock
         auto it = info_base_->peer_fib_.find({ peer_session_id, in_sns_id });
         if (it != info_base_->peer_fib_.end()) {
-            //TODO(tievens): Replace data_out with new transport multiple data
-            std::vector<uint8_t> data_out (data->begin(), data->end());
+            // TODO(tievens): Replace data_out with new transport multiple data
+            std::vector<uint8_t> data_out(data->begin(), data->end());
 
             for (auto& [out_peer_sess_id, entry] : it->second) {
-                if (out_peer_sess_id == 0 || out_peer_sess_id == peer_session_id)
+                if (out_peer_sess_id == peer_session_id)
                     continue; // Skip; don't send back to same peer or if it's self
+
+                if (out_peer_sess_id == 0) { // self; Client manager is interested
+                    // TODO(tievens): Consider maintaining a client specific si map to avoid second map lookup
+                    const auto sub_it = info_base_->subscribes_.find(track_full_name_hash);
+                    if (sub_it != info_base_->subscribes_.end()) {
+                        const auto& si_it = sub_it->second.find(node_info_.id);
+                        if (si_it != sub_it->second.end()) {
+                            if (si_it->second.client_subscribe_handler != nullptr) {
+                                if (eflags.use_reliable) {
+                                    si_it->second.client_subscribe_handler->StreamDataRecv(is_new_stream, stream_id, data);
+                                } else {
+                                    si_it->second.client_subscribe_handler->DgramDataRecv(data);
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
 
                 if (stream_id < entry.stream_id)
                     continue; // Invalid, must be an old object
@@ -351,23 +363,24 @@ namespace laps::peering {
                 }
 
                 auto out_peer_sess = entry.peer_session.lock();
-                auto data_out_shared = std::make_shared<const std::vector<uint8_t>>(data_out);
+                auto data_out_shared = std::make_shared<std::vector<uint8_t>>();
+                data_out_shared->assign(data_out.begin(), data_out.end());
                 out_peer_sess->SendData(priority, ttl, entry.out_sns_id, eflags, std::move(data_out_shared));
             }
         }
     }
 
-    void PeerManager::ClientDataObject(quicr::TrackFullNameHash track_full_name_hash,
-                                       uint8_t priority,
-                                       uint32_t ttl,
-                                       DataObjectType type,
-                                       std::shared_ptr<const std::vector<uint8_t>> data)
+    void PeerManager::ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
+                                     uint8_t priority,
+                                     uint32_t ttl,
+                                     DataObjectType type,
+                                     std::shared_ptr<const std::vector<uint8_t>> data)
     {
         DataObject data_object;
         data_object.type = type;
         data_object.priority = priority;
         data_object.ttl = ttl;
-        data_object.data = {data->data(), data->size()};
+        data_object.data = { data->data(), data->size() };
         data_object.data_length = data->size();
         data_object.track_full_name_hash = track_full_name_hash;
 
@@ -422,13 +435,24 @@ namespace laps::peering {
                                       Span<const uint8_t> subscribe_data,
                                       bool withdraw)
     {
-        quicr::TrackHash th(track_full_name);
+        auto tfn = track_full_name;
+        quicr::TrackHash th(tfn);
+
+        tfn.track_alias = th.track_fullname_hash;
 
         SubscribeInfo si;
 
         si.track_hash = th;
         si.subscribe_data.assign(subscribe_data.begin(), subscribe_data.end());
         si.source_node_id = node_info_.id;
+
+        si.client_subscribe_handler =
+          std::make_shared<SubscribeTrackHandler>(tfn,
+                                                  0 /* use zero to indicate to use publisher priority */,
+                                                  quicr::messages::GroupOrder::kAscending,
+                                                  *client_manager_);
+
+        si.client_subscribe_handler->SetFromPeer();
 
         if (not withdraw) {
             info_base_->AddSubscribe(si);
@@ -508,7 +532,7 @@ namespace laps::peering {
                         if (sub_info.source_node_id == node_info_.id)
                             continue;
 
-                        if (auto cm = client_manager_.lock()) {
+                        if (auto cm = client_manager_) {
                             quicr::SubscribeAttributes s_attrs;
                             s_attrs.priority = 10;
 
@@ -722,10 +746,8 @@ namespace laps::peering {
                 if (entry.update_ref == update_ref)
                     continue;
 
-                SPDLOG_LOGGER_DEBUG(LOGGER,
-                                    "SNS update remove peer session: {} sns id: {}",
-                                    peer_sess_id,
-                                    entry.out_sns_id);
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER, "SNS update remove peer session: {} sns id: {}", peer_sess_id, entry.out_sns_id);
 
                 if (const auto peer_sess = entry.peer_session.lock()) {
                     peer_sess->RemovePeerSnsSourceNode(peer_sess->GetSessionId(), sns.id, 0);

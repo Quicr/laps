@@ -29,6 +29,8 @@ namespace laps {
 
         void StatusChanged(Status status) override;
 
+        void SetFromPeer();
+
       private:
         void ForwardReceivedData(bool is_new_stream, std::shared_ptr<const std::vector<uint8_t>> data);
 
@@ -39,6 +41,7 @@ namespace laps {
         uint64_t current_stream_id_{ 0 };
 
         bool is_datagram_{ false };
+        bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
         quicr::StreamBuffer<uint8_t> stream_buffer_;
     };
 } // namespace laps

@@ -42,20 +42,20 @@ namespace laps::peering {
                             const NodeInfo& remote_node_info);
 
         void ForwardPeerData(PeerSessionId peer_session_id,
+                             bool is_new_stream,
                              uint64_t stream_id,
                              SubscribeNodeSetId in_sns_id,
                              uint8_t priority,
                              uint32_t ttl,
+                             quicr::TrackFullNameHash track_full_name_hash,
                              std::shared_ptr<const std::vector<uint8_t>> data,
                              quicr::ITransport::EnqueueFlags eflags);
 
-        void CompleteDataObjectReceived(PeerSessionId peer_session_id, const DataObject& data_object);
-
-        void ClientDataObject(quicr::TrackFullNameHash track_full_name_hash,
-                              uint8_t priority,
-                              uint32_t ttl,
-                              DataObjectType type,
-                              std::shared_ptr<const std::vector<uint8_t>> data);
+        void ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
+                            uint8_t priority,
+                            uint32_t ttl,
+                            DataObjectType type,
+                            std::shared_ptr<const std::vector<uint8_t>> data);
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,
                             const quicr::PublishAnnounceAttributes&,
@@ -76,7 +76,7 @@ namespace laps::peering {
             ClientSubscribe(track_full_name, {}, {}, true);
         }
 
-        void SetClientManager(std::weak_ptr<ClientManager> client_manager)
+        void SetClientManager(std::shared_ptr<ClientManager> client_manager)
         {
             client_manager_ = std::move(client_manager);
         }
@@ -129,7 +129,7 @@ namespace laps::peering {
         std::mutex mutex_;
         std::shared_ptr<InfoBase> info_base_;
         std::shared_ptr<quicr::TickService> tick_service_;
-        std::weak_ptr<ClientManager> client_manager_;
+        std::shared_ptr<ClientManager> client_manager_;
         const Config& config_;
         State& state_;
         NodeInfo node_info_;
@@ -143,6 +143,9 @@ namespace laps::peering {
         std::shared_ptr<quicr::ITransport> server_transport_; /// Server Transport for inbound connections
 
         std::thread check_thr_; /// Check/task thread, handles reconnects
+
+        /// Subscribe track handler for received data
+        std::map<quicr::messages::TrackAlias, std::shared_ptr<SubscribeTrackHandler>> subscribe_handlers_;
     };
 
 } // namespace laps

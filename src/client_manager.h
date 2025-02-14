@@ -98,8 +98,6 @@ namespace laps {
                               quicr::messages::FilterType filter_type,
                               const quicr::SubscribeAttributes&);
 
-        void ProcessPeerDataObject(const peering::DataObject& data_object);
-
         void RemovePublisherSubscribe(const quicr::TrackHash& track_hash);
 
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,

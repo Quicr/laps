@@ -472,7 +472,7 @@ namespace laps::peering {
 
             auto& dobj = std::any_cast<DataObject&>(ctx);
 
-            auto is_complete = dobj.Deserialize(*data, false);
+            dobj.Deserialize(*data, false);
 
             // Set Any object if new stream
             if (dobj.type == DataObjectType::kNewStream) {
@@ -484,25 +484,29 @@ namespace laps::peering {
 
             // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
             manager_.ForwardPeerData(GetSessionId(),
+                                     true,
                                      stream_id.has_value() ? *stream_id : 0,
                                      dobj.sns_id,
                                      dobj.priority,
                                      dobj.ttl,
+                                     dobj.track_full_name_hash,
                                      data,
                                      eflags);
 
             return true;
         }
 
-        // Existing data - append to data object AnyB
+        // Existing data
         auto& dobj = std::any_cast<DataObject&>(ctx);
 
         // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
         manager_.ForwardPeerData(GetSessionId(),
+                                 false,
                                  stream_id.has_value() ? *stream_id : 0,
                                  dobj.sns_id,
                                  dobj.priority,
                                  dobj.ttl,
+                                 dobj.track_full_name_hash,
                                  data,
                                  eflags);
 
@@ -558,15 +562,13 @@ namespace laps::peering {
 
             DataObject dobj(*data);
 
-            if (node_info_.type != NodeType::kVia) {
-                manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-            }
-
             manager_.ForwardPeerData(GetSessionId(),
+                                     false,
                                      0,
                                      dobj.sns_id,
                                      dobj.priority,
                                      dobj.ttl,
+                                     dobj.track_full_name_hash,
                                      data,
                                      eflags);
 

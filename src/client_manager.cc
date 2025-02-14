@@ -324,52 +324,6 @@ namespace laps {
         ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, filter_type, attrs);
     }
 
-    void ClientManager::ProcessPeerDataObject(const peering::DataObject& data_object)
-    {
-        quicr::ObjectHeaders object_headers;
-        object_headers.track_mode = data_object.type == peering::DataObjectType::kDatagram ? quicr::TrackMode::kDatagram
-                                                                                           : quicr::TrackMode::kStream;
-        object_headers.priority = data_object.priority;
-        object_headers.ttl = data_object.ttl;
-
-        quicr::messages::MoqStreamSubGroupObject object;
-
-        // TODO: Not great to have to use stream buffer.  Clean this up later to address performance
-        quicr::StreamBuffer<uint8_t> buffer;
-        buffer.Push(data_object.data);
-        buffer >> object;
-
-        object_headers.extensions = object.extensions;
-        object_headers.object_id = object.object_id;
-
-        // Fanout object to subscribers
-        std::lock_guard _(state_.state_mutex);
-        for (auto it = state_.subscribes.lower_bound({ data_object.track_full_name_hash, 0 });
-             it != state_.subscribes.end();
-             ++it) {
-            auto& [key, sub_info] = *it;
-            const auto& sub_track_alias = key.first;
-            const auto& connection_handle = key.second;
-
-            if (sub_track_alias != data_object.track_full_name_hash)
-                break;
-
-            if (sub_info.publish_handler == nullptr) {
-                // Create the publish track handler and bind it on first object received
-                auto pub_track_h = std::make_shared<PublishTrackHandler>(
-                  sub_info.track_full_name,
-                  *object_headers.track_mode,
-                  sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
-                  object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
-
-                // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h);
-                sub_info.publish_handler = pub_track_h;
-            }
-
-            sub_info.publish_handler->PublishObject(object_headers, object.payload);
-        }
-    }
     bool ClientManager::FetchReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
                                       [[maybe_unused]] uint64_t subscribe_id,
                                       const quicr::FullTrackName& track_full_name,
@@ -563,7 +517,7 @@ namespace laps {
               std::make_shared<PublishTrackHandler>(track_full_name,
                                                     quicr::TrackMode::kStream,
                                                     attrs.priority,
-                                                    5000);
+                                                    config_.object_ttl_);
 
             BindPublisherTrack(connection_handle, subscribe_id, pub_track_h, true);
 

@@ -3,7 +3,6 @@
 #pragma once
 
 #include <map>
-#include <memory>
 #include <optional>
 #include <quicr/detail/quic_transport.h>
 #include <set>
@@ -13,8 +12,6 @@
 #include "messages/node_info.h"
 #include "messages/subscribe_info.h"
 #include "messages/subscribe_node_set.h"
-
-#include <sys/param.h>
 
 namespace laps::peering {
 
@@ -203,8 +200,8 @@ namespace laps::peering {
             .debug = config_.debug,
         };
 
-        std::map<quicr::TrackFullNameHash, SubscribeNodeSet>
-          sub_sns_; // Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)
+        /// Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)
+        std::map<quicr::TrackFullNameHash, SubscribeNodeSet> sub_sns_;
 
         /// Map of subscriber source nodes initiated by peer ingress SNS.
         /// Key is the ingress peer session ID and SNS ID, value is the SNS egress via this peer
@@ -214,7 +211,6 @@ namespace laps::peering {
         quicr::DataContextId control_data_ctx_id_; /// Control data context ID
         std::vector<uint8_t> controL_msg_buffer_;  /// Working buffer of control message being processed
 
-        std::map<quicr::TrackFullNameHash, SubscribeNodeSet> control_sns_;
         std::shared_ptr<quicr::ITransport> transport_; /// Transport used for the peering connection
     };
 
