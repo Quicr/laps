@@ -332,6 +332,7 @@ namespace laps::peering {
         std::lock_guard _(info_base_->mutex_); // TODO: See about removing this lock
         auto it = info_base_->peer_fib_.find({ peer_session_id, in_sns_id });
         if (it != info_base_->peer_fib_.end()) {
+            //TODO(tievens): Replace data_out with new transport multiple data
             std::vector<uint8_t> data_out (data->begin(), data->end());
 
             for (auto& [out_peer_sess_id, entry] : it->second) {
@@ -585,7 +586,7 @@ namespace laps::peering {
         tconfig.tls_cert_filename = config_.tls_cert_filename_;
         tconfig.tls_key_filename = config_.tls_key_filename_;
         tconfig.time_queue_init_queue_size = config_.peering.init_queue_size;
-        tconfig.time_queue_max_duration = config_.peering.max_ttl_expiry_ms;
+        tconfig.time_queue_max_duration = config_.object_ttl_ * 2;
         tconfig.idle_timeout_ms = 5000;
 
         server_transport_ =

@@ -199,7 +199,7 @@ namespace laps::peering {
             .tls_cert_filename = config_.tls_cert_filename_,
             .tls_key_filename = config_.tls_key_filename_,
             .time_queue_init_queue_size = config_.peering.init_queue_size,
-            .time_queue_max_duration = config_.peering.max_ttl_expiry_ms,
+            .time_queue_max_duration = config_.object_ttl_ * 2,
             .debug = config_.debug,
         };
 

@@ -526,17 +526,17 @@ namespace laps::peering {
                 break;
             }
 
-            auto& data = *data_opt.value();
+            const auto& data = data_opt.value();
 
             // Get common header
             if (is_bidir) { // control
                 control_data_ctx_id_ = *data_ctx_id;
-                controL_msg_buffer_.insert(controL_msg_buffer_.begin(), data.begin(), data.end());
+                controL_msg_buffer_.insert(controL_msg_buffer_.begin(), data->begin(), data->end());
 
                 ProcessControlMessage();
 
             } else {
-                if (! ProcessReceivedData(stream_id, rx_ctx->caller_any, data_opt.value())) {
+                if (! ProcessReceivedData(stream_id, rx_ctx->caller_any, std::move(data))) {
                     i = 59;
                     continue; // Try once more
                 }

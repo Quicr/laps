@@ -17,14 +17,15 @@ namespace laps {
     {
     }
 
-    void SubscribeTrackHandler::ObjectReceived([[maybe_unused]] const quicr::ObjectHeaders& object_headers,
-                                               [[maybe_unused]] quicr::BytesSpan data)
+    void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers,
+                                               quicr::BytesSpan data)
     {
         // Cache Object
         if (server_.cache_.count(GetTrackAlias().value()) == 0) {
             server_.cache_.insert(std::make_pair(
               GetTrackAlias().value(),
-              quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{ 10000, 1, server_.config_.tick_service_ }));
+                             quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                               kDefaultCacheTimeQueueMaxDuration, 1, server_.config_.tick_service_ }));
         }
 
         auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
@@ -34,7 +35,7 @@ namespace laps {
         if (auto group = cache_entry.Get(object_headers.group_id)) {
             group->insert(std::move(object));
         } else {
-            cache_entry.Insert(object_headers.group_id, { std::move(object) }, 6000);
+            cache_entry.Insert(object_headers.group_id, { std::move(object) }, kDefaultCacheTimeQueueObjectTtl);
         }
     }
 

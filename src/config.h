@@ -15,8 +15,9 @@ namespace laps {
     constexpr uint16_t kDefaultPeerPort = 33434;
     constexpr uint64_t kDefaultPeerCheckIntervalMs = 5'000;
     constexpr uint32_t kDefaultPeerInitQueueSize = 5'000;
-    constexpr uint32_t kDefaultPeerTtlExpiryMs = 5'000;
     constexpr uint32_t kDefaultObjectTtl = 5'000;
+    constexpr uint32_t kDefaultCacheTimeQueueMaxDuration = 10'000;
+    constexpr uint32_t kDefaultCacheTimeQueueObjectTtl = 6'000;
 
     class Config
     {
@@ -46,7 +47,6 @@ namespace laps {
 
             uint64_t check_interval_ms{ kDefaultPeerCheckIntervalMs }; /// Peer check interval in milliseconds
             uint32_t init_queue_size{ kDefaultPeerInitQueueSize };
-            uint32_t max_ttl_expiry_ms{ kDefaultPeerTtlExpiryMs };
 
         } peering;
 

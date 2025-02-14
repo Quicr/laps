@@ -561,7 +561,7 @@ namespace laps {
 
             auto pub_track_h =
               std::make_shared<PublishTrackHandler>(track_full_name,
-                                                    quicr::TrackMode::kStream, // TODO: This is wrong to be default
+                                                    quicr::TrackMode::kStream,
                                                     attrs.priority,
                                                     5000);
 
