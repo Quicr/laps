@@ -4,6 +4,7 @@
 
 #include "node_info.h"
 #include <set>
+#include <memory>
 
 #include <quicr/track_name.h>
 
