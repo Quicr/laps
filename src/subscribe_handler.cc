@@ -144,17 +144,17 @@ namespace laps {
             return;
         }
 
-        peering::DataObjectType d_type;
+        peering::DataType d_type;
         auto track_mode = quicr::TrackMode::kStream;
 
         if (is_datagram_) {
-            d_type = peering::DataObjectType::kDatagram;
+            d_type = peering::DataType::kDatagram;
             track_mode = quicr::TrackMode::kDatagram;
         } else {
-            d_type = peering::DataObjectType::kExistingStream;
+            d_type = peering::DataType::kExistingStream;
 
             if (is_new_stream) {
-                d_type = peering::DataObjectType::kNewStream;
+                d_type = peering::DataType::kNewStream;
             }
         }
 

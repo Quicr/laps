@@ -9,7 +9,7 @@
 
 #include "config.h"
 #include "info_base.h"
-#include "messages/data_object.h"
+#include "messages/data_header.h"
 #include "peer_session.h"
 #include "state.h"
 
@@ -44,17 +44,15 @@ namespace laps::peering {
         void ForwardPeerData(PeerSessionId peer_session_id,
                              bool is_new_stream,
                              uint64_t stream_id,
-                             SubscribeNodeSetId in_sns_id,
-                             uint8_t priority,
-                             uint32_t ttl,
-                             quicr::TrackFullNameHash track_full_name_hash,
+                             DataHeader data_header,
                              std::shared_ptr<const std::vector<uint8_t>> data,
+                             uint64_t data_offset,
                              quicr::ITransport::EnqueueFlags eflags);
 
         void ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
                             uint8_t priority,
                             uint32_t ttl,
-                            DataObjectType type,
+                            DataType type,
                             std::shared_ptr<const std::vector<uint8_t>> data);
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,

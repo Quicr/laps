@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
 #include "client_manager.h"
-#include "messages/data_object.h"
-#include "subscribe_handler.h"
 #include "state.h"
+#include "subscribe_handler.h"
+#include <peering/messages/data_header.h>
 
+#include "subscribe_handler.h"
 #include <chrono>
 #include <sstream>
-#include "subscribe_handler.h"
 
 namespace laps::peering {
 
@@ -316,18 +316,16 @@ namespace laps::peering {
     void PeerManager::ForwardPeerData(PeerSessionId peer_session_id,
                                       bool is_new_stream,
                                       uint64_t stream_id,
-                                      SubscribeNodeSetId in_sns_id,
-                                      uint8_t priority,
-                                      uint32_t ttl,
-                                      quicr::TrackFullNameHash track_full_name_hash,
+                                      DataHeader data_header,
                                       std::shared_ptr<const std::vector<uint8_t>> data,
+                                      uint64_t data_offset,
                                       quicr::ITransport::EnqueueFlags eflags)
     {
         std::lock_guard _(info_base_->mutex_); // TODO: See about removing this lock
-        auto it = info_base_->peer_fib_.find({ peer_session_id, in_sns_id });
+        auto it = info_base_->peer_fib_.find({ peer_session_id, data_header.sns_id });
         if (it != info_base_->peer_fib_.end()) {
             // TODO(tievens): Replace data_out with new transport multiple data
-            std::vector<uint8_t> data_out(data->begin(), data->end());
+            std::vector data_out(data->begin(), data->end());
 
             for (auto& [out_peer_sess_id, entry] : it->second) {
                 if (out_peer_sess_id == peer_session_id)
@@ -335,15 +333,23 @@ namespace laps::peering {
 
                 if (out_peer_sess_id == 0) { // self; Client manager is interested
                     // TODO(tievens): Consider maintaining a client specific si map to avoid second map lookup
-                    const auto sub_it = info_base_->subscribes_.find(track_full_name_hash);
+                    const auto sub_it = info_base_->subscribes_.find(data_header.track_full_name_hash);
                     if (sub_it != info_base_->subscribes_.end()) {
                         const auto& si_it = sub_it->second.find(node_info_.id);
                         if (si_it != sub_it->second.end()) {
                             if (si_it->second.client_subscribe_handler != nullptr) {
+                                // TODO(tievens): Change to use DataStorage to avoid copies
+                                auto client_data = data;
+                                if (data_offset != 0) {
+                                    client_data =
+                                      std::make_shared<std::vector<uint8_t>>(data->begin() + data_offset, data->end());
+                                }
+
                                 if (eflags.use_reliable) {
-                                    si_it->second.client_subscribe_handler->StreamDataRecv(is_new_stream, stream_id, data);
+                                    si_it->second.client_subscribe_handler->StreamDataRecv(
+                                      is_new_stream, stream_id, client_data);
                                 } else {
-                                    si_it->second.client_subscribe_handler->DgramDataRecv(data);
+                                    si_it->second.client_subscribe_handler->DgramDataRecv(client_data);
                                 }
                             }
                         }
@@ -365,7 +371,8 @@ namespace laps::peering {
                 auto out_peer_sess = entry.peer_session.lock();
                 auto data_out_shared = std::make_shared<std::vector<uint8_t>>();
                 data_out_shared->assign(data_out.begin(), data_out.end());
-                out_peer_sess->SendData(priority, ttl, entry.out_sns_id, eflags, std::move(data_out_shared));
+                out_peer_sess->SendData(
+                  data_header.priority, data_header.ttl, entry.out_sns_id, eflags, std::move(data_out_shared));
             }
         }
     }
@@ -373,31 +380,30 @@ namespace laps::peering {
     void PeerManager::ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
                                      uint8_t priority,
                                      uint32_t ttl,
-                                     DataObjectType type,
+                                     DataType type,
                                      std::shared_ptr<const std::vector<uint8_t>> data)
     {
-        DataObject data_object;
-        data_object.type = type;
-        data_object.priority = priority;
-        data_object.ttl = ttl;
-        data_object.data = { data->data(), data->size() };
-        data_object.data_length = data->size();
-        data_object.track_full_name_hash = track_full_name_hash;
+        DataHeader data_header;
+        data_header.type = type;
+        data_header.priority = priority;
+        data_header.ttl = ttl;
+        data_header.track_full_name_hash = track_full_name_hash;
 
-        auto net_data = std::make_shared<std::vector<uint8_t>>(data_object.Serialize());
+        auto net_data = std::make_shared<std::vector<uint8_t>>(data_header.Serialize());
+        net_data->insert(net_data->end(), data->begin(), data->end());
 
         quicr::ITransport::EnqueueFlags eflags;
 
         bool set_sns_id{ false };
         switch (type) {
-            case DataObjectType::kDatagram:
+            case DataType::kDatagram:
                 eflags.use_reliable = false;
                 set_sns_id = true;
                 break;
-            case DataObjectType::kExistingStream:
+            case DataType::kExistingStream:
                 eflags.use_reliable = true;
                 break;
-            case DataObjectType::kNewStream:
+            case DataType::kNewStream:
                 set_sns_id = true;
                 eflags.use_reliable = true;
                 eflags.new_stream = true;
