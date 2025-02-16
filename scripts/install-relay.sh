@@ -58,7 +58,7 @@ update_mdns() {
 <?xml version="1.0" standalone='no'?><!--*-nxml-*-->
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
-  <name replace-wildcards="yes">%h LAPS</name>
+  <name replace-wildcards="yes">%h</name>
   <service>
     <type>_laps._udp</type>
     <port>33435</port>

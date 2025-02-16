@@ -270,4 +270,9 @@ RUN 'systemctl status laps.service' to get status of service
 RUN 'journalctl -u laps.service -f' to tail laps relay log
 ```
 
-##
+--- 
+
+## Discovery using mDNS
+
+See [docs/discovery.md](docs/discovery.md) for details on how to setup and use mDNS
+
