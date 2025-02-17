@@ -89,8 +89,7 @@ namespace laps::peering {
                 SPDLOG_LOGGER_INFO(
                   LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
-                if (auto cm = client_manager_) {
-
+                if (client_manager_ != nullptr) {
                     quicr::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
@@ -99,12 +98,12 @@ namespace laps::peering {
 
                     SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
-                    cm->ProcessSubscribe(0,
-                                         0,
-                                         subscribe_info.track_hash,
-                                         { sub.track_namespace, sub.track_name, std::nullopt },
-                                         quicr::messages::FilterType::LatestObject,
-                                         s_attrs);
+                    client_manager_->ProcessSubscribe(0,
+                                                      0,
+                                                      subscribe_info.track_hash,
+                                                      { sub.track_namespace, sub.track_name, std::nullopt },
+                                                      quicr::messages::FilterType::LatestObject,
+                                                      s_attrs);
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);

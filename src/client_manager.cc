@@ -307,7 +307,7 @@ namespace laps {
 
     void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                           uint64_t subscribe_id,
-                                          [[maybe_unused]] uint64_t proposed_track_alias,
+                                          uint64_t proposed_track_alias,
                                           quicr::messages::FilterType filter_type,
                                           const quicr::FullTrackName& track_full_name,
                                           const quicr::SubscribeAttributes& attrs)
@@ -320,6 +320,19 @@ namespace laps {
                            subscribe_id,
                            th.track_fullname_hash,
                            attrs.priority);
+
+        if (proposed_track_alias && proposed_track_alias != th.track_fullname_hash) {
+            std::ostringstream err;
+            err << "Use track alias: " << th.track_fullname_hash;
+            ResolveSubscribe(
+              connection_handle,
+              subscribe_id,
+              { quicr::SubscribeResponse::ReasonCode::kRetryTrackAlias, err.str(), th.track_fullname_hash });
+            return;
+        }
+
+        ResolveSubscribe(connection_handle, subscribe_id, { quicr::SubscribeResponse::ReasonCode::kOk });
+
 
         ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, filter_type, attrs);
     }
