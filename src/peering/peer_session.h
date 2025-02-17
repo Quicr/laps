@@ -13,9 +13,8 @@
 #include "messages/subscribe_info.h"
 #include "messages/subscribe_node_set.h"
 
-#include <sys/param.h>
-
 namespace laps::peering {
+
     class PeerManager;
 
     /**
@@ -26,6 +25,8 @@ namespace laps::peering {
     class PeerSession : public quicr::ITransport::TransportDelegate
     {
       public:
+        static constexpr std::size_t kControlMessageBufferSize = 4096;
+
         enum class StatusValue : uint8_t
         {
             kConnecting = 0,
@@ -88,7 +89,7 @@ namespace laps::peering {
                       uint32_t ttl,
                       SubscribeNodeSetId sns_id,
                       const quicr::ITransport::EnqueueFlags& eflags,
-                      Span<uint8_t const> data);
+                      std::shared_ptr<const std::vector<uint8_t>> data);
 
         /**
          * @brief Add subscriber source node to the peer SNS state
@@ -168,10 +169,11 @@ namespace laps::peering {
         void SendConnect();
         void SendConnectOk();
 
-        void ProcessControlMessage(std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
+        void ProcessControlMessage();
 
         bool ProcessReceivedData(std::optional<uint64_t> stream_id,
-                                 std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf);
+                                 std::any& ctx,
+                                 std::shared_ptr<const std::vector<uint8_t>> data);
 
       public:
         quicr::TransportRemote peer_config_;
@@ -194,12 +196,12 @@ namespace laps::peering {
             .tls_cert_filename = config_.tls_cert_filename_,
             .tls_key_filename = config_.tls_key_filename_,
             .time_queue_init_queue_size = config_.peering.init_queue_size,
-            .time_queue_max_duration = config_.peering.max_ttl_expiry_ms,
+            .time_queue_max_duration = config_.object_ttl_ * 2,
             .debug = config_.debug,
         };
 
-        std::map<quicr::TrackFullNameHash, SubscribeNodeSet>
-          sub_sns_; // Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)
+        /// Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)
+        std::map<quicr::TrackFullNameHash, SubscribeNodeSet> sub_sns_;
 
         /// Map of subscriber source nodes initiated by peer ingress SNS.
         /// Key is the ingress peer session ID and SNS ID, value is the SNS egress via this peer
@@ -207,6 +209,7 @@ namespace laps::peering {
 
         quicr::TransportConnId t_conn_id_;         /// Transport connection context ID (aka peer session id)
         quicr::DataContextId control_data_ctx_id_; /// Control data context ID
+        std::vector<uint8_t> controL_msg_buffer_;  /// Working buffer of control message being processed
 
         std::shared_ptr<quicr::ITransport> transport_; /// Transport used for the peering connection
     };

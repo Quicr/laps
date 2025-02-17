@@ -98,8 +98,6 @@ namespace laps {
                               quicr::messages::FilterType filter_type,
                               const quicr::SubscribeAttributes&);
 
-        void ProcessPeerDataObject(const peering::DataObject& data_object);
-
         void RemovePublisherSubscribe(const quicr::TrackHash& track_hash);
 
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
@@ -115,7 +113,7 @@ namespace laps {
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_subscription_refresh_time;
 
         size_t cache_duration_ms_ = 0;
-        std::map<quicr::TrackHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
+        std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

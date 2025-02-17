@@ -6,8 +6,8 @@
 FROM alpine:3.20.3 as builder
 
 RUN apk update
-RUN apk add --no-cache cmake alpine-sdk openssl-dev go perl clang lld curl
-RUN apk add --no-cache tcsh bash ca-certificates apt linux-headers
+RUN apk add --no-cache cmake alpine-sdk openssl-dev clang lld curl
+RUN apk add --no-cache tcsh bash ca-certificates linux-headers
 
 WORKDIR /ws
 
