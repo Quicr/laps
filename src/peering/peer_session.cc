@@ -522,7 +522,7 @@ namespace laps::peering {
     {
         auto rx_ctx = transport_->GetStreamRxContext(conn_id, stream_id);
 
-        for (int i = 0; i < 60; i++) {
+        for (int i = 0; i < quicr::kReadLoopMaxPerStream; i++) {
             if (rx_ctx->data_queue.Empty()) {
                 break;
             }
@@ -541,11 +541,9 @@ namespace laps::peering {
 
                 ProcessControlMessage();
 
-            } else {
-                if (!ProcessReceivedData(stream_id, rx_ctx->caller_any, std::move(data))) {
-                    i = 59;
-                    continue; // Try once more
-                }
+            } else if (!ProcessReceivedData(stream_id, rx_ctx->caller_any, std::move(data))) {
+                i = 59;
+                continue; // Try once more
             }
         }
     }

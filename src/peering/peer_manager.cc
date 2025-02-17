@@ -173,8 +173,8 @@ namespace laps::peering {
                                            "No peers left for subscribe fullname: {}, removing client subscribe state",
                                            subscribe_info.track_hash.track_fullname_hash);
 
-                        if (auto cm = client_manager_) {
-                            cm->RemovePublisherSubscribe(subscribe_info.track_hash);
+                        if (client_manager_ != nullptr) {
+                            client_manager_->RemovePublisherSubscribe(subscribe_info.track_hash);
                         }
                     }
                 }
@@ -334,26 +334,33 @@ namespace laps::peering {
                 if (out_peer_sess_id == 0) { // self; Client manager is interested
                     // TODO(tievens): Consider maintaining a client specific si map to avoid second map lookup
                     const auto sub_it = info_base_->subscribes_.find(data_header.track_full_name_hash);
-                    if (sub_it != info_base_->subscribes_.end()) {
-                        const auto& si_it = sub_it->second.find(node_info_.id);
-                        if (si_it != sub_it->second.end()) {
-                            if (si_it->second.client_subscribe_handler != nullptr) {
-                                // TODO(tievens): Change to use DataStorage to avoid copies
-                                auto client_data = data;
-                                if (data_offset != 0) {
-                                    client_data =
-                                      std::make_shared<std::vector<uint8_t>>(data->begin() + data_offset, data->end());
-                                }
-
-                                if (eflags.use_reliable) {
-                                    si_it->second.client_subscribe_handler->StreamDataRecv(
-                                      is_new_stream, stream_id, client_data);
-                                } else {
-                                    si_it->second.client_subscribe_handler->DgramDataRecv(client_data);
-                                }
-                            }
-                        }
+                    if (sub_it == info_base_->subscribes_.end()) {
+                        continue;
                     }
+
+                    const auto& si_it = sub_it->second.find(node_info_.id);
+                    if (si_it == sub_it->second.end()) {
+                        continue;
+                    }
+
+                    if (si_it->second.client_subscribe_handler == nullptr) {
+                        continue;
+                    }
+
+                    // TODO(tievens): Change to use DataStorage to avoid copies
+                    auto client_data = data;
+                    if (data_offset != 0) {
+                        client_data =
+                          std::make_shared<std::vector<uint8_t>>(data->begin() + data_offset, data->end());
+                    }
+
+                    if (eflags.use_reliable) {
+                        si_it->second.client_subscribe_handler->StreamDataRecv(
+                          is_new_stream, stream_id, client_data);
+                    } else {
+                        si_it->second.client_subscribe_handler->DgramDataRecv(client_data);
+                    }
+
                     continue;
                 }
 
