@@ -171,7 +171,7 @@ sudo apt-get install -y make cmake openssl golang wget git ca-certificates
 # Hit enter through the prompts
 ssh-keygen
 
-cat ~/.ssh/id_rsa.pub
+cat ~/.ssh/<output_of_ssh-keygen>.pub
 ```
 
 Goto github, under **settings**, then under **SSH and GPG keys**, add a new SSH key with the contents of the above
