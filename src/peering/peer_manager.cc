@@ -84,58 +84,53 @@ namespace laps::peering {
             uint64_t update_ref = rand();
 
             std::lock_guard _(state_.state_mutex);
-            auto it = state_.announce_active.lower_bound({ subscribe_info.track_hash.track_namespace_hash, 0 });
-            if (it != state_.announce_active.end()) {
-                SPDLOG_LOGGER_INFO(
-                  LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
-                if (client_manager_ != nullptr) {
-                    quicr::SubscribeAttributes s_attrs;
-                    s_attrs.priority = 10;
+            if (client_manager_ != nullptr) {
+                quicr::SubscribeAttributes s_attrs;
+                s_attrs.priority = 10;
 
-                    quicr::messages::MoqSubscribe sub;
-                    subscribe_info.subscribe_data >> sub;
+                quicr::messages::Subscribe sub;
+                subscribe_info.subscribe_data >> sub;
 
-                    SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
+                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
-                    client_manager_->ProcessSubscribe(0,
-                                                      0,
-                                                      subscribe_info.track_hash,
-                                                      { sub.track_namespace, sub.track_name, std::nullopt },
-                                                      quicr::messages::FilterType::LatestObject,
-                                                      s_attrs);
-                }
+                client_manager_->ProcessSubscribe(0,
+                                                  0,
+                                                  subscribe_info.track_hash,
+                                                  { sub.track_namespace, sub.track_name, std::nullopt },
+                                                  quicr::messages::FilterType::kLatestObject,
+                                                  s_attrs);
+            }
 
-                auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
-                if (bp_it != info_base_->nodes_best_.end()) {
-                    const auto& peer_session = bp_it->second.lock();
-                    SPDLOG_LOGGER_DEBUG(
+            auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
+            if (bp_it != info_base_->nodes_best_.end()) {
+                const auto& peer_session = bp_it->second.lock();
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER,
+                  "Best peer session for subscribe fullname: {} source_node: {} is via peer_session_id: {}",
+                  subscribe_info.track_hash.track_fullname_hash,
+                  subscribe_info.source_node_id,
+                  peer_session->GetSessionId());
+
+                if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
+                      subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id);
+                    is_new) {
+                    SPDLOG_LOGGER_INFO(
                       LOGGER,
-                      "Best peer session for subscribe fullname: {} source_node: {} is via peer_session_id: {}",
+                      "New source added to peer session for subscribe fullname: {} source_node: {} is "
+                      "via peer_session_id: {} sns_id: {}",
                       subscribe_info.track_hash.track_fullname_hash,
                       subscribe_info.source_node_id,
-                      peer_session->GetSessionId());
+                      peer_session->GetSessionId(),
+                      sns_id);
 
-                    if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                          subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id);
+                    if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
+                          { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
+                          InfoBase::FibEntry{ update_ref, 0, sns_id, bp_it->second });
                         is_new) {
-                        SPDLOG_LOGGER_INFO(
-                          LOGGER,
-                          "New source added to peer session for subscribe fullname: {} source_node: {} is "
-                          "via peer_session_id: {} sns_id: {}",
-                          subscribe_info.track_hash.track_fullname_hash,
-                          subscribe_info.source_node_id,
-                          peer_session->GetSessionId(),
-                          sns_id);
-
-                        if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
-                              { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
-                              InfoBase::FibEntry{ update_ref, 0, sns_id, bp_it->second });
-                            is_new) {
-                            SPDLOG_LOGGER_INFO(LOGGER,
-                                               "New subscribe fullname: {}, sending subscribe to client manager",
-                                               subscribe_info.track_hash.track_fullname_hash);
-                        }
+                        SPDLOG_LOGGER_INFO(LOGGER,
+                                           "New subscribe fullname: {}, sending subscribe to client manager",
+                                           subscribe_info.track_hash.track_fullname_hash);
                     }
                 }
             }
@@ -536,7 +531,7 @@ namespace laps::peering {
                         continue;
                     const auto& sub_info = si_it.second;
 
-                    quicr::messages::MoqSubscribe sub;
+                    quicr::messages::Subscribe sub;
                     sub_info.subscribe_data >> sub;
 
                     if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
@@ -554,7 +549,7 @@ namespace laps::peering {
                                                  0,
                                                  sub_info.track_hash,
                                                  { sub.track_namespace, sub.track_name, 0 },
-                                                 quicr::messages::FilterType::LatestObject,
+                                                 quicr::messages::FilterType::kLatestObject,
                                                  s_attrs);
                         }
 

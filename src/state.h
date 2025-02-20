@@ -17,7 +17,7 @@ namespace laps {
          * @example
          *      track_alias_set = announce_active[track_namespace_hash, connection_handle]
          */
-        std::map<std::pair<quicr::TrackNamespaceHash, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
+        std::map<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
           announce_active;
 
         /**
@@ -89,6 +89,6 @@ namespace laps {
             }
         };
 
-        std::map<std::pair<quicr::TrackNamespaceHash, quicr::TrackNameHash>, std::set<SubscribeInfo>> subscribe_active_;
+        std::map<std::pair<quicr::TrackNamespace, quicr::TrackNameHash>, std::set<SubscribeInfo>> subscribe_active_;
     };
 }
