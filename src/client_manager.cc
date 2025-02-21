@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
 
+#include <quicr/detail/defer.h>
 #include <quicr/server.h>
 #include <quicr/subscribe_track_handler.h>
 
@@ -56,7 +57,6 @@ namespace laps {
                 UnsubscribeTrack(connection_handle, ptd);
             }
             state_.pub_subscribes.erase({ track_alias, connection_handle });
-
         }
 
         state_.announce_active.erase({ th.track_namespace_hash, connection_handle });
@@ -333,7 +333,6 @@ namespace laps {
 
         ResolveSubscribe(connection_handle, subscribe_id, { quicr::SubscribeResponse::ReasonCode::kOk });
 
-
         ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, filter_type, attrs);
     }
 
@@ -374,29 +373,38 @@ namespace laps {
 
         const auto th = quicr::TrackHash(track_full_name);
 
-        std::thread retrieve_cache_thread([=, cache_entries = cache_.at(th.track_fullname_hash).Get(attrs.start_group, attrs.end_group)] {
-            for (const auto& cache_entry : cache_entries) {
-                for (const auto& object : *cache_entry) {
-                    if ((object.headers.group_id < attrs.start_group || object.headers.group_id >= attrs.end_group) ||
-                        (object.headers.object_id < attrs.start_object || object.headers.object_id >= attrs.end_object))
-                        continue;
+        std::thread retrieve_cache_thread(
+          [=, cache_entries = cache_.at(th.track_fullname_hash).Get(attrs.start_group, attrs.end_group)] {
+              defer(UnbindPublisherTrack(connection_handle, pub_track_h));
 
-                    pub_track_h->PublishObject(object.headers, object.data);
+              for (const auto& cache_entry : cache_entries) {
+                  for (const auto& object : *cache_entry) {
+                      if (stop_fetch_[subscribe_id]) {
+                          stop_fetch_.erase(subscribe_id);
+                          return;
+                      }
 
-                    // TODO(trigaux): Figure out if this value is correct.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-            }
-        });
+                      if ((object.headers.group_id < attrs.start_group || object.headers.group_id >= attrs.end_group) ||
+                          (object.headers.object_id < attrs.start_object ||
+                           object.headers.object_id >= attrs.end_object))
+                          continue;
+
+                      pub_track_h->PublishObject(object.headers, object.data);
+
+                      // TODO(trigaux): Figure out if this value is correct.
+                      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                  }
+              }
+          });
 
         retrieve_cache_thread.detach();
     }
 
     void ClientManager::FetchCancelReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
-                                            [[maybe_unused]] uint64_t subscribe_id)
+                                            uint64_t subscribe_id)
     {
-        // TODO(trigaux): Unbind publisher
         SPDLOG_INFO("Canceling fetch for subscribe_id: {0}", subscribe_id);
+        stop_fetch_[subscribe_id] = true;
     }
 
     void ClientManager::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
@@ -415,14 +423,14 @@ namespace laps {
 
         else {
             SPDLOG_LOGGER_INFO(LOGGER,
-                                "Processing subscribe connection handle: {} subscribe_id: {} track alias: {} priority: "
-                                "{} ns: {} name: {}",
-                                connection_handle,
-                                subscribe_id,
-                                th.track_fullname_hash,
-                                attrs.priority,
-                                th.track_namespace_hash,
-                                th.track_name_hash);
+                               "Processing subscribe connection handle: {} subscribe_id: {} track alias: {} priority: "
+                               "{} ns: {} name: {}",
+                               connection_handle,
+                               subscribe_id,
+                               th.track_fullname_hash,
+                               attrs.priority,
+                               th.track_namespace_hash,
+                               th.track_name_hash);
 
             state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
@@ -510,10 +518,12 @@ namespace laps {
         }
 
         if (filter_type == quicr::messages::FilterType::LatestGroup) {
-            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: Attempting to retrieve objects from cache for track: {}", th.track_fullname_hash);
+            SPDLOG_LOGGER_INFO(
+              LOGGER, "Subscribe: Attempting to retrieve objects from cache for track: {}", th.track_fullname_hash);
             auto cache_entry_it = cache_.find(th.track_fullname_hash);
             if (cache_entry_it == cache_.end()) {
-                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: No entries in cache found for track: {}", th.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(
+                  LOGGER, "Subscribe: No entries in cache found for track: {}", th.track_fullname_hash);
                 return;
             }
 
@@ -521,23 +531,22 @@ namespace laps {
             auto group = cache_entry.Last();
 
             if (group == nullptr || group->empty()) {
-                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: Cache entries for latest group is missing for track: {0}",
-                            th.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "Subscribe: Cache entries for latest group is missing for track: {0}",
+                                   th.track_fullname_hash);
                 return;
             }
 
-            auto pub_track_h =
-              std::make_shared<PublishTrackHandler>(track_full_name,
-                                                    quicr::TrackMode::kStream,
-                                                    attrs.priority,
-                                                    config_.object_ttl_);
+            auto pub_track_h = std::make_shared<PublishTrackHandler>(
+              track_full_name, quicr::TrackMode::kStream, attrs.priority, config_.object_ttl_);
 
             BindPublisherTrack(connection_handle, subscribe_id, pub_track_h, true);
 
             for (const auto& object : *group) {
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Subscribe: Publishing object from cache: Group {0} is Object {1}",
-                            object.headers.group_id,
-                            object.headers.object_id);
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Subscribe: Publishing object from cache: Group {0} is Object {1}",
+                                    object.headers.group_id,
+                                    object.headers.object_id);
                 if (!config_.cache_key.has_value()) {
                     pub_track_h->PublishObject(object.headers, object.data);
                     continue;
@@ -546,7 +555,7 @@ namespace laps {
                 // Mark as cached.
                 auto headers = object.headers;
                 auto extensions = headers.extensions.value_or(quicr::Extensions());
-                extensions[*config_.cache_key] = {0x01};
+                extensions[*config_.cache_key] = { 0x01 };
                 headers.extensions = extensions;
                 pub_track_h->PublishObject(headers, object.data);
             }
