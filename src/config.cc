@@ -22,6 +22,7 @@ namespace laps {
         char relay_id[200];
         gethostname(relay_id, sizeof(relay_id));
         relay_id_ = relay_id;
+        object_ttl_ = kDefaultObjectTtl;
     }
 
     void Config::InitLogger()

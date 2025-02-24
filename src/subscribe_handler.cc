@@ -19,6 +19,123 @@ namespace laps {
 
     void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
     {
+        // Cache Object
+        if (server_.cache_.count(GetTrackAlias().value()) == 0) {
+            server_.cache_.insert(
+              std::make_pair(GetTrackAlias().value(),
+                             quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                               kDefaultCacheTimeQueueMaxDuration, 1, server_.config_.tick_service_ }));
+        }
+
+        auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
+
+        CacheObject object{ object_headers, { data.begin(), data.end() } };
+
+        if (auto group = cache_entry.Get(object_headers.group_id)) {
+            group->insert(std::move(object));
+        } else {
+            cache_entry.Insert(object_headers.group_id, { std::move(object) }, kDefaultCacheTimeQueueObjectTtl);
+        }
+    }
+
+    void SubscribeTrackHandler::StreamDataRecv(bool is_start,
+                                               uint64_t stream_id,
+                                               std::shared_ptr<const std::vector<uint8_t>> data)
+    {
+        is_datagram_ = false;
+
+        if (stream_id > current_stream_id_) {
+            current_stream_id_ = stream_id;
+        } else if (stream_id < current_stream_id_) {
+            SPDLOG_DEBUG(
+              "Old stream data received, stream_id: {} is less than {}, ignoring", stream_id, current_stream_id_);
+            return;
+        }
+
+        // Pipeline forward immediately to subscribers/peers
+        ForwardReceivedData(is_start, data);
+
+        // Process MoQ object from stream data
+        if (is_start) {
+            stream_buffer_.Clear();
+
+            stream_buffer_.InitAny<quicr::messages::MoqStreamHeaderSubGroup>();
+            stream_buffer_.Push(*data);
+            stream_buffer_.Pop(); // Remove type header
+
+            // Expect that on initial start of stream, there is enough data to process the stream headers
+
+            auto& s_hdr = stream_buffer_.GetAny<quicr::messages::MoqStreamHeaderSubGroup>();
+            if (not(stream_buffer_ >> s_hdr)) {
+                SPDLOG_ERROR("Not enough data to process new stream headers, stream is invalid");
+                // TODO: Add metrics to track this
+                return;
+            }
+        } else {
+            stream_buffer_.Push({ data->data(), data->size() });
+        }
+
+        auto& s_hdr = stream_buffer_.GetAny<quicr::messages::MoqStreamHeaderSubGroup>();
+
+        if (not stream_buffer_.AnyHasValueB()) {
+            stream_buffer_.InitAnyB<quicr::messages::MoqStreamSubGroupObject>();
+        }
+
+        auto& obj = stream_buffer_.GetAnyB<quicr::messages::MoqStreamSubGroupObject>();
+        if (stream_buffer_ >> obj) {
+            subscribe_track_metrics_.objects_received++;
+
+            ObjectReceived({ s_hdr.group_id,
+                             obj.object_id,
+                             s_hdr.subgroup_id,
+                             obj.payload.size(),
+                             obj.object_status,
+                             s_hdr.priority,
+                             std::nullopt,
+                             quicr::TrackMode::kStream,
+                             obj.extensions },
+                           obj.payload);
+
+            stream_buffer_.ResetAnyB<quicr::messages::MoqStreamSubGroupObject>();
+        }
+    }
+
+    void SubscribeTrackHandler::DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data)
+    {
+        is_datagram_ = true;
+
+        // Pipeline forward immediately to subscribers/peers
+        ForwardReceivedData(false, data);
+
+        // Process MoQ object from stream data
+        stream_buffer_.Clear();
+
+        stream_buffer_.Push(*data);
+        stream_buffer_.Pop(); // Remove type header
+
+        quicr::messages::MoqObjectDatagram msg;
+        if (stream_buffer_ >> msg) {
+            subscribe_track_metrics_.objects_received++;
+            subscribe_track_metrics_.bytes_received += msg.payload.size();
+            ObjectReceived(
+              {
+                msg.group_id,
+                msg.object_id,
+                0, // datagrams don't have subgroups
+                msg.payload.size(),
+                quicr::ObjectStatus::kAvailable,
+                msg.priority,
+                std::nullopt,
+                quicr::TrackMode::kDatagram,
+                msg.extensions,
+              },
+              msg.payload);
+        }
+    }
+
+    void SubscribeTrackHandler::ForwardReceivedData(bool is_new_stream,
+                                                    std::shared_ptr<const std::vector<uint8_t>> data)
+    {
         std::lock_guard<std::mutex> _(server_.state_.state_mutex);
 
         auto track_alias = GetTrackAlias();
@@ -27,35 +144,27 @@ namespace laps {
             return;
         }
 
-        // Send to peers
-        peering::DataObjectType d_type;
-        if (object_headers.track_mode.has_value() && *object_headers.track_mode == quicr::TrackMode::kDatagram) {
-            d_type = peering::DataObjectType::kDatagram;
-        } else {
-            d_type = peering::DataObjectType::kExistingStream;
+        peering::DataType d_type;
+        auto track_mode = quicr::TrackMode::kStream;
 
-            if (prev_group_id_ != object_headers.group_id || prev_subgroup_id_ != object_headers.subgroup_id) {
-                d_type = peering::DataObjectType::kNewStream;
+        if (is_datagram_) {
+            d_type = peering::DataType::kDatagram;
+            track_mode = quicr::TrackMode::kDatagram;
+        } else {
+            d_type = peering::DataType::kExistingStream;
+
+            if (is_new_stream) {
+                d_type = peering::DataType::kNewStream;
             }
         }
 
-        prev_group_id_ = object_headers.group_id;
-        prev_subgroup_id_ = object_headers.subgroup_id;
-
-        std::vector<uint8_t> peer_data;
-        quicr::messages::MoqStreamSubGroupObject object;
-        object.object_id = object_headers.object_id;
-        object.extensions = object_headers.extensions;
-        object.payload.assign(data.begin(), data.end());
-        peer_data << object;
-
-        server_.peer_manager_.ClientDataObject(*track_alias,
-                                               object_headers.priority.has_value() ? *object_headers.priority : 2,
-                                               object_headers.ttl.has_value() ? *object_headers.ttl : 2000,
-                                               object_headers.group_id,
-                                               object_headers.subgroup_id,
-                                               d_type,
-                                               peer_data);
+        if (not is_from_peer_) {
+            server_.peer_manager_.ClientDataRecv(*track_alias,
+                                                 GetPriority(),
+                                                 server_.config_.object_ttl_, /* TODO: Update this when MoQ adds TTL */
+                                                 d_type,
+                                                 data);
+        }
 
         // Fanout object to subscribers
         for (auto it = server_.state_.subscribes.lower_bound({ track_alias.value(), 0 });
@@ -72,57 +181,16 @@ namespace laps {
                 // Create the publish track handler and bind it on first object received
                 auto pub_track_h = std::make_shared<PublishTrackHandler>(
                   sub_info.track_full_name,
-                  *object_headers.track_mode,
-                  sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
-                  object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
-
-                auto&& cache_message_callback = [&server = server_, tnsh = quicr::TrackHash(sub_info.track_full_name)](
-                                                  uint8_t priority,
-                                                  uint32_t ttl,
-                                                  [[maybe_unused]] bool stream_header_needed,
-                                                  uint64_t group_id,
-                                                  uint64_t subgroup_id,
-                                                  uint64_t object_id,
-                                                  std::optional<quicr::Extensions> extensions,
-                                                  quicr::BytesSpan data) {
-                    if (server.cache_.count(tnsh) == 0) {
-                        server.cache_.insert(
-                          std::make_pair(tnsh,
-                                         quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                                           server.cache_duration_ms_, 1, server.GetTickService() }));
-                    }
-
-                    auto& cache_entry = server.cache_.at(tnsh);
-
-                    CacheObject object{
-                        quicr::ObjectHeaders{
-                          group_id,
-                          object_id,
-                          subgroup_id,
-                          data.size(),
-                          quicr::ObjectStatus::kAvailable,
-                          priority,
-                          ttl,
-                          std::nullopt,
-                          extensions,
-                        },
-                        { data.begin(), data.end() },
-                    };
-
-                    if (auto group = cache_entry.Get(group_id)) {
-                        group->insert(std::move(object));
-                    } else {
-                        cache_entry.Insert(group_id, { std::move(object) }, server.cache_duration_ms_);
-                    }
-                };
+                  track_mode,
+                  sub_info.priority == 0 ? GetPriority() : sub_info.priority,
+                  server_.config_.object_ttl_ /* TODO: Update this when MoQ adds TTL */);
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(
-                  connection_handle, sub_info.subscribe_id, pub_track_h, false, std::move(cache_message_callback));
+                server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h, false);
                 sub_info.publish_handler = pub_track_h;
             }
 
-            sub_info.publish_handler->PublishObject(object_headers, data);
+            sub_info.publish_handler->ForwardPublishedData(is_new_stream, data);
         }
     }
 
@@ -157,4 +225,10 @@ namespace laps {
             SPDLOG_DEBUG("Track alias: {0} subscribe status change reason: {1}", GetTrackAlias().value(), reason);
         }
     }
+
+    void SubscribeTrackHandler::SetFromPeer()
+    {
+        is_from_peer_ = true;
+    }
+
 }

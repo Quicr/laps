@@ -10,16 +10,12 @@
 
 namespace laps::peering {
 
-    enum class DataObjectType : uint8_t
+    enum class DataType : uint8_t
     {
         kDatagram = 0,
         kExistingStream,
         kNewStream,
     };
-
-    /// Minimum data object size in order to deserialize
-    constexpr size_t kDataObjectMinSize =
-      sizeof(DataObjectType) + sizeof(SubscribeNodeSetId) + sizeof(quicr::TrackFullNameHash) + 6;
 
     /**
      * @brief Data object to be sent to subscribers
@@ -29,50 +25,40 @@ namespace laps::peering {
      *    are pipelined to relays to avoid hop by hop delays. The edge relay buffers up to the object length
      *     before transmitting to the client. This will change when the MoQT implementation supports pipelining.
      */
-    class DataObject
+    class DataHeader
     {
       public:
-        // Below are sent only when include headers is requested
+        // @note: Header variables vary by type
         uint8_t header_len{ 0 };        ///< Size of header length in bytes (up to start of payload bytes)
-        DataObjectType type;            ///< Type of the data object
+        DataType type;                  ///< Type of the data object
         SubscribeNodeSetId sns_id{ 0 }; ///< SNS ID used by the peer
         quicr::TrackFullNameHash track_full_name_hash{ 0 }; ///< Full Track name (aka track alias)
-        quicr::messages::GroupId group_id{ 0 };
-        quicr::messages::SubGroupId sub_group_id{ 0 };
 
         uint8_t priority{ 1 }; ///< Stream only; Priority for new stream
         uint32_t ttl{ 2000 };  ///< Stream only; Time to live in millis for stream objects
 
-        // Below are sent in every data object
-
-        uint64_t data_length{ 0 }; ///< Length of data object (aka payload) as uintvar on wire
-
         /**
-         * @brief Span of data (aka object payload)
-         */
-        Span<uint8_t const> data;
-
-        /// Data storage is only used when deserializing doesn't have enough bytes for span
-        std::vector<uint8_t> data_storage;
-
-        /**
-         * @brief Encode data object into bytes that can be written on the wire
+         * @brief Encode data hader into bytes that can be written on the wire
          */
         std::vector<uint8_t> Serialize();
 
+        /**
+         * Deserialize read data from the network
+         *
+         * @param serialized_data
+         * @return True if successful, false if not enough data
+         */
         bool Deserialize(Span<uint8_t const> serialized_data);
 
-        DataObject() = default;
-        DataObject(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataObjectType type);
-        DataObject(Span<uint8_t const> serialized_data);
-
-        std::pair<uint64_t, bool> AppendData(Span<uint8_t const> data);
+        DataHeader() = default;
+        DataHeader(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataType type);
+        DataHeader(Span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
 
       private:
     };
 
-    std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const DataObject& data_object);
+    std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const DataHeader& data_header);
 
 } // namespace laps

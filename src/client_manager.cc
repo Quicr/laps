@@ -307,7 +307,7 @@ namespace laps {
 
     void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                           uint64_t subscribe_id,
-                                          [[maybe_unused]] uint64_t proposed_track_alias,
+                                          uint64_t proposed_track_alias,
                                           quicr::messages::FilterType filter_type,
                                           const quicr::FullTrackName& track_full_name,
                                           const quicr::SubscribeAttributes& attrs)
@@ -321,67 +321,22 @@ namespace laps {
                            th.track_fullname_hash,
                            attrs.priority);
 
+        if (proposed_track_alias && proposed_track_alias != th.track_fullname_hash) {
+            std::ostringstream err;
+            err << "Use track alias: " << th.track_fullname_hash;
+            ResolveSubscribe(
+              connection_handle,
+              subscribe_id,
+              { quicr::SubscribeResponse::ReasonCode::kRetryTrackAlias, err.str(), th.track_fullname_hash });
+            return;
+        }
+
+        ResolveSubscribe(connection_handle, subscribe_id, { quicr::SubscribeResponse::ReasonCode::kOk });
+
+
         ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, filter_type, attrs);
     }
 
-    void ClientManager::ProcessPeerDataObject(const peering::DataObject& data_object)
-    {
-        quicr::ObjectHeaders object_headers;
-        object_headers.track_mode = data_object.type == peering::DataObjectType::kDatagram ? quicr::TrackMode::kDatagram
-                                                                                           : quicr::TrackMode::kStream;
-        object_headers.group_id = data_object.group_id;
-        object_headers.subgroup_id = data_object.sub_group_id;
-        object_headers.priority = data_object.priority;
-        object_headers.ttl = data_object.ttl;
-
-        quicr::messages::MoqStreamSubGroupObject object;
-
-        // TODO: Not great to have to use stream buffer.  Clean this up later to address performance
-        quicr::StreamBuffer<uint8_t> buffer;
-        buffer.Push(data_object.data);
-        buffer >> object;
-
-        object_headers.extensions = object.extensions;
-        object_headers.object_id = object.object_id;
-
-        /*
-        SPDLOG_LOGGER_DEBUG(LOGGER,
-          "Processing peer data object tfn_hash: {} group_id: {} subgroup_id: {} object_id: {} data size: {}",
-          data_object.track_full_name_hash,
-          data_object.group_id,
-          data_object.sub_group_id,
-          object.object_id,
-          object.payload.size());
-          */
-
-        // Fanout object to subscribers
-        std::lock_guard _(state_.state_mutex);
-        for (auto it = state_.subscribes.lower_bound({ data_object.track_full_name_hash, 0 });
-             it != state_.subscribes.end();
-             ++it) {
-            auto& [key, sub_info] = *it;
-            const auto& sub_track_alias = key.first;
-            const auto& connection_handle = key.second;
-
-            if (sub_track_alias != data_object.track_full_name_hash)
-                break;
-
-            if (sub_info.publish_handler == nullptr) {
-                // Create the publish track handler and bind it on first object received
-                auto pub_track_h = std::make_shared<PublishTrackHandler>(
-                  sub_info.track_full_name,
-                  *object_headers.track_mode,
-                  sub_info.priority == 0 ? *object_headers.priority : sub_info.priority,
-                  object_headers.ttl.has_value() ? *object_headers.ttl : 5000);
-
-                // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h);
-                sub_info.publish_handler = pub_track_h;
-            }
-
-            sub_info.publish_handler->PublishObject(object_headers, object.payload);
-        }
-    }
     bool ClientManager::FetchReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
                                       [[maybe_unused]] uint64_t subscribe_id,
                                       const quicr::FullTrackName& track_full_name,
@@ -389,7 +344,7 @@ namespace laps {
     {
         const auto th = quicr::TrackHash(track_full_name);
 
-        auto cache_entry_it = cache_.find(th);
+        auto cache_entry_it = cache_.find(th.track_fullname_hash);
         if (cache_entry_it == cache_.end()) {
             return false;
         }
@@ -419,7 +374,7 @@ namespace laps {
 
         const auto th = quicr::TrackHash(track_full_name);
 
-        std::thread retrieve_cache_thread([=, cache_entries = cache_.at(th).Get(attrs.start_group, attrs.end_group)] {
+        std::thread retrieve_cache_thread([=, cache_entries = cache_.at(th.track_fullname_hash).Get(attrs.start_group, attrs.end_group)] {
             for (const auto& cache_entry : cache_entries) {
                 for (const auto& object : *cache_entry) {
                     if ((object.headers.group_id < attrs.start_group || object.headers.group_id >= attrs.end_group) ||

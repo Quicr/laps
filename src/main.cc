@@ -76,6 +76,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     cfg.tls_cert_filename_ = cli_opts["cert"].as<std::string>();
     cfg.tls_key_filename_ = cli_opts["key"].as<std::string>();
     cfg.peering.listening_port = cli_opts["peer_port"].as<uint16_t>();
+    cfg.object_ttl_ = cli_opts["object_ttl"].as<uint32_t>();
 
     cfg.relay_id_ = cli_opts["endpoint_id"].as<std::string>();
 
@@ -87,13 +88,14 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.server_bind_ip = cli_opts["bind_ip"].as<std::string>();
     config.server_port = cli_opts["port"].as<uint16_t>();
 
-    config.transport_config.debug = false; // cfg.debug;
+    config.transport_config.debug = cfg.debug;
     config.transport_config.tls_cert_filename = cfg.tls_cert_filename_;
     config.transport_config.tls_key_filename = cfg.tls_key_filename_;
     config.transport_config.use_reset_wait_strategy = false;
-    config.transport_config.time_queue_max_duration = 5000;
     config.transport_config.quic_qlog_path = qlog_path;
     config.transport_config.idle_timeout_ms = 10000;
+    config.transport_config.time_queue_rx_size = 10'000;
+    config.transport_config.time_queue_max_duration = cfg.object_ttl_ * 2;
 
     return config;
 }
@@ -117,6 +119,9 @@ main(int argc, char* argv[])
         "c,cert", "Certificate file", cxxopts::value<std::string>()->default_value("./server-cert.pem"))(
         "k,key", "Certificate key file", cxxopts::value<std::string>()->default_value("./server-key.pem"))(
         "q,qlog", "Enable qlog using path", cxxopts::value<std::string>())(
+        "t,object_ttl",
+        "Object TTL in milliseconds",
+        cxxopts::value<uint32_t>()->default_value(std::to_string(kDefaultObjectTtl)))(
         "cache_duration",
         "Duration of cache objects in milliseconds",
         cxxopts::value<size_t>()->default_value("60000"))("cache_key",

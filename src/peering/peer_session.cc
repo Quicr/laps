@@ -8,8 +8,8 @@
 #include "peering/messages/node_info.h"
 #include "peering/messages/subscribe_info.h"
 
-#include <sstream>
 #include <iomanip>
+#include <sstream>
 
 namespace laps::peering {
 
@@ -30,6 +30,8 @@ namespace laps::peering {
             transport_config_.tls_cert_filename = "";
             transport_config_.tls_key_filename = "";
         }
+
+        controL_msg_buffer_.reserve(kControlMessageBufferSize);
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Starting peer session");
     }
@@ -63,8 +65,8 @@ namespace laps::peering {
 
         peer_sns_.clear();
 
-        transport_ = quicr::ITransport::MakeClientTransport(
-          peer_config_, transport_config_, *this, config_.tick_service_, LOGGER);
+        transport_ =
+          quicr::ITransport::MakeClientTransport(peer_config_, transport_config_, *this, config_.tick_service_, LOGGER);
         t_conn_id_ = transport_->Start();
 
         // Create the control data context
@@ -177,37 +179,49 @@ namespace laps::peering {
                                uint32_t ttl,
                                SubscribeNodeSetId sns_id,
                                const quicr::ITransport::EnqueueFlags& eflags,
-                               Span<uint8_t const> data)
+                               std::shared_ptr<const std::vector<uint8_t>> data)
     {
-        //SPDLOG_LOGGER_DEBUG(LOGGER, "Sending data SNS id: {} data size: {}", sns_id, data.size());
+        // SPDLOG_LOGGER_DEBUG(LOGGER, "Sending data SNS id: {} data size: {}", sns_id, data.size());
 
-        if (status_ != StatusValue::kConnected) return;
+        if (status_ != StatusValue::kConnected)
+            return;
         transport_->Enqueue(t_conn_id_, sns_id, data, priority, ttl, 0, eflags);
     }
 
     void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw)
     {
-        if (status_ != StatusValue::kConnected) return;
+        if (status_ != StatusValue::kConnected)
+            return;
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending SNS id: {} set size: {} withdraw: {}", sns.id, sns.nodes.size(), withdraw);
 
-        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, sns.Serialize(true, withdraw), 0, 1000);
+        transport_->Enqueue(t_conn_id_,
+                            control_data_ctx_id_,
+                            std::make_shared<std::vector<uint8_t>>(sns.Serialize(true, withdraw)),
+                            0,
+                            1000);
     }
 
     void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
     {
-        if (status_ != StatusValue::kConnected) return;
+        if (status_ != StatusValue::kConnected)
+            return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending announce info id: {} source_node_id: {} withdraw: {}",
                             announce_info.full_name.full_name_hash,
                             announce_info.source_node_id,
                             withdraw);
-        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, announce_info.Serialize(true, withdraw), 0, 1000);
+        transport_->Enqueue(t_conn_id_,
+                            control_data_ctx_id_,
+                            std::make_shared<std::vector<uint8_t>>(announce_info.Serialize(true, withdraw)),
+                            0,
+                            1000);
     }
 
     void PeerSession::SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw)
     {
-        if (status_ != StatusValue::kConnected) return;
+        if (status_ != StatusValue::kConnected)
+            return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending subscribe fullname: {} source_node_id: {} withdraw: {}",
                             subscribe_info.track_hash.track_fullname_hash,
@@ -216,16 +230,22 @@ namespace laps::peering {
 
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,
-                            subscribe_info.Serialize(true, withdraw, node_info_.id == subscribe_info.source_node_id),
+                            std::make_shared<std::vector<uint8_t>>(
+                              subscribe_info.Serialize(true, withdraw, node_info_.id == subscribe_info.source_node_id)),
                             0,
                             1000);
     }
 
     void PeerSession::SendNodeInfo(const NodeInfo& node_info, bool withdraw)
     {
-        if (status_ != StatusValue::kConnected) return;
+        if (status_ != StatusValue::kConnected)
+            return;
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending node info id: {}", node_info.id);
-        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, node_info.Serialize(true, withdraw), 0, 1000);
+        transport_->Enqueue(t_conn_id_,
+                            control_data_ctx_id_,
+                            std::make_shared<std::vector<uint8_t>>(node_info.Serialize(true, withdraw)),
+                            0,
+                            1000);
     }
 
     void PeerSession::SendConnect()
@@ -237,7 +257,8 @@ namespace laps::peering {
         peer_sns_.clear();
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect length: {}", connect.Serialize().size());
-        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, connect.Serialize(), 0, 1000);
+        transport_->Enqueue(
+          t_conn_id_, control_data_ctx_id_, std::make_shared<std::vector<uint8_t>>(connect.Serialize()), 0, 1000);
     }
 
     void PeerSession::SendConnectOk()
@@ -247,7 +268,8 @@ namespace laps::peering {
         connect_resp.node_info = node_info_;
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect ok length: {}", connect_resp.Serialize().size());
 
-        transport_->Enqueue(t_conn_id_, control_data_ctx_id_, connect_resp.Serialize(), 0, 1000);
+        transport_->Enqueue(
+          t_conn_id_, control_data_ctx_id_, std::make_shared<std::vector<uint8_t>>(connect_resp.Serialize()), 0, 1000);
     }
 
     /*
@@ -302,20 +324,20 @@ namespace laps::peering {
         // Not used for outgoing connections. Incoming connections are handled by the server delegate
     }
 
-    void PeerSession::ProcessControlMessage(std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf)
+    void PeerSession::ProcessControlMessage()
     {
-        if (stream_buf->Available(kCommonHeadersSize)) {
-            auto bytes = stream_buf->Front(kCommonHeadersSize);
+        if (controL_msg_buffer_.size() >= kCommonHeadersSize) {
+            auto cursor_it = controL_msg_buffer_.begin();
+            auto bytes = Span<uint8_t>{ cursor_it, cursor_it + kCommonHeadersSize };
+            cursor_it += kCommonHeadersSize;
 
             // TODO(tievens): Implement version checking and error handling
             auto version = bytes.front();
             auto type = ValueOf<uint16_t>({ bytes.begin() + 1, bytes.begin() + 3 });
             auto data_len = ValueOf<uint32_t>({ bytes.begin() + 3, bytes.begin() + 7 });
 
-            if (stream_buf->Available(kCommonHeadersSize + data_len)) {
-                stream_buf->Pop(kCommonHeadersSize);
-                auto msg_bytes = stream_buf->Front(data_len);
-                stream_buf->Pop(data_len);
+            if (controL_msg_buffer_.size() >= kCommonHeadersSize + data_len) {
+                auto msg_bytes = Span{ cursor_it, cursor_it + data_len };
 
                 // Control Message
                 switch (static_cast<MsgType>(type)) {
@@ -325,7 +347,8 @@ namespace laps::peering {
                                             "Connect from id: {} contact: {} mode: {} version: {}",
                                             NodeId().Value(connect.node_info.id),
                                             connect.node_info.contact,
-                                            static_cast<int>(connect.mode), static_cast<int>(version));
+                                            static_cast<int>(connect.mode),
+                                            static_cast<int>(version));
                         remote_node_info_ = connect.node_info;
 
                         status_ = StatusValue::kConnected;
@@ -423,167 +446,73 @@ namespace laps::peering {
                         SPDLOG_LOGGER_DEBUG(config_.logger_, "Invalid message type {}", static_cast<int>(type));
                     }
                 }
+
+                controL_msg_buffer_.erase(controL_msg_buffer_.begin(), cursor_it);
             }
         }
     }
 
     bool PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
-                                          std::shared_ptr<quicr::SafeStreamBuffer<unsigned char>>& stream_buf)
+                                          std::any& ctx,
+                                          std::shared_ptr<const std::vector<uint8_t>> data)
     {
         // TODO(tievens): Update to not buffer when node type is Via
 
         quicr::ITransport::EnqueueFlags eflags;
         eflags.use_reliable = stream_id.has_value(); // If stream isn't set, it's datagram
 
-        if (stream_buf->Empty()) {
-            return false; // Wait for next callback as there isn't enough data
-        }
+        // NEW STREAM - parse start of stream headers
+        if (not ctx.has_value()) {
+            ctx.emplace<DataHeader>();
 
-        if (!stream_buf->AnyHasValueB()) {
-            const auto hdr_len = stream_buf->Front();
+            auto cursor_it = data->begin();
+            const auto hdr_len = *cursor_it;
 
-            if (!hdr_len.has_value() || !stream_buf->Available(*hdr_len)) {
-                SPDLOG_LOGGER_DEBUG(LOGGER,
-                                    "Received new data object stream id: {}, not enough bytes yet to read headers {} > {}",
-                                    stream_id.has_value() ? *stream_id : 0, *stream_buf->Front(), stream_buf->Size());
-                return false; // Not enough bytes to parse the headers, wait till more arrives
-            }
-
-            std::vector<uint8_t> data =
-                std::move(stream_buf->Front(stream_buf->Size()));
-            if (data.size() < hdr_len) {
-                SPDLOG_LOGGER_DEBUG(LOGGER,
-                    "Received new data object stream id: {}, not enough bytes yet to read headers {} > {} ..",
-                    stream_id.has_value() ? *stream_id : 0, *stream_buf->Front(), stream_buf->Size());
+            if (data->size() < hdr_len) {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER,
+                  "Received new data object stream id: {}, not enough bytes yet to read headers {} > {}",
+                  stream_id.has_value() ? *stream_id : 0,
+                  *cursor_it,
+                  data->size());
                 return false; // Not enough bytes to parse the headers, wait till more arrives
             }
 
             SPDLOG_LOGGER_TRACE(LOGGER,
                                 "Received new data object stream id: {}, init data object",
                                 stream_id.has_value() ? *stream_id : 0);
-            stream_buf->InitAnyB<DataObject>();
 
-            auto& dobj = stream_buf->GetAnyB<DataObject>();
-            auto is_complete = dobj.Deserialize(data);
+            auto& data_header = std::any_cast<DataHeader&>(ctx);
+
+            data_header.Deserialize(*data);
 
             // Set Any object if new stream
-            if (dobj.type == DataObjectType::kNewStream) {
+            if (data_header.type == DataType::kNewStream) {
                 eflags.new_stream = true;
                 eflags.clear_tx_queue = true;
                 eflags.use_reset = true;
-
-                stream_buf->InitAny<DataObject>();
-                auto& sobj = stream_buf->GetAny<DataObject>();
-                sobj = dobj;
-
-            } else if (dobj.type == DataObjectType::kExistingStream) {
-                if (!stream_buf->AnyHasValue()) {
-                    SPDLOG_LOGGER_DEBUG(LOGGER,
-                                        "Received new data on stream id: {}, that is not of type kNewStream",
-                                        stream_id.has_value() ? *stream_id : 0);
-                    return false;
-                }
-
-                auto& sobj = stream_buf->GetAny<DataObject>();
-                dobj.sns_id = sobj.sns_id;
-                dobj.priority = sobj.priority;
-                dobj.ttl = sobj.ttl;
-                dobj.track_full_name_hash = sobj.track_full_name_hash;
-                dobj.group_id = sobj.group_id;
-                dobj.sub_group_id = sobj.sub_group_id;
             }
-
-            if (is_complete) {
-                SPDLOG_LOGGER_TRACE(LOGGER,
-                                    "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {}"
-                                    " dobj_size: {} sbuf_size: {}",
-                                    stream_id.has_value() ? *stream_id : 0,
-                                    dobj.sns_id,
-                                    dobj.track_full_name_hash,
-                                    dobj.data_length,
-                                    dobj.data.size(),
-                                    dobj.SizeBytes(),
-                                    stream_buf->Size());
-
-                stream_buf->Pop(dobj.SizeBytes());
-                manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-
-                // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
-                manager_.ForwardPeerData(GetSessionId(),
-                                         stream_id.has_value() ? *stream_id : 0,
-                                         dobj.sns_id,
-                                         dobj.priority,
-                                         dobj.ttl,
-                                         { data.begin(), data.begin() + dobj.SizeBytes() },
-                                         eflags);
-
-                stream_buf->ResetAnyB(); // Reset must be done after use of data
-
-                return !stream_buf->Empty(); // If stream buffer still has data, instruct to process again
-
-            }
-
-            // Not complete yet
-            stream_buf->Pop(dobj.SizeBytes());
 
             // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
-            manager_.ForwardPeerData(GetSessionId(),
-                                     stream_id.has_value() ? *stream_id : 0,
-                                     dobj.sns_id,
-                                     dobj.priority,
-                                     dobj.ttl,
-                                     { data.begin(), data.begin() + dobj.SizeBytes() },
-                                     eflags);
+            manager_.ForwardPeerData(
+              GetSessionId(), true, stream_id.has_value() ? *stream_id : 0, data_header, data, hdr_len, eflags);
 
-            return false;
+            return true;
         }
 
-        // Existing data - append to data object AnyB
-        auto& dobj = stream_buf->GetAnyB<DataObject>();
-        auto data = stream_buf->Front(stream_buf->Size());
-        const auto [read_bytes, is_complete] = dobj.AppendData(data);
-
-        stream_buf->Pop(read_bytes);
+        // Existing data
+        auto& data_header = std::any_cast<DataHeader&>(ctx);
 
         // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
         manager_.ForwardPeerData(GetSessionId(),
+                                 false,
                                  stream_id.has_value() ? *stream_id : 0,
-                                 dobj.sns_id,
-                                 dobj.priority,
-                                 dobj.ttl,
-                                 { data.begin(), data.begin() + read_bytes },
+                                 data_header,
+                                 data,
+                                 0,
                                  eflags);
 
-        if (is_complete) {
-            SPDLOG_LOGGER_TRACE(
-              LOGGER,
-              "Data object complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} = {} sbuf_size: {}",
-              stream_id.has_value() ? *stream_id : 0,
-              dobj.sns_id,
-              dobj.track_full_name_hash,
-              dobj.data_length,
-              dobj.data.size(),
-              stream_buf->Size());
-
-            manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-
-            stream_buf->ResetAnyB(); // Reset must be done after use of data
-            return !stream_buf->Empty();
-
-        }
-
-        SPDLOG_LOGGER_TRACE(LOGGER,
-                            "Data object not complete stream_id: {} sns_id: {} ftn_hash: {} data_size: {} != "
-                            "{} sbuf_size: {} pop_size: {} read_bytes: {}",
-                            stream_id.has_value() ? *stream_id : 0,
-                            dobj.sns_id,
-                            dobj.track_full_name_hash,
-                            dobj.data_length,
-                            dobj.data.size(),
-                            stream_buf->Size(),
-                            data.size(),
-                            read_bytes);
-        return false;
+        return true;
     }
 
     void PeerSession::OnRecvStream(const quicr::TransportConnId& conn_id,
@@ -591,26 +520,38 @@ namespace laps::peering {
                                    std::optional<quicr::DataContextId> data_ctx_id,
                                    const bool is_bidir)
     {
-        auto stream_buf = transport_->GetStreamBuffer(conn_id, stream_id);
+        auto rx_ctx = transport_->GetStreamRxContext(conn_id, stream_id);
 
-        if (stream_buf == nullptr) {
-            return;
-        }
+        for (int i = 0; i < quicr::kReadLoopMaxPerStream; i++) {
+            if (rx_ctx->data_queue.Empty()) {
+                break;
+            }
 
-        // Get common header
-        if (is_bidir) { // control
-            control_data_ctx_id_ = *data_ctx_id;
-            ProcessControlMessage(stream_buf);
+            auto data_opt = rx_ctx->data_queue.Pop();
+            if (not data_opt.has_value()) {
+                break;
+            }
 
-        } else {
-            while (ProcessReceivedData(stream_id, stream_buf));
+            const auto& data = data_opt.value();
+
+            // Get common header
+            if (is_bidir) { // control
+                control_data_ctx_id_ = *data_ctx_id;
+                controL_msg_buffer_.insert(controL_msg_buffer_.begin(), data->begin(), data->end());
+
+                ProcessControlMessage();
+
+            } else if (!ProcessReceivedData(stream_id, rx_ctx->caller_any, std::move(data))) {
+                i = 59;
+                continue; // Try once more
+            }
         }
     }
 
     void PeerSession::OnRecvDgram(const quicr::TransportConnId& conn_id,
                                   std::optional<quicr::DataContextId> data_ctx_id)
     {
-        constexpr quicr::ITransport::EnqueueFlags eflags {false, false, false, false };
+        constexpr quicr::ITransport::EnqueueFlags eflags{ false, false, false, false };
 
         for (int i = 0; i < 80; i++) {
             auto data = transport_->Dequeue(conn_id, data_ctx_id);
@@ -619,19 +560,9 @@ namespace laps::peering {
                 return;
             }
 
-            DataObject dobj(*data);
+            DataHeader data_header(*data);
 
-            if (node_info_.type != NodeType::kVia) {
-                manager_.CompleteDataObjectReceived(GetSessionId(), dobj);
-            }
-
-            manager_.ForwardPeerData(GetSessionId(),
-                                     0,
-                                     dobj.sns_id,
-                                     dobj.priority,
-                                     dobj.ttl,
-                                     { data->begin(), data->begin() + dobj.SizeBytes() },
-                                     eflags);
+            manager_.ForwardPeerData(GetSessionId(), false, 0, data_header, data, data_header.header_len, eflags);
 
             SPDLOG_LOGGER_TRACE(LOGGER,
                                 "Received dgram sns_id: {} track_full_name: {} data size: {}",

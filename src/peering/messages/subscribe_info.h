@@ -3,10 +3,14 @@
 #pragma once
 
 #include "node_info.h"
-#include "peering/common.h"
+#include <memory>
 #include <set>
 
 #include <quicr/track_name.h>
+
+namespace laps {
+    class SubscribeTrackHandler;
+}
 
 namespace laps::peering {
 
@@ -28,10 +32,16 @@ namespace laps::peering {
         std::vector<uint8_t>
           subscribe_data; /// Original MoQ subscribe message (wire format) that initiated this subscribe
 
+        // Data not in wire message (e.g., serialized)
+
+        /// Client manager subscribe handler to fanout/process/cache on peer received data
+        std::shared_ptr<SubscribeTrackHandler> client_subscribe_handler;
+        // End not serialized
+
         /**
          * @brief Encode node object into bytes that can be written on the wire
          */
-        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false, bool is_origin=false);
+        std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false, bool is_origin = false);
 
         SubscribeInfo()
           : track_hash({})

@@ -171,7 +171,7 @@ sudo apt-get install -y make cmake openssl golang wget git ca-certificates
 # Hit enter through the prompts
 ssh-keygen
 
-cat ~/.ssh/id_rsa.pub
+cat ~/.ssh/<output_of_ssh-keygen>.pub
 ```
 
 Goto github, under **settings**, then under **SSH and GPG keys**, add a new SSH key with the contents of the above
@@ -270,4 +270,9 @@ RUN 'systemctl status laps.service' to get status of service
 RUN 'journalctl -u laps.service -f' to tail laps relay log
 ```
 
-##
+--- 
+
+## Discovery using mDNS
+
+See [docs/discovery.md](docs/discovery.md) for details on how to setup and use mDNS
+
