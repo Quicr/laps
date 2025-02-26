@@ -58,8 +58,10 @@ namespace laps {
 
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;
-        void UnannounceReceived(quicr::ConnectionHandle connection_handle,
-                                const quicr::TrackNamespace& track_namespace) override;
+        std::vector<quicr::ConnectionHandle> UnannounceReceived(quicr::ConnectionHandle connection_handle,
+                                                                const quicr::TrackNamespace& track_namespace) override;
+        void UnsubscribeAnnouncesReceived(quicr::ConnectionHandle connection_handle,
+                                          const quicr::TrackNamespace& prefix_namespace) override;
 
         void AnnounceReceived(quicr::ConnectionHandle connection_handle,
                               const quicr::TrackNamespace& track_namespace,

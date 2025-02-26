@@ -93,7 +93,7 @@ namespace laps::peering {
                     quicr::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
-                    quicr::messages::MoqSubscribe sub;
+                    quicr::messages::Subscribe sub;
                     subscribe_info.subscribe_data >> sub;
 
                     SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
@@ -102,7 +102,7 @@ namespace laps::peering {
                                                       0,
                                                       subscribe_info.track_hash,
                                                       { sub.track_namespace, sub.track_name, std::nullopt },
-                                                      quicr::messages::FilterType::LatestObject,
+                                                      quicr::messages::FilterType::kLatestObject,
                                                       s_attrs);
                 }
 
@@ -536,7 +536,7 @@ namespace laps::peering {
                         continue;
                     const auto& sub_info = si_it.second;
 
-                    quicr::messages::MoqSubscribe sub;
+                    quicr::messages::Subscribe sub;
                     sub_info.subscribe_data >> sub;
 
                     if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
@@ -554,7 +554,7 @@ namespace laps::peering {
                                                  0,
                                                  sub_info.track_hash,
                                                  { sub.track_namespace, sub.track_name, 0 },
-                                                 quicr::messages::FilterType::LatestObject,
+                                                 quicr::messages::FilterType::kLatestObject,
                                                  s_attrs);
                         }
 

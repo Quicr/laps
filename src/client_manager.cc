@@ -31,8 +31,8 @@ namespace laps {
           LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, remote.ip, remote.port);
     }
 
-    void ClientManager::UnannounceReceived(quicr::ConnectionHandle connection_handle,
-                                           const quicr::TrackNamespace& track_namespace)
+    std::vector<quicr::ConnectionHandle> ClientManager::UnannounceReceived(quicr::ConnectionHandle connection_handle,
+                                                                           const quicr::TrackNamespace& track_namespace)
     {
         auto th = quicr::TrackHash({ track_namespace, {}, std::nullopt });
 
@@ -61,6 +61,13 @@ namespace laps {
 
         state_.announce_active.erase({ th.track_namespace_hash, connection_handle });
         peer_manager_.ClientUnannounce({ track_namespace, {}, th.track_fullname_hash });
+        // TODO: Subscribe announces.
+        return {};
+    }
+
+    void ClientManager::UnsubscribeAnnouncesReceived(quicr::ConnectionHandle connection_handle,
+                                                     const quicr::TrackNamespace& prefix_namespace)
+    {
     }
 
     void ClientManager::PurgePublishState(quicr::ConnectionHandle connection_handle)
@@ -120,7 +127,8 @@ namespace laps {
 
         AnnounceResponse announce_response;
         announce_response.reason_code = quicr::Server::AnnounceResponse::ReasonCode::kOk;
-        ResolveAnnounce(connection_handle, track_namespace, announce_response);
+        // TODO: Forward to subscribe announces list.
+        ResolveAnnounce(connection_handle, track_namespace, {}, announce_response);
 
         auto& anno_tracks = state_.announce_active[{ th.track_namespace_hash, connection_handle }];
 
@@ -438,7 +446,7 @@ namespace laps {
 
             // Always send updates to peers to support subscribe updates and refresh group support
             if (not is_from_peer) {
-                quicr::messages::MoqSubscribe sub;
+                quicr::messages::Subscribe sub;
                 sub.group_order = attrs.group_order;
                 sub.priority = attrs.priority;
                 sub.subscribe_id = subscribe_id;
@@ -485,7 +493,7 @@ namespace laps {
                                                           *this);
                 SubscribeTrack(key.second, sub_track_h);
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
-            } else if (filter_type != quicr::messages::FilterType::LatestGroup) {
+            } else if (filter_type != quicr::messages::FilterType::kLatestGroup) {
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed =
                   std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())
@@ -509,7 +517,7 @@ namespace laps {
             last_subscription_refresh_time = std::chrono::steady_clock::now();
         }
 
-        if (filter_type == quicr::messages::FilterType::LatestGroup) {
+        if (filter_type == quicr::messages::FilterType::kLatestGroup) {
             SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: Attempting to retrieve objects from cache for track: {}", th.track_fullname_hash);
             auto cache_entry_it = cache_.find(th.track_fullname_hash);
             if (cache_entry_it == cache_.end()) {
