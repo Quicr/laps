@@ -83,9 +83,20 @@ namespace laps::peering {
         if (not withdraw) {
             uint64_t update_ref = rand();
 
+            quicr::messages::Subscribe sub;
+            subscribe_info.subscribe_data >> sub;
+
             std::lock_guard _(state_.state_mutex);
-            auto it = state_.announce_active.lower_bound({ subscribe_info.track_hash.track_namespace_hash, 0 });
-            if (it != state_.announce_active.end()) {
+            bool announce_matches{ false };
+            for (auto& [key, track_aliases] : state_.announce_active) {
+                if (!key.first.HasSamePrefix(sub.track_namespace)) {
+                    continue;
+                }
+                announce_matches = true;
+                break;
+            }
+
+            if (announce_matches) {
                 SPDLOG_LOGGER_INFO(
                   LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
@@ -93,16 +104,13 @@ namespace laps::peering {
                     quicr::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
-                    quicr::messages::MoqSubscribe sub;
-                    subscribe_info.subscribe_data >> sub;
-
                     SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
 
                     client_manager_->ProcessSubscribe(0,
                                                       0,
                                                       subscribe_info.track_hash,
                                                       { sub.track_namespace, sub.track_name, std::nullopt },
-                                                      quicr::messages::FilterType::LatestObject,
+                                                      quicr::messages::FilterType::kLatestObject,
                                                       s_attrs);
                 }
 
@@ -536,7 +544,7 @@ namespace laps::peering {
                         continue;
                     const auto& sub_info = si_it.second;
 
-                    quicr::messages::MoqSubscribe sub;
+                    quicr::messages::Subscribe sub;
                     sub_info.subscribe_data >> sub;
 
                     if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
@@ -554,7 +562,7 @@ namespace laps::peering {
                                                  0,
                                                  sub_info.track_hash,
                                                  { sub.track_namespace, sub.track_name, 0 },
-                                                 quicr::messages::FilterType::LatestObject,
+                                                 quicr::messages::FilterType::kLatestObject,
                                                  s_attrs);
                         }
 
