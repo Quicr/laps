@@ -43,7 +43,7 @@ namespace laps {
           connection_handle,
           th.track_namespace_hash);
 
-        for (auto track_alias : state_.announce_active[{ th.track_namespace_hash, connection_handle }]) {
+        for (auto track_alias : state_.announce_active[{ track_namespace, connection_handle }]) {
             auto ptd = state_.pub_subscribes[{ track_alias, connection_handle }];
             if (ptd != nullptr) {
                 SPDLOG_LOGGER_INFO(LOGGER,
@@ -56,10 +56,9 @@ namespace laps {
                 UnsubscribeTrack(connection_handle, ptd);
             }
             state_.pub_subscribes.erase({ track_alias, connection_handle });
-
         }
 
-        state_.announce_active.erase({ th.track_namespace_hash, connection_handle });
+        state_.announce_active.erase({ track_namespace, connection_handle });
         peer_manager_.ClientUnannounce({ track_namespace, {}, th.track_fullname_hash });
     }
 
@@ -82,7 +81,7 @@ namespace laps {
                                 remove_key.second);
         }
 
-        std::vector<std::pair<quicr::TrackNamespaceHash, quicr::ConnectionHandle>> anno_remove_list;
+        std::vector<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>> anno_remove_list;
         for (const auto& [key, _] : state_.announce_active) {
             if (key.second == connection_handle) {
                 anno_remove_list.push_back(key);
@@ -91,9 +90,10 @@ namespace laps {
 
         for (const auto& remove_key : anno_remove_list) {
             state_.announce_active.erase(remove_key);
+            auto th = quicr::TrackHash({ remove_key.first, {}, std::nullopt });
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Purge publish state for namespace_hash: {0} connection handle: {1}",
-                                remove_key.first,
+                                th.track_namespace_hash,
                                 remove_key.second);
         }
     }
@@ -110,7 +110,7 @@ namespace laps {
                            th.track_fullname_hash);
 
         // Add to state if not exist
-        auto it = state_.announce_active.find({ th.track_namespace_hash, connection_handle });
+        auto it = state_.announce_active.find({ track_namespace, connection_handle });
         if (it != state_.announce_active.end()) {
             /*
              * @note Connection handle maybe reused. This requires replacing an existing entry if it's duplicate
@@ -122,43 +122,36 @@ namespace laps {
         announce_response.reason_code = quicr::Server::AnnounceResponse::ReasonCode::kOk;
         ResolveAnnounce(connection_handle, track_namespace, announce_response);
 
-        auto& anno_tracks = state_.announce_active[{ th.track_namespace_hash, connection_handle }];
+        auto& anno_tracks = state_.announce_active[{ track_namespace, connection_handle }];
 
         // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
-        // for (const auto& [key, who] : state_.subscribe_active)
-        for (auto it = state_.subscribe_active_.lower_bound({ th.track_namespace_hash, 0 });
-             it != state_.subscribe_active_.end();
-             it++) {
-            const auto& [key, who] = *it;
+        for (const auto& [ns, sub_tracks] : state_.subscribe_active_) {
+            if (!ns.first.HasSamePrefix(track_namespace) || sub_tracks.empty()) {
+                continue;
+            }
 
-            if (key.first != th.track_namespace_hash)
-                break;
+            const auto& si = *sub_tracks.begin();
+            if (anno_tracks.find(si.track_alias) == anno_tracks.end()) {
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "Sending subscribe to announcer connection handle: {0} subscribe track_alias: {1}",
+                                   connection_handle,
+                                   si.track_alias);
 
-            if (who.size()) { // Have subscribes
-                auto& a_who = *who.begin();
-                if (anno_tracks.find(a_who.track_alias) == anno_tracks.end()) {
-                    SPDLOG_LOGGER_INFO(
-                      LOGGER,
-                      "Sending subscribe to announcer connection handle: {0} subscribe track_alias: {1}",
-                      connection_handle,
-                      a_who.track_alias);
+                anno_tracks.insert(si.track_alias); // Add track to state
 
-                    anno_tracks.insert(a_who.track_alias); // Add track to state
-
-                    const auto& sub_info_it = state_.subscribes.find({ a_who.track_alias, a_who.connection_handle });
-                    if (sub_info_it == state_.subscribes.end()) {
-                        continue;
-                    }
-
-                    const auto& sub_ftn = sub_info_it->second.track_full_name;
-
-                    // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
-                    auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-                      sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this);
-
-                    SubscribeTrack(connection_handle, sub_track_handler);
-                    state_.pub_subscribes[{ a_who.track_alias, connection_handle }] = sub_track_handler;
+                const auto& sub_info_it = state_.subscribes.find({ si.track_alias, si.connection_handle });
+                if (sub_info_it == state_.subscribes.end()) {
+                    continue;
                 }
+
+                const auto& sub_ftn = sub_info_it->second.track_full_name;
+
+                // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
+                auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
+                  sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this);
+
+                SubscribeTrack(connection_handle, sub_track_handler);
+                state_.pub_subscribes[{ si.track_alias, connection_handle }] = sub_track_handler;
             }
         }
 
@@ -257,11 +250,11 @@ namespace laps {
 
         state_.subscribes.erase(sub_it);
 
-        auto& sub_active_list = state_.subscribe_active_[{ th.track_namespace_hash, th.track_name_hash }];
+        auto& sub_active_list = state_.subscribe_active_[{ ftn.name_space, th.track_name_hash }];
         sub_active_list.erase(State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
 
         if (sub_active_list.empty()) {
-            state_.subscribe_active_.erase({ th.track_namespace_hash, th.track_name_hash });
+            state_.subscribe_active_.erase({ ftn.name_space, th.track_name_hash });
         }
 
         // Are there any other subscribers?
@@ -315,10 +308,12 @@ namespace laps {
         auto th = quicr::TrackHash(track_full_name);
 
         SPDLOG_LOGGER_INFO(LOGGER,
-                           "New subscribe connection handle: {0} subscribe_id: {1} track alias: {2} priority: {3}",
+                           "New subscribe connection handle: {} subscribe_id: {} computed track alias: {} proposed "
+                           "track alias: {} priority: {}",
                            connection_handle,
                            subscribe_id,
                            th.track_fullname_hash,
+                           proposed_track_alias,
                            attrs.priority);
 
         if (proposed_track_alias && proposed_track_alias != th.track_fullname_hash) {
@@ -332,7 +327,6 @@ namespace laps {
         }
 
         ResolveSubscribe(connection_handle, subscribe_id, { quicr::SubscribeResponse::ReasonCode::kOk });
-
 
         ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, filter_type, attrs);
     }
@@ -374,20 +368,22 @@ namespace laps {
 
         const auto th = quicr::TrackHash(track_full_name);
 
-        std::thread retrieve_cache_thread([=, cache_entries = cache_.at(th.track_fullname_hash).Get(attrs.start_group, attrs.end_group)] {
-            for (const auto& cache_entry : cache_entries) {
-                for (const auto& object : *cache_entry) {
-                    if ((object.headers.group_id < attrs.start_group || object.headers.group_id >= attrs.end_group) ||
-                        (object.headers.object_id < attrs.start_object || object.headers.object_id >= attrs.end_object))
-                        continue;
+        std::thread retrieve_cache_thread(
+          [=, cache_entries = cache_.at(th.track_fullname_hash).Get(attrs.start_group, attrs.end_group)] {
+              for (const auto& cache_entry : cache_entries) {
+                  for (const auto& object : *cache_entry) {
+                      if ((object.headers.group_id < attrs.start_group || object.headers.group_id >= attrs.end_group) ||
+                          (object.headers.object_id < attrs.start_object ||
+                           object.headers.object_id >= attrs.end_object))
+                          continue;
 
-                    pub_track_h->PublishObject(object.headers, object.data);
+                      pub_track_h->PublishObject(object.headers, object.data);
 
-                    // TODO(trigaux): Figure out if this value is correct.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-            }
-        });
+                      // TODO(trigaux): Figure out if this value is correct.
+                      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                  }
+              }
+          });
 
         retrieve_cache_thread.detach();
     }
@@ -415,19 +411,19 @@ namespace laps {
 
         else {
             SPDLOG_LOGGER_INFO(LOGGER,
-                                "Processing subscribe connection handle: {} subscribe_id: {} track alias: {} priority: "
-                                "{} ns: {} name: {}",
-                                connection_handle,
-                                subscribe_id,
-                                th.track_fullname_hash,
-                                attrs.priority,
-                                th.track_namespace_hash,
-                                th.track_name_hash);
+                               "Processing subscribe connection handle: {} subscribe_id: {} track alias: {} priority: "
+                               "{} ns: {} name: {}",
+                               connection_handle,
+                               subscribe_id,
+                               th.track_fullname_hash,
+                               attrs.priority,
+                               th.track_namespace_hash,
+                               th.track_name_hash);
 
             state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
             // record subscribe as active from this subscriber
-            state_.subscribe_active_[{ th.track_namespace_hash, th.track_name_hash }].emplace(
+            state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
               State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
             state_.subscribe_alias_sub_id[{ connection_handle, subscribe_id }] = th.track_fullname_hash;
 
@@ -438,7 +434,7 @@ namespace laps {
 
             // Always send updates to peers to support subscribe updates and refresh group support
             if (not is_from_peer) {
-                quicr::messages::MoqSubscribe sub;
+                quicr::messages::Subscribe sub;
                 sub.group_order = attrs.group_order;
                 sub.priority = attrs.priority;
                 sub.subscribe_id = subscribe_id;
@@ -460,21 +456,17 @@ namespace laps {
         }
 
         // Subscribe to announcer if announcer is active
-        for (auto it = state_.announce_active.lower_bound({ th.track_namespace_hash, 0 });
-             it != state_.announce_active.end();
-             ++it) {
-            auto& [key, track_aliases] = *it;
-
-            if (key.first != th.track_namespace_hash) {
-                break;
+        for (auto& [ns, track_aliases] : state_.announce_active) {
+            if (!ns.first.HasSamePrefix(track_full_name.name_space)) {
+                continue;
             }
 
             // if we have already forwarded subscription for the track alias
             // don't forward unless we have expired the refresh period
-            if (state_.pub_subscribes.count({ th.track_fullname_hash, key.second }) == 0) {
+            if (state_.pub_subscribes.count({ th.track_fullname_hash, ns.second }) == 0) {
                 SPDLOG_LOGGER_INFO(LOGGER,
                                    "Sending subscribe to announcer connection handler: {0} subscribe track_alias: {1}",
-                                   key.second,
+                                   ns.second,
                                    th.track_fullname_hash);
 
                 track_aliases.insert(th.track_fullname_hash); // Add track alias to state
@@ -483,9 +475,9 @@ namespace laps {
                                                           0 /* use zero to indicate to use publisher priority */,
                                                           quicr::messages::GroupOrder::kAscending,
                                                           *this);
-                SubscribeTrack(key.second, sub_track_h);
-                state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
-            } else if (filter_type != quicr::messages::FilterType::LatestGroup) {
+                SubscribeTrack(ns.second, sub_track_h);
+                state_.pub_subscribes[{ th.track_fullname_hash, ns.second }] = sub_track_h;
+            } else if (filter_type != quicr::messages::FilterType::kLatestObject) {
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed =
                   std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())
@@ -494,26 +486,28 @@ namespace laps {
                     SPDLOG_LOGGER_INFO(
                       LOGGER,
                       "Sending subscribe-update to announcer connection handler: {0} subscribe track_alias: {1}",
-                      key.second,
+                      ns.second,
                       th.track_fullname_hash);
 
-                    auto sub_track_h = state_.pub_subscribes[{ th.track_fullname_hash, key.second }];
+                    auto sub_track_h = state_.pub_subscribes[{ th.track_fullname_hash, ns.second }];
                     if (sub_track_h == nullptr) {
                         SPDLOG_LOGGER_INFO(LOGGER, "Subscription Handler is null");
                         return;
                     }
-                    UpdateTrackSubscription(key.second, sub_track_h);
+                    UpdateTrackSubscription(ns.second, sub_track_h);
                 }
             }
 
             last_subscription_refresh_time = std::chrono::steady_clock::now();
         }
 
-        if (filter_type == quicr::messages::FilterType::LatestGroup) {
-            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: Attempting to retrieve objects from cache for track: {}", th.track_fullname_hash);
+        if (filter_type == quicr::messages::FilterType::kLatestGroup) {
+            SPDLOG_LOGGER_INFO(
+              LOGGER, "Subscribe: Attempting to retrieve objects from cache for track: {}", th.track_fullname_hash);
             auto cache_entry_it = cache_.find(th.track_fullname_hash);
             if (cache_entry_it == cache_.end()) {
-                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: No entries in cache found for track: {}", th.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(
+                  LOGGER, "Subscribe: No entries in cache found for track: {}", th.track_fullname_hash);
                 return;
             }
 
@@ -521,23 +515,22 @@ namespace laps {
             auto group = cache_entry.Last();
 
             if (group == nullptr || group->empty()) {
-                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: Cache entries for latest group is missing for track: {0}",
-                            th.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "Subscribe: Cache entries for latest group is missing for track: {0}",
+                                   th.track_fullname_hash);
                 return;
             }
 
-            auto pub_track_h =
-              std::make_shared<PublishTrackHandler>(track_full_name,
-                                                    quicr::TrackMode::kStream,
-                                                    attrs.priority,
-                                                    config_.object_ttl_);
+            auto pub_track_h = std::make_shared<PublishTrackHandler>(
+              track_full_name, quicr::TrackMode::kStream, attrs.priority, config_.object_ttl_);
 
             BindPublisherTrack(connection_handle, subscribe_id, pub_track_h, true);
 
             for (const auto& object : *group) {
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Subscribe: Publishing object from cache: Group {0} is Object {1}",
-                            object.headers.group_id,
-                            object.headers.object_id);
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Subscribe: Publishing object from cache: Group {0} is Object {1}",
+                                    object.headers.group_id,
+                                    object.headers.object_id);
                 if (!config_.cache_key.has_value()) {
                     pub_track_h->PublishObject(object.headers, object.data);
                     continue;
@@ -546,7 +539,7 @@ namespace laps {
                 // Mark as cached.
                 auto headers = object.headers;
                 auto extensions = headers.extensions.value_or(quicr::Extensions());
-                extensions[*config_.cache_key] = {0x01};
+                extensions[*config_.cache_key] = { 0x01 };
                 headers.extensions = extensions;
                 pub_track_h->PublishObject(headers, object.data);
             }

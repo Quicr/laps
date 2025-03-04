@@ -12,7 +12,7 @@ namespace laps {
                                                  quicr::messages::ObjectPriority priority,
                                                  quicr::messages::GroupOrder group_order,
                                                  ClientManager& server)
-      : quicr::SubscribeTrackHandler(full_track_name, priority, group_order, quicr::messages::FilterType::LatestObject)
+      : quicr::SubscribeTrackHandler(full_track_name, priority, group_order, quicr::messages::FilterType::kLatestObject)
       , server_(server)
     {
     }
@@ -59,13 +59,13 @@ namespace laps {
         if (is_start) {
             stream_buffer_.Clear();
 
-            stream_buffer_.InitAny<quicr::messages::MoqStreamHeaderSubGroup>();
+            stream_buffer_.InitAny<quicr::messages::StreamHeaderSubGroup>();
             stream_buffer_.Push(*data);
             stream_buffer_.Pop(); // Remove type header
 
             // Expect that on initial start of stream, there is enough data to process the stream headers
 
-            auto& s_hdr = stream_buffer_.GetAny<quicr::messages::MoqStreamHeaderSubGroup>();
+            auto& s_hdr = stream_buffer_.GetAny<quicr::messages::StreamHeaderSubGroup>();
             if (not(stream_buffer_ >> s_hdr)) {
                 SPDLOG_ERROR("Not enough data to process new stream headers, stream is invalid");
                 // TODO: Add metrics to track this
@@ -75,13 +75,13 @@ namespace laps {
             stream_buffer_.Push({ data->data(), data->size() });
         }
 
-        auto& s_hdr = stream_buffer_.GetAny<quicr::messages::MoqStreamHeaderSubGroup>();
+        auto& s_hdr = stream_buffer_.GetAny<quicr::messages::StreamHeaderSubGroup>();
 
         if (not stream_buffer_.AnyHasValueB()) {
-            stream_buffer_.InitAnyB<quicr::messages::MoqStreamSubGroupObject>();
+            stream_buffer_.InitAnyB<quicr::messages::StreamSubGroupObject>();
         }
 
-        auto& obj = stream_buffer_.GetAnyB<quicr::messages::MoqStreamSubGroupObject>();
+        auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
         if (stream_buffer_ >> obj) {
             subscribe_track_metrics_.objects_received++;
 
@@ -96,7 +96,7 @@ namespace laps {
                              obj.extensions },
                            obj.payload);
 
-            stream_buffer_.ResetAnyB<quicr::messages::MoqStreamSubGroupObject>();
+            stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
         }
     }
 
@@ -113,7 +113,7 @@ namespace laps {
         stream_buffer_.Push(*data);
         stream_buffer_.Pop(); // Remove type header
 
-        quicr::messages::MoqObjectDatagram msg;
+        quicr::messages::ObjectDatagram msg;
         if (stream_buffer_ >> msg) {
             subscribe_track_metrics_.objects_received++;
             subscribe_track_metrics_.bytes_received += msg.payload.size();
