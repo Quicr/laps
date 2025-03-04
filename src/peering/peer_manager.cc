@@ -83,54 +83,67 @@ namespace laps::peering {
         if (not withdraw) {
             uint64_t update_ref = rand();
 
+            quicr::messages::Subscribe sub;
+            subscribe_info.subscribe_data >> sub;
+
             std::lock_guard _(state_.state_mutex);
-
-            if (client_manager_ != nullptr) {
-                quicr::SubscribeAttributes s_attrs;
-                s_attrs.priority = 10;
-
-                quicr::messages::Subscribe sub;
-                subscribe_info.subscribe_data >> sub;
-
-                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
-
-                client_manager_->ProcessSubscribe(0,
-                                                  0,
-                                                  subscribe_info.track_hash,
-                                                  { sub.track_namespace, sub.track_name, std::nullopt },
-                                                  quicr::messages::FilterType::kLatestObject,
-                                                  s_attrs);
+            bool announce_matches{ false };
+            for (auto& [key, track_aliases] : state_.announce_active) {
+                if (!key.first.HasSamePrefix(sub.track_namespace)) {
+                    continue;
+                }
+                announce_matches = true;
+                break;
             }
 
-            auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
-            if (bp_it != info_base_->nodes_best_.end()) {
-                const auto& peer_session = bp_it->second.lock();
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER,
-                  "Best peer session for subscribe fullname: {} source_node: {} is via peer_session_id: {}",
-                  subscribe_info.track_hash.track_fullname_hash,
-                  subscribe_info.source_node_id,
-                  peer_session->GetSessionId());
+            if (announce_matches) {
+                SPDLOG_LOGGER_INFO(
+                  LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
-                if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                      subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id);
-                    is_new) {
-                    SPDLOG_LOGGER_INFO(
+                if (client_manager_ != nullptr) {
+                    quicr::SubscribeAttributes s_attrs;
+                    s_attrs.priority = 10;
+
+                    SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
+
+                    client_manager_->ProcessSubscribe(0,
+                                                      0,
+                                                      subscribe_info.track_hash,
+                                                      { sub.track_namespace, sub.track_name, std::nullopt },
+                                                      quicr::messages::FilterType::kLatestObject,
+                                                      s_attrs);
+                }
+
+                auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
+                if (bp_it != info_base_->nodes_best_.end()) {
+                    const auto& peer_session = bp_it->second.lock();
+                    SPDLOG_LOGGER_DEBUG(
                       LOGGER,
-                      "New source added to peer session for subscribe fullname: {} source_node: {} is "
-                      "via peer_session_id: {} sns_id: {}",
+                      "Best peer session for subscribe fullname: {} source_node: {} is via peer_session_id: {}",
                       subscribe_info.track_hash.track_fullname_hash,
                       subscribe_info.source_node_id,
-                      peer_session->GetSessionId(),
-                      sns_id);
+                      peer_session->GetSessionId());
 
-                    if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
-                          { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
-                          InfoBase::FibEntry{ update_ref, 0, sns_id, bp_it->second });
+                    if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
+                          subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id);
                         is_new) {
-                        SPDLOG_LOGGER_INFO(LOGGER,
-                                           "New subscribe fullname: {}, sending subscribe to client manager",
-                                           subscribe_info.track_hash.track_fullname_hash);
+                        SPDLOG_LOGGER_INFO(
+                          LOGGER,
+                          "New source added to peer session for subscribe fullname: {} source_node: {} is "
+                          "via peer_session_id: {} sns_id: {}",
+                          subscribe_info.track_hash.track_fullname_hash,
+                          subscribe_info.source_node_id,
+                          peer_session->GetSessionId(),
+                          sns_id);
+
+                        if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
+                              { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
+                              InfoBase::FibEntry{ update_ref, 0, sns_id, bp_it->second });
+                            is_new) {
+                            SPDLOG_LOGGER_INFO(LOGGER,
+                                               "New subscribe fullname: {}, sending subscribe to client manager",
+                                               subscribe_info.track_hash.track_fullname_hash);
+                        }
                     }
                 }
             }

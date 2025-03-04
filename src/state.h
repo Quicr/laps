@@ -30,6 +30,9 @@ namespace laps {
                  std::shared_ptr<quicr::SubscribeTrackHandler>>
           pub_subscribes;
 
+        /// Subscriber connection handles by subscribe prefix namespace for subscribe announces
+        std::map<quicr::TrackNamespace, std::set<quicr::ConnectionHandle>> subscribes_announces;
+
         struct SubscribePublishHandlerInfo
         {
             quicr::FullTrackName track_full_name;
