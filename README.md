@@ -175,7 +175,7 @@ cat ~/.ssh/<output_of_ssh-keygen>.pub
 ```
 
 Goto github, under **settings**, then under **SSH and GPG keys**, add a new SSH key with the contents of the above
-output of the id_rsa.pub.  
+output of the `<output_of_ssh-keygen>.pub`.  
 
 Clone laps 
 
