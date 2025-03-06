@@ -561,7 +561,7 @@ namespace laps::peering {
                             cm->ProcessSubscribe(0,
                                                  0,
                                                  sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name, 0 },
+                                                 { sub.track_namespace, sub.track_name, std::nullopt },
                                                  quicr::messages::FilterType::kLatestObject,
                                                  s_attrs);
                         }
