@@ -852,7 +852,7 @@ namespace laps::peering {
     void PeerManager::PropagateNodeInfo(const NodeInfo& node_info, bool withdraw)
     {
         auto skip_node = [](const NodeInfo& node_a, const NodeInfo& node_b) -> bool {
-            if (node_a.id == node_b.id)
+            if (node_a.id == node_b.id || node_b.id == 0 || node_a.id == 0)
                 return true;
 
             for (auto& npi : node_a.path) {
