@@ -325,7 +325,7 @@ namespace laps::peering {
     }
 
     void PeerSession::ProcessControlMessage()
-    {
+    try {
         if (controL_msg_buffer_.size() >= kCommonHeadersSize) {
             auto cursor_it = controL_msg_buffer_.begin();
             auto bytes = Span<uint8_t>{ cursor_it, cursor_it + kCommonHeadersSize };
@@ -450,6 +450,9 @@ namespace laps::peering {
                 controL_msg_buffer_.erase(controL_msg_buffer_.begin(), cursor_it);
             }
         }
+    } catch (const std::exception& e) {
+        SPDLOG_LOGGER_ERROR(config_.logger_, "Unable to parse control message: {}", e.what());
+        controL_msg_buffer_.clear();
     }
 
     bool PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
@@ -504,13 +507,8 @@ namespace laps::peering {
         auto& data_header = std::any_cast<DataHeader&>(ctx);
 
         // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
-        manager_.ForwardPeerData(GetSessionId(),
-                                 false,
-                                 stream_id.has_value() ? *stream_id : 0,
-                                 data_header,
-                                 data,
-                                 0,
-                                 eflags);
+        manager_.ForwardPeerData(
+          GetSessionId(), false, stream_id.has_value() ? *stream_id : 0, data_header, data, 0, eflags);
 
         return true;
     }

@@ -40,6 +40,10 @@ namespace laps::peering {
         uint32_t sub_size = ValueOf<uint32_t>({ it, it + 4 });
         it += 4;
 
+        if (sub_size == 0 || sub_size > serialized_data.end() - it ) {
+            throw std::runtime_error("Subscribe data size is larger than serialized data size");
+        }
+
         subscribe_data.assign(it, it + sub_size);
         // it += sub_size;
     }
