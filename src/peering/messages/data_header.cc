@@ -47,7 +47,9 @@ namespace laps::peering {
 
     bool DataHeader::Deserialize(Span<const uint8_t> serialized_data)
     {
-        if (serialized_data.empty()) false;
+        if (serialized_data.empty()) {
+            return false;
+        }
 
         auto it = serialized_data.begin();
 
