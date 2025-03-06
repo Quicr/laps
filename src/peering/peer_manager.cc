@@ -388,6 +388,11 @@ namespace laps::peering {
                 out_peer_sess->SendData(
                   data_header.priority, data_header.ttl, entry.out_sns_id, eflags, std::move(data_out_shared));
             }
+        } else {
+            SPDLOG_LOGGER_DEBUG(config_.logger_,
+                                "Peer data received has no peers peer_sess_id: {} in_sns_id: {}",
+                                peer_session_id,
+                                data_header.sns_id);
         }
     }
 
@@ -435,17 +440,19 @@ namespace laps::peering {
                 break;
 
             if (const auto peer_sess = fib_entry.peer_session.lock()) {
+                SPDLOG_LOGGER_TRACE(LOGGER,
+                                    "Data object send, peer_session: {} egress SNS_ID: {} tfn_hash: {}",
+                                    peer_sess->GetSessionId(),
+                                    fib_entry.out_sns_id,
+                                    track_full_name_hash);
                 if (set_sns_id) {
-                    /*
-                    SPDLOG_LOGGER_DEBUG(LOGGER,
-                                        "Data object send, setting SNS_ID: {} tfn_hash: {}",
-                                        fib_entry.sns_id,
-                                        track_full_name_hash);
-                    */
                     auto sns_id_bytes = BytesOf(fib_entry.out_sns_id);
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data->begin() + 2);
                 }
-                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, eflags, net_data);
+
+                // TODO(tievens): Remove the copy once transport has the option for mutable headers
+                auto net_data_copy = std::make_shared<std::vector<uint8_t>>(*net_data);
+                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, eflags, net_data_copy);
             }
         }
     }
