@@ -56,7 +56,7 @@ namespace laps {
         ForwardReceivedData(is_start, data);
 
         // Process MoQ object from stream data
-        if (is_start) {
+        if (is_start || not stream_buffer_.AnyHasValue()) {
             stream_buffer_.Clear();
 
             stream_buffer_.InitAny<quicr::messages::StreamHeaderSubGroup>();

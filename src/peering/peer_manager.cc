@@ -388,6 +388,11 @@ namespace laps::peering {
                 out_peer_sess->SendData(
                   data_header.priority, data_header.ttl, entry.out_sns_id, eflags, std::move(data_out_shared));
             }
+        } else {
+            SPDLOG_LOGGER_DEBUG(config_.logger_,
+                                "Peer data received has no peers peer_sess_id: {} in_sns_id: {}",
+                                peer_session_id,
+                                data_header.sns_id);
         }
     }
 
@@ -435,17 +440,19 @@ namespace laps::peering {
                 break;
 
             if (const auto peer_sess = fib_entry.peer_session.lock()) {
+                SPDLOG_LOGGER_TRACE(LOGGER,
+                                    "Data object send, peer_session: {} egress SNS_ID: {} tfn_hash: {}",
+                                    peer_sess->GetSessionId(),
+                                    fib_entry.out_sns_id,
+                                    track_full_name_hash);
                 if (set_sns_id) {
-                    /*
-                    SPDLOG_LOGGER_DEBUG(LOGGER,
-                                        "Data object send, setting SNS_ID: {} tfn_hash: {}",
-                                        fib_entry.sns_id,
-                                        track_full_name_hash);
-                    */
                     auto sns_id_bytes = BytesOf(fib_entry.out_sns_id);
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data->begin() + 2);
                 }
-                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, eflags, net_data);
+
+                // TODO(tievens): Remove the copy once transport has the option for mutable headers
+                auto net_data_copy = std::make_shared<std::vector<uint8_t>>(*net_data);
+                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, eflags, net_data_copy);
             }
         }
     }
@@ -561,7 +568,7 @@ namespace laps::peering {
                             cm->ProcessSubscribe(0,
                                                  0,
                                                  sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name, 0 },
+                                                 { sub.track_namespace, sub.track_name, std::nullopt },
                                                  quicr::messages::FilterType::kLatestObject,
                                                  s_attrs);
                         }
@@ -852,7 +859,7 @@ namespace laps::peering {
     void PeerManager::PropagateNodeInfo(const NodeInfo& node_info, bool withdraw)
     {
         auto skip_node = [](const NodeInfo& node_a, const NodeInfo& node_b) -> bool {
-            if (node_a.id == node_b.id)
+            if (node_a.id == node_b.id || node_b.id == 0 || node_a.id == 0)
                 return true;
 
             for (auto& npi : node_a.path) {
