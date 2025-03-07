@@ -45,7 +45,7 @@ namespace laps::peering {
         }
 
         if (sub_size > serialized_data.end() - it ) {
-            throw std::runtime_error("Subscribe data size is larger than serialized data size");
+            throw std::out_of_range("Subscribe data size is larger than serialized data size");
         }
 
         subscribe_data.assign(it, it + sub_size);
