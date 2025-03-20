@@ -4,6 +4,8 @@
 #include <quicr/server.h>
 #include <quicr/subscribe_track_handler.h>
 
+#include <quicr/detail/defer.h>
+
 #include "client_manager.h"
 #include "config.h"
 #include "publish_handler.h"
@@ -425,72 +427,98 @@ namespace laps {
             return;
         }
 
-        ResolveSubscribe(connection_handle, subscribe_id, { quicr::SubscribeResponse::ReasonCode::kOk });
-
+        if (const auto largest = GetLargestAvailable(track_full_name)) {
+            ResolveSubscribe(connection_handle,
+                             subscribe_id,
+                             { quicr::SubscribeResponse::ReasonCode::kOk,
+                               std::nullopt,
+                               std::nullopt,
+                               largest->first,
+                               largest->second });
+        } else {
+            ResolveSubscribe(connection_handle, subscribe_id, { quicr::SubscribeResponse::ReasonCode::kOk });
+        }
 
         ProcessSubscribe(connection_handle, subscribe_id, th, track_full_name, filter_type, attrs);
     }
 
-    bool ClientManager::FetchReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
-                                      [[maybe_unused]] uint64_t subscribe_id,
-                                      const quicr::FullTrackName& track_full_name,
-                                      const quicr::FetchAttributes& attrs)
+    quicr::Server::LargestAvailable ClientManager::GetLargestAvailable(const quicr::FullTrackName& track_name)
     {
-        const auto th = quicr::TrackHash(track_full_name);
+        // Get the largest object from the cache.
+        std::optional<uint64_t> largest_group_id = std::nullopt;
+        std::optional<uint64_t> largest_object_id = std::nullopt;
 
-        auto cache_entry_it = cache_.find(th.track_fullname_hash);
-        if (cache_entry_it == cache_.end()) {
-            return false;
+        const auto& th = quicr::TrackHash(track_name);
+        const auto cache_entry_it = cache_.find(th.track_fullname_hash);
+        if (cache_entry_it != cache_.end()) {
+            auto& [_, cache] = *cache_entry_it;
+            if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
+                const auto& latest_object = std::prev(latest_group->end());
+                largest_group_id = latest_object->headers.group_id;
+                largest_object_id = latest_object->headers.object_id;
+            }
         }
-
-        auto& [_, cache_entry] = *cache_entry_it;
-
-        const auto& groups = cache_entry.Get(attrs.start_group, attrs.end_group);
-
-        if (groups.empty()) {
-            return false;
+        if (!largest_group_id.has_value() || !largest_object_id.has_value()) {
+            return std::nullopt;
         }
-
-        return std::any_of(groups.begin(), groups.end(), [&](const auto& group) {
-            return !group->empty() && group->begin()->headers.object_id <= attrs.start_object &&
-                   std::prev(group->end())->headers.object_id >= (attrs.end_object - 1);
-        });
+        return std::make_pair(*largest_group_id, *largest_object_id);
     }
 
-    void ClientManager::OnFetchOk(quicr::ConnectionHandle connection_handle,
+    bool ClientManager::OnFetchOk(quicr::ConnectionHandle connection_handle,
                                   uint64_t subscribe_id,
                                   const quicr::FullTrackName& track_full_name,
                                   const quicr::FetchAttributes& attrs)
     {
-        auto pub_track_h = std::make_shared<PublishTrackHandler>(
-          track_full_name, quicr::TrackMode::kStream, attrs.priority, cache_duration_ms_);
-        BindPublisherTrack(connection_handle, subscribe_id, pub_track_h);
+        auto pub_fetch_h =
+          quicr::PublishFetchHandler::Create(track_full_name, attrs.priority, subscribe_id, attrs.group_order,  config_.object_ttl_);
+        BindFetchTrack(connection_handle, pub_fetch_h);
 
         const auto th = quicr::TrackHash(track_full_name);
 
-        std::thread retrieve_cache_thread([=, cache_entries = cache_.at(th.track_fullname_hash).Get(attrs.start_group, attrs.end_group)] {
+        stop_fetch_.try_emplace({ connection_handle, subscribe_id }, false);
+
+        const auto cache_entries = cache_.at(th.track_fullname_hash).Get(attrs.start_group, attrs.end_group + 1);
+
+        if (cache_entries.empty())
+            return false;
+
+        std::thread retrieve_cache_thread([=, cache_entries = cache_entries] {
+            defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
+
             for (const auto& cache_entry : cache_entries) {
                 for (const auto& object : *cache_entry) {
-                    if ((object.headers.group_id < attrs.start_group || object.headers.group_id >= attrs.end_group) ||
-                        (object.headers.object_id < attrs.start_object || object.headers.object_id >= attrs.end_object))
-                        continue;
+                    if (stop_fetch_[{ connection_handle, subscribe_id }]) {
+                        stop_fetch_.erase({ connection_handle, subscribe_id });
+                        return;
+                    }
 
-                    pub_track_h->PublishObject(object.headers, object.data);
+                    /*
+                     * Stop when reached end group and end object, unless end object is zero. End object of
+                     * zero indicates all objects within end group
+                     */
+                    if (attrs.end_object.has_value() && *attrs.end_object != 0 &&
+                        object.headers.group_id == attrs.end_group && object.headers.object_id > *attrs.end_object)
+                        break; // Done, reached end object within end group
 
-                    // TODO(trigaux): Figure out if this value is correct.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    SPDLOG_DEBUG("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
+
+                    pub_fetch_h->PublishObject(object.headers, object.data);
                 }
             }
         });
 
         retrieve_cache_thread.detach();
+        return true;
     }
 
-    void ClientManager::FetchCancelReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
-                                            [[maybe_unused]] uint64_t subscribe_id)
+    void ClientManager::FetchCancelReceived(quicr::ConnectionHandle connection_handle,
+                                            uint64_t subscribe_id)
     {
-        // TODO(trigaux): Unbind publisher
-        SPDLOG_INFO("Canceling fetch for subscribe_id: {0}", subscribe_id);
+        SPDLOG_INFO("Canceling fetch for connection_handle: {} subscribe_id: {}", connection_handle, subscribe_id);
+
+        if (stop_fetch_.count({ connection_handle, subscribe_id }) == 0)
+            stop_fetch_[{ connection_handle, subscribe_id }] = true;
+
     }
 
     void ClientManager::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
@@ -597,49 +625,6 @@ namespace laps {
             }
 
             last_subscription_refresh_time = std::chrono::steady_clock::now();
-        }
-
-        if (filter_type == quicr::messages::FilterType::kLatestGroup) {
-            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: Attempting to retrieve objects from cache for track: {}", th.track_fullname_hash);
-            auto cache_entry_it = cache_.find(th.track_fullname_hash);
-            if (cache_entry_it == cache_.end()) {
-                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: No entries in cache found for track: {}", th.track_fullname_hash);
-                return;
-            }
-
-            auto& [_, cache_entry] = *cache_entry_it;
-            auto group = cache_entry.Last();
-
-            if (group == nullptr || group->empty()) {
-                SPDLOG_LOGGER_INFO(LOGGER, "Subscribe: Cache entries for latest group is missing for track: {0}",
-                            th.track_fullname_hash);
-                return;
-            }
-
-            auto pub_track_h =
-              std::make_shared<PublishTrackHandler>(track_full_name,
-                                                    quicr::TrackMode::kStream,
-                                                    attrs.priority,
-                                                    config_.object_ttl_);
-
-            BindPublisherTrack(connection_handle, subscribe_id, pub_track_h, true);
-
-            for (const auto& object : *group) {
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Subscribe: Publishing object from cache: Group {0} is Object {1}",
-                            object.headers.group_id,
-                            object.headers.object_id);
-                if (!config_.cache_key.has_value()) {
-                    pub_track_h->PublishObject(object.headers, object.data);
-                    continue;
-                }
-
-                // Mark as cached.
-                auto headers = object.headers;
-                auto extensions = headers.extensions.value_or(quicr::Extensions());
-                extensions[*config_.cache_key] = {0x01};
-                headers.extensions = extensions;
-                pub_track_h->PublishObject(headers, object.data);
-            }
         }
     }
 

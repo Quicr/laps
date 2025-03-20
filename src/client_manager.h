@@ -87,12 +87,8 @@ namespace laps {
                                const quicr::FullTrackName& track_full_name,
                                const quicr::SubscribeAttributes&) override;
 
-        bool FetchReceived(quicr::ConnectionHandle connection_handle,
-                           uint64_t subscribe_id,
-                           const quicr::FullTrackName& track_full_name,
-                           const quicr::FetchAttributes& attrs) override;
-
-        void OnFetchOk(quicr::ConnectionHandle connection_handle,
+        LargestAvailable GetLargestAvailable(const quicr::FullTrackName& track_name) override;
+        bool OnFetchOk(quicr::ConnectionHandle connection_handle,
                        uint64_t subscribe_id,
                        const quicr::FullTrackName& track_full_name,
                        const quicr::FetchAttributes& attrs) override;
@@ -119,6 +115,11 @@ namespace laps {
         peering::PeerManager& peer_manager_;
         const int subscription_refresh_interval_ms = 500;
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_subscription_refresh_time;
+
+        /**
+         * @brief Map of atomic bools to mark if a fetch thread should be interrupted.
+         */
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
         std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
