@@ -24,7 +24,7 @@ namespace laps {
             server_.cache_.insert(
               std::make_pair(GetTrackAlias().value(),
                              quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                               kDefaultCacheTimeQueueMaxDuration, 1, server_.config_.tick_service_ }));
+                               server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
         }
 
         auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
@@ -34,7 +34,7 @@ namespace laps {
         if (auto group = cache_entry.Get(object_headers.group_id)) {
             group->insert(std::move(object));
         } else {
-            cache_entry.Insert(object_headers.group_id, { std::move(object) }, kDefaultCacheTimeQueueObjectTtl);
+            cache_entry.Insert(object_headers.group_id, { std::move(object) }, server_.cache_duration_ms_);
         }
     }
 
