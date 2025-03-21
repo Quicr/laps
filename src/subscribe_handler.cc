@@ -36,6 +36,30 @@ namespace laps {
         } else {
             cache_entry.Insert(object_headers.group_id, { std::move(object) }, server_.cache_duration_ms_);
         }
+
+        auto track_mode = is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream;
+
+        // Fanout object to subscribers
+        for (auto it = server_.state_.subscribes.lower_bound({ GetTrackAlias().value(), 0 });
+             it != server_.state_.subscribes.end();
+             ++it) {
+            auto& [key, sub_info] = *it;
+            const auto& sub_track_alias = key.first;
+            const auto& connection_handle = key.second;
+
+            if (sub_track_alias != GetTrackAlias().value())
+                break;
+
+            if (sub_info.publish_handler == nullptr) {
+                continue;
+            }
+
+            if (sub_info.publish_handler->pipeline) {
+                continue;
+            }
+
+            sub_info.publish_handler->PublishObject(object_headers, data);
+        }
     }
 
     void SubscribeTrackHandler::StreamDataRecv(bool is_start,
@@ -188,6 +212,12 @@ namespace laps {
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h, false);
                 sub_info.publish_handler = pub_track_h;
+            }
+
+            if (is_new_stream) {
+                sub_info.publish_handler->pipeline = true;
+            } else if (not sub_info.publish_handler->pipeline) {
+                continue;
             }
 
             sub_info.publish_handler->ForwardPublishedData(is_new_stream, data);
