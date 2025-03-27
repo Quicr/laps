@@ -82,8 +82,18 @@ namespace laps::peering {
          */
         if (not withdraw) {
             uint64_t update_ref = rand();
-
-            quicr::messages::Subscribe sub;
+            quicr::messages::Subscribe sub(
+              [](quicr::messages::Subscribe& msg) {
+                  if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteStart ||
+                      msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                      msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
+                  }
+              },
+              [](quicr::messages::Subscribe& msg) {
+                  if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                      msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
+                  }
+              });
             subscribe_info.subscribe_data >> sub;
 
             std::lock_guard _(state_.state_mutex);
@@ -101,7 +111,7 @@ namespace laps::peering {
                   LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
                 if (client_manager_ != nullptr) {
-                    quicr::SubscribeAttributes s_attrs;
+                    quicr::messages::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
                     SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
@@ -357,13 +367,11 @@ namespace laps::peering {
                     // TODO(tievens): Change to use DataStorage to avoid copies
                     auto client_data = data;
                     if (data_offset != 0) {
-                        client_data =
-                          std::make_shared<std::vector<uint8_t>>(data->begin() + data_offset, data->end());
+                        client_data = std::make_shared<std::vector<uint8_t>>(data->begin() + data_offset, data->end());
                     }
 
                     if (eflags.use_reliable) {
-                        si_it->second.client_subscribe_handler->StreamDataRecv(
-                          is_new_stream, stream_id, client_data);
+                        si_it->second.client_subscribe_handler->StreamDataRecv(is_new_stream, stream_id, client_data);
                     } else {
                         si_it->second.client_subscribe_handler->DgramDataRecv(client_data);
                     }
@@ -458,7 +466,7 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
-                                      const quicr::SubscribeAttributes&,
+                                      const quicr::messages::SubscribeAttributes&,
                                       Span<const uint8_t> subscribe_data,
                                       bool withdraw)
     {
@@ -550,8 +558,18 @@ namespace laps::peering {
                     if (si_it.first == node_info_.id)
                         continue;
                     const auto& sub_info = si_it.second;
-
-                    quicr::messages::Subscribe sub;
+                    quicr::messages::Subscribe sub(
+                      [](quicr::messages::Subscribe& msg) {
+                          if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteStart ||
+                              msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                              msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
+                          }
+                      },
+                      [](quicr::messages::Subscribe& msg) {
+                          if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                              msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
+                          }
+                      });
                     sub_info.subscribe_data >> sub;
 
                     if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
@@ -560,7 +578,7 @@ namespace laps::peering {
                             continue;
 
                         if (auto cm = client_manager_) {
-                            quicr::SubscribeAttributes s_attrs;
+                            quicr::messages::SubscribeAttributes s_attrs;
                             s_attrs.priority = 10;
 
                             SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
