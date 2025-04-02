@@ -19,6 +19,8 @@ namespace laps {
 
     void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
     {
+        auto self_connection_handle = GetConnectionId();
+
         // Cache Object
         if (server_.cache_.count(GetTrackAlias().value()) == 0) {
             server_.cache_.insert(
@@ -50,16 +52,16 @@ namespace laps {
             if (sub_track_alias != GetTrackAlias().value())
                 break;
 
-            if (sub_info.publish_handler == nullptr) {
+            if (sub_info.publish_handlers[self_connection_handle] == nullptr) {
                 continue;
             }
 
-            if (sub_info.publish_handler->pipeline) {
+            if (sub_info.publish_handlers[self_connection_handle]->pipeline) {
                 continue;
             }
 
-            sub_info.publish_handler->PublishObject(object_headers, data);
-            sub_info.publish_handler->pipeline = true;
+            sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
+            sub_info.publish_handlers[self_connection_handle]->pipeline = true;
         }
     }
 
@@ -165,6 +167,7 @@ namespace laps {
     void SubscribeTrackHandler::ForwardReceivedData(bool is_new_stream,
                                                     std::shared_ptr<const std::vector<uint8_t>> data)
     {
+        auto self_connection_handle = GetConnectionId();
         std::lock_guard<std::mutex> _(server_.state_.state_mutex);
 
         auto track_alias = GetTrackAlias();
@@ -206,7 +209,7 @@ namespace laps {
             if (sub_track_alias != track_alias.value())
                 break;
 
-            if (sub_info.publish_handler == nullptr) {
+            if (sub_info.publish_handlers[self_connection_handle] == nullptr) {
                 // Create the publish track handler and bind it on first object received
                 auto pub_track_h = std::make_shared<PublishTrackHandler>(
                   sub_info.track_full_name,
@@ -216,16 +219,16 @@ namespace laps {
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h, false);
-                sub_info.publish_handler = pub_track_h;
+                sub_info.publish_handlers[self_connection_handle] = pub_track_h;
             }
 
             if (is_new_stream) {
-                sub_info.publish_handler->pipeline = true;
-            } else if (not sub_info.publish_handler->pipeline) {
+                sub_info.publish_handlers[self_connection_handle]->pipeline = true;
+            } else if (not sub_info.publish_handlers[self_connection_handle]->pipeline) {
                 continue;
             }
 
-            sub_info.publish_handler->ForwardPublishedData(is_new_stream, data);
+            sub_info.publish_handlers[self_connection_handle]->ForwardPublishedData(is_new_stream, data);
         }
     }
 
