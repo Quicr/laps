@@ -562,7 +562,7 @@ namespace laps {
                                                track_full_name.name,
                                                attrs.priority,
                                                attrs.group_order,
-                                               quicr::messages::FilterTypeEnum::kNone,
+                                               quicr::messages::FilterType::kNone,
                                                nullptr,
                                                std::nullopt,
                                                nullptr,

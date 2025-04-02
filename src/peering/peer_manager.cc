@@ -84,13 +84,13 @@ namespace laps::peering {
             uint64_t update_ref = rand();
             quicr::messages::Subscribe sub(
               [](quicr::messages::Subscribe& msg) {
-                  if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteStart ||
-                      msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
+                      msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
                       msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
                   }
               },
               [](quicr::messages::Subscribe& msg) {
-                  if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
                       msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
                   }
               });
@@ -560,13 +560,13 @@ namespace laps::peering {
                     const auto& sub_info = si_it.second;
                     quicr::messages::Subscribe sub(
                       [](quicr::messages::Subscribe& msg) {
-                          if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteStart ||
-                              msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                          if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
+                              msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
                               msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
                           }
                       },
                       [](quicr::messages::Subscribe& msg) {
-                          if (msg.filter_type == quicr::messages::FilterTypeEnum::kAbsoluteRange) {
+                          if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
                               msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
                           }
                       });
