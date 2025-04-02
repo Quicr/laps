@@ -36,6 +36,31 @@ namespace laps {
         } else {
             cache_entry.Insert(object_headers.group_id, { std::move(object) }, server_.cache_duration_ms_);
         }
+
+        auto track_mode = is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream;
+
+        // Fanout object to subscribers
+        for (auto it = server_.state_.subscribes.lower_bound({ GetTrackAlias().value(), 0 });
+             it != server_.state_.subscribes.end();
+             ++it) {
+            auto& [key, sub_info] = *it;
+            const auto& sub_track_alias = key.first;
+            const auto& connection_handle = key.second;
+
+            if (sub_track_alias != GetTrackAlias().value())
+                break;
+
+            if (sub_info.publish_handler == nullptr) {
+                continue;
+            }
+
+            if (sub_info.publish_handler->pipeline) {
+                continue;
+            }
+
+            sub_info.publish_handler->PublishObject(object_headers, data);
+            sub_info.publish_handler->pipeline = true;
+        }
     }
 
     void SubscribeTrackHandler::StreamDataRecv(bool is_start,
@@ -77,26 +102,30 @@ namespace laps {
 
         auto& s_hdr = stream_buffer_.GetAny<quicr::messages::StreamHeaderSubGroup>();
 
-        if (not stream_buffer_.AnyHasValueB()) {
-            stream_buffer_.InitAnyB<quicr::messages::StreamSubGroupObject>();
-        }
+        while (true) {
+            if (not stream_buffer_.AnyHasValueB()) {
+                stream_buffer_.InitAnyB<quicr::messages::StreamSubGroupObject>();
+            }
 
-        auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
-        if (stream_buffer_ >> obj) {
-            subscribe_track_metrics_.objects_received++;
+            auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
+            if (stream_buffer_ >> obj) {
+                subscribe_track_metrics_.objects_received++;
 
-            ObjectReceived({ s_hdr.group_id,
-                             obj.object_id,
-                             s_hdr.subgroup_id,
-                             obj.payload.size(),
-                             obj.object_status,
-                             s_hdr.priority,
-                             std::nullopt,
-                             quicr::TrackMode::kStream,
-                             obj.extensions },
-                           obj.payload);
+                ObjectReceived({ s_hdr.group_id,
+                                 obj.object_id,
+                                 s_hdr.subgroup_id,
+                                 obj.payload.size(),
+                                 obj.object_status,
+                                 s_hdr.priority,
+                                 std::nullopt,
+                                 quicr::TrackMode::kStream,
+                                 obj.extensions },
+                               obj.payload);
 
-            stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+                stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+            }
+
+            break; // Not complete, wait for more data
         }
     }
 
@@ -188,6 +217,12 @@ namespace laps {
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h, false);
                 sub_info.publish_handler = pub_track_h;
+            }
+
+            if (is_new_stream) {
+                sub_info.publish_handler->pipeline = true;
+            } else if (not sub_info.publish_handler->pipeline) {
+                continue;
             }
 
             sub_info.publish_handler->ForwardPublishedData(is_new_stream, data);
