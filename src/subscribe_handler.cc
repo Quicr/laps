@@ -59,6 +59,7 @@ namespace laps {
             }
 
             sub_info.publish_handler->PublishObject(object_headers, data);
+            sub_info.publish_handler->pipeline = true;
         }
     }
 
@@ -101,26 +102,30 @@ namespace laps {
 
         auto& s_hdr = stream_buffer_.GetAny<quicr::messages::StreamHeaderSubGroup>();
 
-        if (not stream_buffer_.AnyHasValueB()) {
-            stream_buffer_.InitAnyB<quicr::messages::StreamSubGroupObject>();
-        }
+        while (true) {
+            if (not stream_buffer_.AnyHasValueB()) {
+                stream_buffer_.InitAnyB<quicr::messages::StreamSubGroupObject>();
+            }
 
-        auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
-        if (stream_buffer_ >> obj) {
-            subscribe_track_metrics_.objects_received++;
+            auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
+            if (stream_buffer_ >> obj) {
+                subscribe_track_metrics_.objects_received++;
 
-            ObjectReceived({ s_hdr.group_id,
-                             obj.object_id,
-                             s_hdr.subgroup_id,
-                             obj.payload.size(),
-                             obj.object_status,
-                             s_hdr.priority,
-                             std::nullopt,
-                             quicr::TrackMode::kStream,
-                             obj.extensions },
-                           obj.payload);
+                ObjectReceived({ s_hdr.group_id,
+                                 obj.object_id,
+                                 s_hdr.subgroup_id,
+                                 obj.payload.size(),
+                                 obj.object_status,
+                                 s_hdr.priority,
+                                 std::nullopt,
+                                 quicr::TrackMode::kStream,
+                                 obj.extensions },
+                               obj.payload);
 
-            stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+                stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+            }
+
+            break; // Not complete, wait for more data
         }
     }
 
