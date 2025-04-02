@@ -20,7 +20,7 @@ namespace laps {
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
 
-      bool pipeline{ false };     // True indicates using pipeline forwarding, false is object forwarding
+        bool pipeline{ false }; // True indicates using pipeline forwarding, false is object forwarding
     };
 
 } // namespace laps
