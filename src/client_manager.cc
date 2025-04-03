@@ -76,10 +76,23 @@ namespace laps {
             }
             state_.pub_subscribes.erase({ track_alias, connection_handle });
 
+            // Remove publish handler from subscribe
+            for (auto it = state_.subscribes.lower_bound({ track_alias, 0 }); it != state_.subscribes.end(); ++it) {
+                if (it->first.first != track_alias) {
+                    break;
+                }
+
+                auto p_it = it->second.publish_handlers.find(connection_handle);
+                if (p_it != it->second.publish_handlers.end()) {
+                    it->second.publish_handlers.erase(p_it);
+                }
+            }
         }
 
         state_.announce_active.erase({ track_namespace, connection_handle });
         peer_manager_.ClientUnannounce({ track_namespace, {}, th.track_fullname_hash });
+
+        // TODO: Remove publish handler from subscribe(s)
 
         return sub_annos_connections;
     }
