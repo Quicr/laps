@@ -355,9 +355,11 @@ namespace laps {
         auto ftn = sub_it->second.track_full_name;
         auto th = quicr::TrackHash(sub_it->second.track_full_name);
 
-        for (auto& [pub_conn_handle, handler]: sub_it->second.publish_handlers) {
+        for (auto& [pub_conn_handle, handler] : sub_it->second.publish_handlers) {
+            if (handler != nullptr) {
                 UnbindPublisherTrack(pub_conn_handle, handler);
                 handler.reset();
+            }
         }
 
         state_.subscribes.erase(sub_it);
