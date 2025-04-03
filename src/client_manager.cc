@@ -91,9 +91,7 @@ namespace laps {
 
         state_.announce_active.erase({ track_namespace, connection_handle });
         peer_manager_.ClientUnannounce({ track_namespace, {}, th.track_fullname_hash });
-
-        // TODO: Remove publish handler from subscribe(s)
-
+        
         return sub_annos_connections;
     }
 
