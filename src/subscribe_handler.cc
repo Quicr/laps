@@ -244,6 +244,9 @@ namespace laps {
                     break;
                 case Status::kError:
                     reason = "subscribe error";
+                    if (GetTrackAlias().has_value()) {
+                        server_.state_.pub_subscribes.erase({GetTrackAlias().value(), GetConnectionId()});
+                    }
                     break;
                 case Status::kNotAuthorized:
                     reason = "not authorized";
