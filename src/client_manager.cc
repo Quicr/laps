@@ -362,8 +362,6 @@ namespace laps {
             }
         }
 
-        state_.subscribes.erase(sub_it);
-
         auto& sub_active_list =
           state_.subscribe_active_[{ sub_it->second.track_full_name.name_space, th.track_name_hash }];
         sub_active_list.erase(State::SubscribeInfo{ connection_handle, subscribe_id, th.track_fullname_hash });
@@ -371,6 +369,8 @@ namespace laps {
         if (sub_active_list.empty()) {
             state_.subscribe_active_.erase({ sub_it->second.track_full_name.name_space, th.track_name_hash });
         }
+
+        state_.subscribes.erase(sub_it);
 
         // Are there any other subscribers?
         bool unsub_pub{ true };
