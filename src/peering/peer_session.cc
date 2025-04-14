@@ -328,7 +328,7 @@ namespace laps::peering {
     try {
         if (controL_msg_buffer_.size() >= kCommonHeadersSize) {
             auto cursor_it = controL_msg_buffer_.begin();
-            auto bytes = Span<uint8_t>{ cursor_it, cursor_it + kCommonHeadersSize };
+            auto bytes = std::span<uint8_t>{ cursor_it, cursor_it + kCommonHeadersSize };
             cursor_it += kCommonHeadersSize;
 
             // TODO(tievens): Implement version checking and error handling
@@ -337,7 +337,7 @@ namespace laps::peering {
             auto data_len = ValueOf<uint32_t>({ bytes.begin() + 3, bytes.begin() + 7 });
 
             if (controL_msg_buffer_.size() >= kCommonHeadersSize + data_len) {
-                auto msg_bytes = Span{ cursor_it, cursor_it + data_len };
+                auto msg_bytes = std::span{ cursor_it, cursor_it + data_len };
 
                 // Control Message
                 switch (static_cast<MsgType>(type)) {

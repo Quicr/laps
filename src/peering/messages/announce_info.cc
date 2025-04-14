@@ -17,7 +17,7 @@ namespace laps::peering {
                + full_name.SizeBytes();
     }
 
-    AnnounceInfo::AnnounceInfo(Span<const uint8_t> serialized_data)
+    AnnounceInfo::AnnounceInfo(std::span<const uint8_t> serialized_data)
     {
         auto it = serialized_data.begin();
 

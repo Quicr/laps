@@ -19,7 +19,7 @@ namespace laps::peering {
                + 4 /* size of sub data */ + subscribe_data.size();
     }
 
-    SubscribeInfo::SubscribeInfo(Span<const uint8_t> serialized_data)
+    SubscribeInfo::SubscribeInfo(std::span<const uint8_t> serialized_data)
       : track_hash({})
     {
         auto it = serialized_data.begin();
