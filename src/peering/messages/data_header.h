@@ -48,11 +48,11 @@ namespace laps::peering {
          * @param serialized_data
          * @return True if successful, false if not enough data
          */
-        bool Deserialize(Span<uint8_t const> serialized_data);
+        bool Deserialize(std::span<uint8_t const> serialized_data);
 
         DataHeader() = default;
         DataHeader(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataType type);
-        DataHeader(Span<uint8_t const> serialized_data);
+        DataHeader(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
 

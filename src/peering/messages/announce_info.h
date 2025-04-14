@@ -30,7 +30,7 @@ namespace laps::peering {
 
         AnnounceInfo() = default;
         AnnounceInfo(NodeIdValueType source_node_id, const FullNameHash& full_name);
-        AnnounceInfo(Span<uint8_t const> serialized_data);
+        AnnounceInfo(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
 

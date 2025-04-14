@@ -15,7 +15,7 @@ namespace laps::peering {
                + nodes.size() * sizeof(NodeIdValueType);
     }
 
-    SubscribeNodeSet::SubscribeNodeSet(Span<const uint8_t> serialized_data, bool withdraw)
+    SubscribeNodeSet::SubscribeNodeSet(std::span<const uint8_t> serialized_data, bool withdraw)
     {
         auto it = serialized_data.begin();
 

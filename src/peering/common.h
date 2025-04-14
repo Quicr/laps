@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <quicr/detail/span.h>
 #include <quicr/detail/uintvar.h>
 
 #include <iostream>
@@ -104,13 +103,13 @@ namespace laps::peering {
     };
 
     template<typename T, std::enable_if_t<std::is_integral<T>::value || std::is_floating_point<T>::value, bool> = true>
-    Span<const uint8_t> BytesOf(const T& value)
+    std::span<const uint8_t> BytesOf(const T& value)
     {
-        return Span(reinterpret_cast<const uint8_t*>(&value), sizeof(value));
+        return std::span(reinterpret_cast<const uint8_t*>(&value), sizeof(value));
     }
 
     template<typename T, std::enable_if_t<std::is_integral<T>::value || std::is_floating_point<T>::value, bool> = true>
-    constexpr T ValueOf(Span<uint8_t const> value, bool host_order = true)
+    constexpr T ValueOf(std::span<uint8_t const> value, bool host_order = true)
     {
         T rval{ 0 };
         auto rval_ptr = reinterpret_cast<uint8_t*>(&rval);

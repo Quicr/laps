@@ -459,7 +459,7 @@ namespace laps::peering {
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
                                       const quicr::SubscribeAttributes&,
-                                      Span<const uint8_t> subscribe_data,
+                                      std::span<const uint8_t> subscribe_data,
                                       bool withdraw)
     {
         auto tfn = track_full_name;

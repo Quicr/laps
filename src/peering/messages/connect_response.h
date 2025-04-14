@@ -36,7 +36,7 @@ namespace laps::peering {
         std::vector<uint8_t> Serialize() const;
 
         ConnectResponse() = default;
-        ConnectResponse(Span<uint8_t const> serialized_data);
+        ConnectResponse(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
 

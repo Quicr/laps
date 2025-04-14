@@ -21,7 +21,7 @@ namespace laps::peering {
                sizeof(latitude) + (path.size() * sizeof(NodePathItem));
     }
 
-    NodeInfo::NodeInfo(Span<uint8_t const> serialized_data)
+    NodeInfo::NodeInfo(std::span<uint8_t const> serialized_data)
     {
         auto it = serialized_data.begin();
 
