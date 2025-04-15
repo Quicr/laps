@@ -40,12 +40,12 @@ namespace laps::peering {
         return size;
     }
 
-    DataHeader::DataHeader(Span<const uint8_t> serialized_data)
+    DataHeader::DataHeader(std::span<const uint8_t> serialized_data)
     {
         Deserialize(serialized_data);
     }
 
-    bool DataHeader::Deserialize(Span<const uint8_t> serialized_data)
+    bool DataHeader::Deserialize(std::span<const uint8_t> serialized_data)
     {
         if (serialized_data.empty()) {
             return false;

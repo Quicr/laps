@@ -5,15 +5,17 @@ option(LAPS_INSTALL "Install the laps Components" ON)
 
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+add_definitions(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 ###
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.7.8
+        VERSION 0.8.9
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 

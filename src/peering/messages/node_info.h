@@ -146,7 +146,7 @@ namespace laps::peering {
 
         NodeInfo() = default;
 
-        NodeInfo(Span<uint8_t const> serialized);
+        NodeInfo(std::span<uint8_t const> serialized);
 
         uint32_t SizeBytes() const;
 

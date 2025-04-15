@@ -31,7 +31,7 @@ namespace laps::peering {
 
         Connect() = default;
         Connect(PeerMode mode, const NodeInfo& node_info);
-        Connect(Span<uint8_t const> serialized_data);
+        Connect(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
 

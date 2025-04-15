@@ -12,7 +12,7 @@ namespace laps::peering {
         return error == ProtocolError::kNoError ? sizeof(error) + node_info->SizeBytes() : sizeof(error);
     }
 
-    ConnectResponse::ConnectResponse(Span<uint8_t const> serialized_data)
+    ConnectResponse::ConnectResponse(std::span<uint8_t const> serialized_data)
     {
         auto it = serialized_data.begin();
 
@@ -20,7 +20,7 @@ namespace laps::peering {
         it += 2;
 
         if (error == ProtocolError::kNoError) {
-            Span<const uint8_t> data(it, serialized_data.end());
+            std::span<const uint8_t> data(it, serialized_data.end());
             node_info = NodeInfo(data);
         }
     }

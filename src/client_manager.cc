@@ -75,6 +75,18 @@ namespace laps {
                 UnsubscribeTrack(connection_handle, ptd);
             }
             state_.pub_subscribes.erase({ track_alias, connection_handle });
+
+            // Remove publish handler from subscribe
+            for (auto it = state_.subscribes.lower_bound({ track_alias, 0 }); it != state_.subscribes.end(); ++it) {
+                if (it->first.first != track_alias) {
+                    break;
+                }
+
+                auto p_it = it->second.publish_handlers.find(connection_handle);
+                if (p_it != it->second.publish_handlers.end()) {
+                    it->second.publish_handlers.erase(p_it);
+                }
+            }
         }
 
         state_.announce_active.erase({ track_namespace, connection_handle });
@@ -160,8 +172,7 @@ namespace laps {
         auto& anno_tracks = state_.announce_active[{ track_namespace, connection_handle }];
 
         // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
-        // for (const auto& [key, who] : state_.subscribe_active)
-        for (const auto& [ns, sub_tracks] : state_.subscribe_active_) {
+        for (const auto& [ns, sub_tracks]: state_.subscribe_active_) {
             if (!ns.first.HasSamePrefix(track_namespace)) {
                 continue;
             }
@@ -343,12 +354,12 @@ namespace laps {
         auto ftn = sub_it->second.track_full_name;
         auto th = quicr::TrackHash(sub_it->second.track_full_name);
 
-        if (sub_it->second.publish_handler != nullptr) {
-            UnbindPublisherTrack(connection_handle, sub_it->second.publish_handler);
-            sub_it->second.publish_handler = nullptr;
+        for (auto& [pub_conn_handle, handler] : sub_it->second.publish_handlers) {
+            if (handler != nullptr) {
+                UnbindPublisherTrack(pub_conn_handle, handler);
+                handler.reset();
+            }
         }
-
-        state_.subscribes.erase(sub_it);
 
         auto& sub_active_list =
           state_.subscribe_active_[{ sub_it->second.track_full_name.name_space, th.track_name_hash }];
@@ -357,6 +368,8 @@ namespace laps {
         if (sub_active_list.empty()) {
             state_.subscribe_active_.erase({ sub_it->second.track_full_name.name_space, th.track_name_hash });
         }
+
+        state_.subscribes.erase(sub_it);
 
         // Are there any other subscribers?
         bool unsub_pub{ true };
@@ -552,7 +565,7 @@ namespace laps {
             const auto [_, is_new] = state_.subscribes.try_emplace(
               { th.track_fullname_hash, connection_handle },
               State::SubscribePublishHandlerInfo{
-                track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, nullptr });
+                track_full_name, th.track_fullname_hash, subscribe_id, attrs.priority, attrs.group_order, {} });
 
             // Always send updates to peers to support subscribe updates and refresh group support
             if (not is_from_peer) {
@@ -605,6 +618,10 @@ namespace laps {
                 SubscribeTrack(key.second, sub_track_h);
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
             } else if (filter_type != quicr::messages::FilterType::kLatestGroup) {
+                if (not last_subscription_refresh_time.has_value()) {
+                    last_subscription_refresh_time = std::chrono::steady_clock::now();
+                    continue;
+                }
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed =
                   std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())

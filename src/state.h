@@ -40,7 +40,7 @@ namespace laps {
             quicr::messages::SubscribeID subscribe_id;
             uint8_t priority;
             quicr::messages::GroupOrder group_order;
-            std::shared_ptr<PublishTrackHandler> publish_handler;
+            std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> publish_handlers;
         };
 
         /**

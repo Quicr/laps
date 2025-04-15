@@ -18,13 +18,13 @@ namespace laps::peering {
         return sizeof(mode) + node_info.SizeBytes();
     }
 
-    Connect::Connect(Span<uint8_t const> serialized_data)
+    Connect::Connect(std::span<uint8_t const> serialized_data)
     {
         auto it = serialized_data.begin();
 
         mode = static_cast<PeerMode>(*it++);
 
-        Span<const uint8_t> data(it, serialized_data.end());
+        std::span<const uint8_t> data(it, serialized_data.end());
         node_info = NodeInfo(data);
     }
 
