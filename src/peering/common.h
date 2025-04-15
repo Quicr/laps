@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <quicr/detail/span.h>
 #include <quicr/detail/uintvar.h>
 
 #include <iostream>
