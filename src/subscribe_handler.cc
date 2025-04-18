@@ -248,6 +248,7 @@ namespace laps {
                         auto& anno_tracks = server_.state_.announce_active[{ GetFullTrackName().name_space, GetConnectionId() }];
                         anno_tracks.erase(GetTrackAlias().value());
                         server_.state_.pub_subscribes.erase({GetTrackAlias().value(), GetConnectionId()});
+                        server_.state_.subscribes.find({ GetTrackAlias().value(), GetConnectionId() });
                     }
                     break;
                 case Status::kNotAuthorized:
