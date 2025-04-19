@@ -130,7 +130,7 @@ namespace laps {
                                          const quicr::PublishAnnounceAttributes& attrs)
     {
 
-        auto publish_to_subscribers = [&] {
+        auto subscribe_to_publisher = [&] {
             auto& anno_tracks = state_.announce_active[{ track_namespace, connection_handle }];
 
             // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
@@ -186,7 +186,7 @@ namespace laps {
              *      more than one publish tracks (different name) but use the same namespace.
              *      In this case, we just want to send subscribes
              */
-            publish_to_subscribers();
+            subscribe_to_publisher();
             return;
         }
 
@@ -213,7 +213,7 @@ namespace laps {
 
         ResolveAnnounce(connection_handle, track_namespace, sub_annos_connections, announce_response);
 
-        publish_to_subscribers();
+        subscribe_to_publisher();
 
         /*
          * Always send announcements to peer manager so new clients can trigger subscribe matching and data forwarding
