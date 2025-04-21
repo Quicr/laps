@@ -129,6 +129,47 @@ namespace laps {
                                          const quicr::TrackNamespace& track_namespace,
                                          const quicr::PublishAnnounceAttributes& attrs)
     {
+
+        auto subscribe_to_publisher = [&] {
+            auto& anno_tracks = state_.announce_active[{ track_namespace, connection_handle }];
+
+            // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
+            for (const auto& [ns, sub_tracks]: state_.subscribe_active_) {
+                if (!ns.first.HasSamePrefix(track_namespace)) {
+                    continue;
+                }
+
+                if (sub_tracks.empty()) {
+                    continue;
+                }
+
+                auto& a_si = *sub_tracks.begin();
+                if (anno_tracks.find(a_si.track_alias) == anno_tracks.end()) {
+                    SPDLOG_LOGGER_INFO(
+                      LOGGER,
+                      "Sending subscribe to announcer connection handle: {0} subscribe track_alias: {1}",
+                      connection_handle,
+                      a_si.track_alias);
+
+                    anno_tracks.insert(a_si.track_alias); // Add track to state
+
+                    const auto& sub_info_it = state_.subscribes.find({ a_si.track_alias, a_si.connection_handle });
+                    if (sub_info_it == state_.subscribes.end()) {
+                        continue;
+                    }
+
+                    const auto& sub_ftn = sub_info_it->second.track_full_name;
+
+                    // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
+                    auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
+                      sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this);
+
+                    SubscribeTrack(connection_handle, sub_track_handler);
+                    state_.pub_subscribes[{ a_si.track_alias, connection_handle }] = sub_track_handler;
+                }
+            }
+        };
+
         auto th = quicr::TrackHash({ track_namespace, {}, std::nullopt });
 
         SPDLOG_LOGGER_INFO(LOGGER,
@@ -141,9 +182,12 @@ namespace laps {
         auto it = state_.announce_active.find({ track_namespace, connection_handle });
         if (it != state_.announce_active.end()) {
             /*
-             * @note Connection handle maybe reused. This requires replacing an existing entry if it's duplicate
+             * @note Duplicate announce from same connection handle can happen when there are
+             *      more than one publish tracks (different name) but use the same namespace.
+             *      In this case, we just want to send subscribes
              */
-            PurgePublishState(connection_handle);
+            subscribe_to_publisher();
+            return;
         }
 
         AnnounceResponse announce_response;
@@ -169,43 +213,7 @@ namespace laps {
 
         ResolveAnnounce(connection_handle, track_namespace, sub_annos_connections, announce_response);
 
-        auto& anno_tracks = state_.announce_active[{ track_namespace, connection_handle }];
-
-        // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
-        for (const auto& [ns, sub_tracks]: state_.subscribe_active_) {
-            if (!ns.first.HasSamePrefix(track_namespace)) {
-                continue;
-            }
-
-            if (sub_tracks.empty()) {
-                continue;
-            }
-
-            auto& a_si = *sub_tracks.begin();
-            if (anno_tracks.find(a_si.track_alias) == anno_tracks.end()) {
-                SPDLOG_LOGGER_INFO(
-                  LOGGER,
-                  "Sending subscribe to announcer connection handle: {0} subscribe track_alias: {1}",
-                  connection_handle,
-                  a_si.track_alias);
-
-                anno_tracks.insert(a_si.track_alias); // Add track to state
-
-                const auto& sub_info_it = state_.subscribes.find({ a_si.track_alias, a_si.connection_handle });
-                if (sub_info_it == state_.subscribes.end()) {
-                    continue;
-                }
-
-                const auto& sub_ftn = sub_info_it->second.track_full_name;
-
-                // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
-                auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-                  sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this);
-
-                SubscribeTrack(connection_handle, sub_track_handler);
-                state_.pub_subscribes[{ a_si.track_alias, connection_handle }] = sub_track_handler;
-            }
-        }
+        subscribe_to_publisher();
 
         /*
          * Always send announcements to peer manager so new clients can trigger subscribe matching and data forwarding

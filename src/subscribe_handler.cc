@@ -245,6 +245,8 @@ namespace laps {
                 case Status::kError:
                     reason = "subscribe error";
                     if (GetTrackAlias().has_value()) {
+                        auto& anno_tracks = server_.state_.announce_active[{ GetFullTrackName().name_space, GetConnectionId() }];
+                        anno_tracks.erase(GetTrackAlias().value());
                         server_.state_.pub_subscribes.erase({GetTrackAlias().value(), GetConnectionId()});
                     }
                     break;
