@@ -657,6 +657,7 @@ namespace laps::peering {
         tconfig.time_queue_init_queue_size = config_.peering.init_queue_size;
         tconfig.time_queue_max_duration = config_.object_ttl_ * 2;
         tconfig.idle_timeout_ms = 5000;
+        tconfig.max_connections = 100;
 
         server_transport_ =
           quicr::ITransport::MakeServerTransport(std::move(server), std::move(tconfig), *this, tick_service_, LOGGER);

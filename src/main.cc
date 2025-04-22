@@ -96,6 +96,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.transport_config.idle_timeout_ms = 10000;
     config.transport_config.time_queue_rx_size = 10'000;
     config.transport_config.time_queue_max_duration = cfg.object_ttl_ * 2;
+    config.transport_config.max_connections = 5000;
 
     return config;
 }
