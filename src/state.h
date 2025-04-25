@@ -37,7 +37,7 @@ namespace laps {
         {
             quicr::FullTrackName track_full_name;
             quicr::messages::TrackAlias track_alias;
-            quicr::messages::SubscribeId subscribe_id;
+            quicr::messages::SubscribeID subscribe_id;
             uint8_t priority;
             quicr::messages::GroupOrder group_order;
             std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> publish_handlers;
@@ -61,7 +61,7 @@ namespace laps {
          * @example
          *      track_alias = subscribe_alias_sub_id[connection handle, subscribe_id]
          */
-        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>, quicr::messages::TrackAlias>
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeID>, quicr::messages::TrackAlias>
           subscribe_alias_sub_id;
 
         /**

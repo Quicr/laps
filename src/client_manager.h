@@ -85,13 +85,13 @@ namespace laps {
                                [[maybe_unused]] uint64_t proposed_track_alias,
                                quicr::messages::FilterType filter_type,
                                const quicr::FullTrackName& track_full_name,
-                               const quicr::SubscribeAttributes&) override;
+                               const quicr::messages::SubscribeAttributes&) override;
 
         LargestAvailable GetLargestAvailable(const quicr::FullTrackName& track_name) override;
         bool OnFetchOk(quicr::ConnectionHandle connection_handle,
                        uint64_t subscribe_id,
                        const quicr::FullTrackName& track_full_name,
-                       const quicr::FetchAttributes& attrs) override;
+                       const quicr::messages::FetchAttributes& attrs) override;
 
         void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t subscribe_id) override;
 
@@ -100,7 +100,7 @@ namespace laps {
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
                               quicr::messages::FilterType filter_type,
-                              const quicr::SubscribeAttributes&);
+                              const quicr::messages::SubscribeAttributes&);
 
         void RemovePublisherSubscribe(const quicr::TrackHash& track_hash);
 
@@ -119,7 +119,7 @@ namespace laps {
         /**
          * @brief Map of atomic bools to mark if a fetch thread should be interrupted.
          */
-        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeId>, std::atomic_bool> stop_fetch_;
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeID>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
         std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;

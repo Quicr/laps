@@ -65,7 +65,7 @@ namespace laps::peering {
         }
 
         void ClientSubscribe(const quicr::FullTrackName& track_full_name,
-                             const quicr::SubscribeAttributes&,
+                             const quicr::messages::SubscribeAttributes&,
                              std::span<const uint8_t> subscribe_data,
                              bool withdraw = false);
 

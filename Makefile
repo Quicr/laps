@@ -52,8 +52,8 @@ docs:
 
 ## format: Format c/c++ code
 format:
-	find src -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
-	find test -iname "*.h" -or -iname "*.cpp" | xargs ${CLANG_FORMAT}
+	find src -iname "*.h" -or -iname "*.cc" | xargs ${CLANG_FORMAT}
+	find test -iname "*.h" -or -iname "*.cc" | xargs ${CLANG_FORMAT}
 
 
 ## lint: Lint code
