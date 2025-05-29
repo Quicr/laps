@@ -23,10 +23,9 @@ namespace laps {
 
         // Cache Object
         if (server_.cache_.count(GetTrackAlias().value()) == 0) {
-            server_.cache_.insert(
-              std::make_pair(GetTrackAlias().value(),
-                             quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                               server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
+            server_.cache_.insert(std::make_pair(GetTrackAlias().value(),
+                                                 quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                                                   server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
         }
 
         auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
@@ -88,7 +87,6 @@ namespace laps {
 
             stream_buffer_.InitAny<quicr::messages::StreamHeaderSubGroup>();
             stream_buffer_.Push(*data);
-            stream_buffer_.Pop(); // Remove type header
 
             // Expect that on initial start of stream, there is enough data to process the stream headers
 
@@ -110,12 +108,23 @@ namespace laps {
             }
 
             auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
+            obj.serialize_extensions = quicr::messages::TypeWillSerializeExtensions(s_hdr.type);
             if (stream_buffer_ >> obj) {
                 subscribe_track_metrics_.objects_received++;
 
+                if (!s_hdr.subgroup_id.has_value()) {
+                    if (s_hdr.type != quicr::messages::StreamHeaderType::kSubgroupFirstObjectNoExtensions &&
+                        s_hdr.type != quicr::messages::StreamHeaderType::kSubgroupFirstObjectWithExtensions) {
+                        SPDLOG_ERROR("Bad stream header type when no subgroup ID: {0}",
+                                     static_cast<std::uint8_t>(s_hdr.type));
+                        return;
+                    }
+                    s_hdr.subgroup_id = obj.object_id;
+                }
+
                 ObjectReceived({ s_hdr.group_id,
                                  obj.object_id,
-                                 s_hdr.subgroup_id,
+                                 s_hdr.subgroup_id.value(),
                                  obj.payload.size(),
                                  obj.object_status,
                                  s_hdr.priority,
@@ -218,7 +227,7 @@ namespace laps {
                   server_.config_.object_ttl_ /* TODO: Update this when MoQ adds TTL */);
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(connection_handle, sub_info.subscribe_id, pub_track_h, false);
+                server_.BindPublisherTrack(connection_handle, sub_info.request_id, pub_track_h, false);
                 sub_info.publish_handlers[self_connection_handle] = pub_track_h;
             }
 
@@ -245,9 +254,10 @@ namespace laps {
                 case Status::kError:
                     reason = "subscribe error";
                     if (GetTrackAlias().has_value()) {
-                        auto& anno_tracks = server_.state_.announce_active[{ GetFullTrackName().name_space, GetConnectionId() }];
+                        auto& anno_tracks =
+                          server_.state_.announce_active[{ GetFullTrackName().name_space, GetConnectionId() }];
                         anno_tracks.erase(GetTrackAlias().value());
-                        server_.state_.pub_subscribes.erase({GetTrackAlias().value(), GetConnectionId()});
+                        server_.state_.pub_subscribes.erase({ GetTrackAlias().value(), GetConnectionId() });
                     }
                     break;
                 case Status::kNotAuthorized:

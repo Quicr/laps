@@ -17,7 +17,6 @@ TEST_CASE("Serialize Connect")
     connect.node_info.latitude = 47.6482974;
     connect.node_info.longitude = -122.5327124;
 
-
     connect.node_info.path.push_back({ NodeId().Value("1:1"), 54321 });
     connect.node_info.path.push_back({ NodeId().Value("2:2"), 12345 });
 
@@ -26,8 +25,7 @@ TEST_CASE("Serialize Connect")
     CHECK_EQ(net_data.size(), connect.SizeBytes() + kCommonHeadersSize);
     CHECK_EQ(net_data.size(), 80);
 
-    Connect decoded_c({net_data.begin() + kCommonHeadersSize, net_data.end()});
-
+    Connect decoded_c({ net_data.begin() + kCommonHeadersSize, net_data.end() });
 
     CHECK_EQ(decoded_c.mode, PeerMode::kBoth);
     CHECK_EQ(connect.node_info.id, decoded_c.node_info.id);
@@ -36,7 +34,6 @@ TEST_CASE("Serialize Connect")
     CHECK_EQ(connect.node_info.contact, decoded_c.node_info.contact);
     CHECK_EQ(connect.node_info.longitude, decoded_c.node_info.longitude);
     CHECK_EQ(connect.node_info.latitude, decoded_c.node_info.latitude);
-
 }
 
 TEST_CASE("Serialize Connect Response")
@@ -60,7 +57,7 @@ TEST_CASE("Serialize Connect Response")
     CHECK_EQ(net_data.size(), connect_resp.SizeBytes() + kCommonHeadersSize);
     CHECK_EQ(net_data.size(), 71);
 
-    ConnectResponse decoded_cr({net_data.begin() + kCommonHeadersSize, net_data.end()});
+    ConnectResponse decoded_cr({ net_data.begin() + kCommonHeadersSize, net_data.end() });
 
     CHECK_EQ(connect_resp.error, ProtocolError::kNoError);
     CHECK_EQ(connect_resp.node_info->id, decoded_cr.node_info->id);
@@ -82,7 +79,7 @@ TEST_CASE("Serialize Connect Response With Error")
 
     CHECK_EQ(net_data.size(), 9);
 
-    ConnectResponse decoded_cr({net_data.begin() + kCommonHeadersSize, net_data.end()});
+    ConnectResponse decoded_cr({ net_data.begin() + kCommonHeadersSize, net_data.end() });
 
     CHECK_EQ(connect_resp.error, ProtocolError::kConnectError);
 }

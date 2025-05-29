@@ -10,9 +10,9 @@ namespace laps {
      * @details Publish track handler used for the publish command line option
      */
     PublishTrackHandler::PublishTrackHandler(const quicr::FullTrackName& full_track_name,
-                                                     quicr::TrackMode track_mode,
-                                                     uint8_t default_priority,
-                                                     uint32_t default_ttl)
+                                             quicr::TrackMode track_mode,
+                                             uint8_t default_priority,
+                                             uint32_t default_ttl)
       : quicr::PublishTrackHandler(full_track_name, track_mode, default_priority, default_ttl)
     {
     }
