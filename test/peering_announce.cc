@@ -36,4 +36,3 @@ TEST_CASE("Serialize Announce Info")
 
     CHECK_EQ(announce_info.full_name.name_hash, decoded_ai.full_name.name_hash);
 }
-

@@ -27,4 +27,3 @@ TEST_CASE("Serialize Subscribe Node Set")
 
     CHECK_EQ(*sns.nodes.begin(), *decoded.nodes.begin());
 }
-

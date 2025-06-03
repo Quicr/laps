@@ -154,7 +154,8 @@ main(int argc, char* argv[])
     peering::PeerManager peer_manager(laps_config, state, forwarding_info);
 
     try {
-        auto server = std::make_shared<ClientManager>(state, laps_config, server_config, peer_manager, result["cache_duration"].as<size_t>());
+        auto server = std::make_shared<ClientManager>(
+          state, laps_config, server_config, peer_manager, result["cache_duration"].as<size_t>());
         peer_manager.SetClientManager(server); // Set pointer to client manager (e.g., server) after construct
 
         if (server->Start() != quicr::Transport::Status::kReady) {

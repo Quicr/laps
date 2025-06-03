@@ -37,7 +37,7 @@ namespace laps {
         {
             quicr::FullTrackName track_full_name;
             quicr::messages::TrackAlias track_alias;
-            quicr::messages::SubscribeID subscribe_id;
+            quicr::messages::RequestID request_id;
             uint8_t priority;
             quicr::messages::GroupOrder group_order;
             std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> publish_handlers;
@@ -55,13 +55,13 @@ namespace laps {
           subscribes;
 
         /**
-         * Subscribe ID to alias mapping
-         *      Used to lookup the track alias for a given subscribe ID
+         * Request ID to alias mapping
+         *      Used to lookup the track alias for a given request ID
          *
          * @example
-         *      track_alias = subscribe_alias_sub_id[connection handle, subscribe_id]
+         *      track_alias = subscribe_alias_sub_id[connection handle, request_id]
          */
-        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::SubscribeID>, quicr::messages::TrackAlias>
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, quicr::messages::TrackAlias>
           subscribe_alias_sub_id;
 
         /**
@@ -71,24 +71,24 @@ namespace laps {
         struct SubscribeInfo
         {
             uint64_t connection_handle;
-            uint64_t subscribe_id;
+            uint64_t request_id;
             uint64_t track_alias;
 
             bool operator<(const SubscribeInfo& other) const
             {
                 return connection_handle < other.connection_handle ||
-                       (connection_handle == other.connection_handle && subscribe_id < other.subscribe_id);
+                       (connection_handle == other.connection_handle && request_id < other.request_id);
             }
 
             bool operator==(const SubscribeInfo& other) const
             {
-                return connection_handle == other.connection_handle && subscribe_id == other.subscribe_id;
+                return connection_handle == other.connection_handle && request_id == other.request_id;
             }
 
             bool operator>(const SubscribeInfo& other) const
             {
                 return connection_handle > other.connection_handle ||
-                       (connection_handle == other.connection_handle && subscribe_id > other.subscribe_id);
+                       (connection_handle == other.connection_handle && request_id > other.request_id);
             }
         };
 

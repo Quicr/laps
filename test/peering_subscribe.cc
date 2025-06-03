@@ -31,4 +31,3 @@ TEST_CASE("Serialize Subscribe Info")
     CHECK_EQ(subscribe_info.track_hash.track_name_hash, decoded_si.track_hash.track_name_hash);
     CHECK_EQ(subscribe_info.track_hash.track_fullname_hash, decoded_si.track_hash.track_fullname_hash);
 }
-

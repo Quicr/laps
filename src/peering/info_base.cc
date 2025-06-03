@@ -74,7 +74,7 @@ namespace laps::peering {
             fib_entries.push_back(key);
         }
 
-        for (const auto& key: fib_entries) {
+        for (const auto& key : fib_entries) {
             peer_fib_.erase(key);
         }
     }
@@ -136,7 +136,7 @@ namespace laps::peering {
 
     bool InfoBase::RemoveAnnounce(const AnnounceInfo& announce_info)
     {
-        bool removed {false};
+        bool removed{ false };
         std::lock_guard _(mutex_);
 
         auto it = announces_.find(announce_info.full_name.namespace_hash);

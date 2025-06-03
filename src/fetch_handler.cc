@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
 
-#include "config.h"
 #include "fetch_handler.h"
+#include "config.h"
 #include <quicr/fetch_track_handler.h>
 #include <quicr/server.h>
 

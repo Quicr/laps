@@ -44,7 +44,7 @@ namespace laps::peering {
             return;
         }
 
-        if (sub_size > serialized_data.end() - it ) {
+        if (sub_size > serialized_data.end() - it) {
             throw std::out_of_range("Subscribe data size is larger than serialized data size");
         }
 
@@ -84,7 +84,7 @@ namespace laps::peering {
 
         if (is_origin) {
             if (seq < 0xFFFF)
-                seq++;  // Bump the sequence number
+                seq++; // Bump the sequence number
             else
                 seq = 0;
         }
