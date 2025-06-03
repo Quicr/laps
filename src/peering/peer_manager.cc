@@ -554,6 +554,9 @@ namespace laps::peering {
             // TODO: change to not iterate over all subscribes to find a match
             for (const auto& [ftn, sub_map] : info_base_->subscribes_) {
 
+                if (sub_map.empty())
+                    continue;
+
                 for (const auto si_it : sub_map) {
                     if (si_it.first == node_info_.id)
                         continue;
@@ -570,7 +573,16 @@ namespace laps::peering {
                               msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
                           }
                       });
-                    sub_info.subscribe_data >> sub;
+
+                    try {
+                        sub_info.subscribe_data >> sub;
+
+                    } catch (const std::exception& e) {
+                        SPDLOG_LOGGER_ERROR(LOGGER,
+                                            "Unable to parse subscribe message {}",
+                                            e.what());
+                        continue;
+                    }
 
                     if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
 
