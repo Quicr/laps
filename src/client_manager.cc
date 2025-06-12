@@ -589,11 +589,8 @@ namespace laps {
                 quicr::Bytes sub_data;
                 sub_data << sub;
 
-                // TODO(tievens): Clean up total hack to accommodate encode using operator overload that adds common
-                // header
                 auto mt_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin());
-                auto len_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin() + mt_sz);
-                sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + len_sz);
+                sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + sizeof(uint16_t));
 
                 peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data, false);
             }
