@@ -74,6 +74,8 @@ namespace laps::peering {
             ClientSubscribe(track_full_name, {}, {}, true);
         }
 
+        bool HasSubscribers(const quicr::FullTrackName& track_full_name);
+
         void SetClientManager(std::shared_ptr<ClientManager> client_manager)
         {
             client_manager_ = std::move(client_manager);

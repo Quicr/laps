@@ -338,7 +338,7 @@ namespace laps::peering {
                                       uint64_t data_offset,
                                       quicr::ITransport::EnqueueFlags eflags)
     {
-        std::lock_guard _(info_base_->mutex_); // TODO: See about removing this lock
+        std::unique_lock _(info_base_->mutex_); // TODO: See about removing this lock
         auto it = info_base_->peer_fib_.find({ peer_session_id, data_header.sns_id });
         if (it != info_base_->peer_fib_.end()) {
             // TODO(tievens): Replace data_out with new transport multiple data
@@ -464,6 +464,19 @@ namespace laps::peering {
             }
         }
     }
+
+    bool PeerManager::HasSubscribers(const quicr::FullTrackName& track_full_name)
+    {
+        auto tfn = track_full_name;
+        quicr::TrackHash th(tfn);
+        SubscribeInfo si;
+
+        si.track_hash = th;
+        si.source_node_id = node_info_.id;
+
+        return info_base_->HasSubscribers(si);
+    }
+
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
                                       const quicr::messages::SubscribeAttributes&,

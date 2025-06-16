@@ -387,7 +387,7 @@ namespace laps {
             }
         }
 
-        if (unsub_pub) {
+        if (unsub_pub && not peer_manager_.HasSubscribers(ftn)) {
             SPDLOG_LOGGER_INFO(LOGGER, "No subscribers left, unsubscribe publisher track_alias: {0}", track_alias);
             peer_manager_.ClientUnsubscribe(ftn);
             RemovePublisherSubscribe(th);
@@ -579,7 +579,7 @@ namespace laps {
                                                attrs.priority,
                                                attrs.group_order,
                                                true,
-                                               quicr::messages::FilterType::kNone,
+                                               filter_type,
                                                nullptr,
                                                std::nullopt,
                                                nullptr,

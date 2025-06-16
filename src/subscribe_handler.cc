@@ -177,7 +177,6 @@ namespace laps {
                                                     std::shared_ptr<const std::vector<uint8_t>> data)
     {
         auto self_connection_handle = GetConnectionId();
-        std::lock_guard<std::mutex> _(server_.state_.state_mutex);
 
         auto track_alias = GetTrackAlias();
         if (!track_alias.has_value()) {

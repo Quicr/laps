@@ -57,6 +57,13 @@ namespace laps::peering {
         bool RemoveSubscribe(const SubscribeInfo& subscribe_info);
 
         /**
+         * @brief Has Subscribers
+         * @details Method to check if there are active peer subscribers
+         * @returns True to indicate there are peer subscribers, false to indicate no peer subscribers
+         */
+        bool HasSubscribers(const SubscribeInfo& subscribe_info);
+
+        /**
          * @brief Add or update announce in the info base
          * @details This will add or update a announce in the info base.
          *
