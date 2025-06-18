@@ -496,7 +496,7 @@ namespace laps {
         if (cache_entries.empty())
             return false;
 
-        std::thread retrieve_cache_thread([=, cache_entries = cache_entries] {
+        std::thread retrieve_cache_thread([=, cache_entries = cache_entries, this] {
             defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
 
             for (const auto& cache_entry : cache_entries) {
@@ -565,26 +565,27 @@ namespace laps {
               State::SubscribeInfo{ connection_handle, request_id, th.track_fullname_hash });
             state_.subscribe_alias_sub_id[{ connection_handle, request_id }] = th.track_fullname_hash;
 
-            const auto [_, is_new] = state_.subscribes.try_emplace(
+            state_.subscribes.try_emplace(
               { th.track_fullname_hash, connection_handle },
               State::SubscribePublishHandlerInfo{
                 track_full_name, th.track_fullname_hash, request_id, attrs.priority, attrs.group_order, {} });
 
             // Always send updates to peers to support subscribe updates and refresh group support
             if (not is_from_peer) {
-                quicr::messages::Subscribe sub(request_id,
-                                               th.track_fullname_hash,
-                                               track_full_name.name_space,
-                                               track_full_name.name,
-                                               attrs.priority,
-                                               attrs.group_order,
-                                               true,
-                                               filter_type,
-                                               nullptr,
-                                               std::nullopt,
-                                               nullptr,
-                                               std::nullopt,
-                                               {});
+                quicr::messages::Subscribe sub(
+                  request_id,
+                  th.track_fullname_hash,
+                  track_full_name.name_space,
+                  track_full_name.name,
+                  attrs.priority,
+                  attrs.group_order,
+                  true,
+                  quicr::messages::FilterType::kLatestObject, // Filters are only for edge to apply
+                  nullptr,
+                  std::nullopt,
+                  nullptr,
+                  std::nullopt,
+                  {});
 
                 quicr::Bytes sub_data;
                 sub_data << sub;

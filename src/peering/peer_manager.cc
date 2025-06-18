@@ -477,7 +477,6 @@ namespace laps::peering {
         return info_base_->HasSubscribers(si);
     }
 
-
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
                                       const quicr::messages::SubscribeAttributes&,
                                       std::span<const uint8_t> subscribe_data,
@@ -591,9 +590,7 @@ namespace laps::peering {
                         sub_info.subscribe_data >> sub;
 
                     } catch (const std::exception& e) {
-                        SPDLOG_LOGGER_ERROR(LOGGER,
-                                            "Unable to parse subscribe message {}",
-                                            e.what());
+                        SPDLOG_LOGGER_ERROR(LOGGER, "Unable to parse subscribe message {}", e.what());
                         continue;
                     }
 

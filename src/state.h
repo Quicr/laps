@@ -36,9 +36,9 @@ namespace laps {
         struct SubscribePublishHandlerInfo
         {
             quicr::FullTrackName track_full_name;
-            quicr::messages::TrackAlias track_alias {0};
-            quicr::messages::RequestID request_id {0};
-            uint8_t priority {0};
+            quicr::messages::TrackAlias track_alias{ 0 };
+            quicr::messages::RequestID request_id{ 0 };
+            uint8_t priority{ 0 };
             quicr::messages::GroupOrder group_order;
             std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> publish_handlers;
         };
