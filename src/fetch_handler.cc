@@ -26,7 +26,7 @@ namespace laps {
     {
     }
 
-    void FetchTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
+    void FetchTrackHandler::ObjectReceived(const quicr::ObjectHeaders&, quicr::BytesSpan)
     {
         std::lock_guard<std::mutex> _(server_.state_.state_mutex);
     }

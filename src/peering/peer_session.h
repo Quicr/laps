@@ -147,9 +147,7 @@ namespace laps::peering {
         /*
          * Delegate functions mainly for Outgoing but does include incoming
          */
-        void OnNewDataContext(const quicr::TransportConnId& conn_id, const quicr::DataContextId& data_ctx_id) override
-        {
-        }
+        void OnNewDataContext(const quicr::TransportConnId&, const quicr::DataContextId&) override {}
         void OnConnectionStatus(const quicr::TransportConnId& conn_id, const quicr::TransportStatus status) override;
         void OnNewConnection(const quicr::TransportConnId& conn_id, const quicr::TransportRemote& remote) override;
         void OnRecvStream(const quicr::TransportConnId& conn_id,

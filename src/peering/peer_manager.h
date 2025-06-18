@@ -74,6 +74,8 @@ namespace laps::peering {
             ClientSubscribe(track_full_name, {}, {}, true);
         }
 
+        bool HasSubscribers(const quicr::FullTrackName& track_full_name);
+
         void SetClientManager(std::shared_ptr<ClientManager> client_manager)
         {
             client_manager_ = std::move(client_manager);
@@ -87,9 +89,7 @@ namespace laps::peering {
         // QUIC Transport callbacks
         // -------------------------------------------------------------------------------
 
-        void OnNewDataContext(const quicr::TransportConnId& conn_id, const quicr::DataContextId& data_ctx_id) override
-        {
-        }
+        void OnNewDataContext(const quicr::TransportConnId&, const quicr::DataContextId&) override {}
         void OnConnectionStatus(const quicr::TransportConnId& conn_id, const quicr::TransportStatus status) override;
         void OnNewConnection(const quicr::TransportConnId& conn_id, const quicr::TransportRemote& remote) override;
         void OnRecvStream(const quicr::TransportConnId& conn_id,

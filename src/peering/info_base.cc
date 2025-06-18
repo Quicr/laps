@@ -79,6 +79,20 @@ namespace laps::peering {
         }
     }
 
+    bool InfoBase::HasSubscribers(const SubscribeInfo& subscribe_info)
+    {
+        auto it = subscribes_.find(subscribe_info.track_hash.track_fullname_hash);
+        if (it != subscribes_.end()) {
+            for (const auto& si : it->second) {
+                if (si.second.source_node_id != subscribe_info.source_node_id) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     bool InfoBase::AddSubscribe(const SubscribeInfo& subscribe_info)
     {
         std::lock_guard _(mutex_);
