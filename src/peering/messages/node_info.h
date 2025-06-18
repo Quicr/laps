@@ -110,8 +110,8 @@ namespace laps::peering {
      */
     struct NodePathItem
     {
-        NodeIdValueType id; ///< Id of the node that received the node info
-        uint64_t srtt_us;   ///< SRTT in microseconds of the peer session that received the node info
+        NodeIdValueType id;    ///< Id of the node that received the node info
+        uint64_t srtt_us{ 0 }; ///< SRTT in microseconds of the peer session that received the node info
     } __attribute__((__packed__, aligned(1)));
 
     /**

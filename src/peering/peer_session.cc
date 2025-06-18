@@ -225,7 +225,7 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending subscribe fullname: {} source_node_id: {} withdraw: {}",
                             subscribe_info.track_hash.track_fullname_hash,
-                            subscribe_info.source_node_id,
+                            NodeId().Value(subscribe_info.source_node_id),
                             withdraw);
 
         transport_->Enqueue(t_conn_id_,
@@ -240,7 +240,7 @@ namespace laps::peering {
     {
         if (status_ != StatusValue::kConnected)
             return;
-        SPDLOG_LOGGER_DEBUG(LOGGER, "Sending node info id: {}", node_info.id);
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Sending node info id: {}", NodeId().Value(node_info.id));
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,
                             std::make_shared<std::vector<uint8_t>>(node_info.Serialize(true, withdraw)),
@@ -447,7 +447,7 @@ namespace laps::peering {
                     }
                 }
 
-                controL_msg_buffer_.erase(controL_msg_buffer_.begin(), cursor_it);
+                controL_msg_buffer_.erase(controL_msg_buffer_.begin(), cursor_it + data_len);
             }
         }
     } catch (const std::exception& e) {
@@ -535,7 +535,7 @@ namespace laps::peering {
             // Get common header
             if (is_bidir) { // control
                 control_data_ctx_id_ = *data_ctx_id;
-                controL_msg_buffer_.insert(controL_msg_buffer_.begin(), data->begin(), data->end());
+                controL_msg_buffer_.insert(controL_msg_buffer_.end(), data->begin(), data->end());
 
                 ProcessControlMessage();
 
