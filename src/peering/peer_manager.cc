@@ -52,10 +52,11 @@ namespace laps::peering {
     void PeerManager::SubscribeInfoReceived(PeerSessionId peer_session_id, SubscribeInfo& subscribe_info, bool withdraw)
     try {
         SPDLOG_LOGGER_INFO(LOGGER,
-                           "Subscribe info received peer_session_id: {} fullname: {} namespace: {} withdraw: {}",
+                           "Subscribe info received peer_session_id: {} fullname: {} namespace: {} source_node: {} withdraw: {}",
                            peer_session_id,
                            subscribe_info.track_hash.track_fullname_hash,
                            subscribe_info.track_hash.track_namespace_hash,
+                           NodeId().Value(subscribe_info.source_node_id),
                            withdraw);
 
         auto peer_session = GetPeerSession(peer_session_id);
