@@ -387,7 +387,7 @@ namespace laps {
             }
         }
 
-        if (unsub_pub && not peer_manager_.HasSubscribers(ftn)) {
+        if (unsub_pub) {
             SPDLOG_LOGGER_INFO(LOGGER, "No subscribers left, unsubscribe publisher track_alias: {0}", track_alias);
             peer_manager_.ClientUnsubscribe(ftn);
             RemovePublisherSubscribe(th);
