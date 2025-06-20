@@ -466,18 +466,6 @@ namespace laps::peering {
         }
     }
 
-    bool PeerManager::HasSubscribers(const quicr::FullTrackName& track_full_name)
-    {
-        auto tfn = track_full_name;
-        quicr::TrackHash th(tfn);
-        SubscribeInfo si;
-
-        si.track_hash = th;
-        si.source_node_id = node_info_.id;
-
-        return info_base_->HasSubscribers(si);
-    }
-
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
                                       const quicr::messages::SubscribeAttributes&,
                                       std::span<const uint8_t> subscribe_data,
