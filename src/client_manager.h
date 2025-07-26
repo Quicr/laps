@@ -79,10 +79,10 @@ namespace laps {
                                                 const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
         void UnsubscribeReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
+        void SubscribeDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
 
         void SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                uint64_t request_id,
-                               [[maybe_unused]] uint64_t proposed_track_alias,
                                quicr::messages::FilterType filter_type,
                                const quicr::FullTrackName& track_full_name,
                                const quicr::messages::SubscribeAttributes&) override;
@@ -107,7 +107,7 @@ namespace laps {
                               quicr::messages::FilterType filter_type,
                               const quicr::messages::SubscribeAttributes&);
 
-        void RemovePublisherSubscribe(const quicr::TrackHash& track_hash);
+        void RemoveOrPausePublisherSubscribe(const quicr::TrackHash& track_hash);
 
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;

@@ -118,13 +118,13 @@ namespace laps {
             }
 
             auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
-            obj.serialize_extensions = quicr::messages::TypeWillSerializeExtensions(s_hdr.type);
+            obj.stream_type = s_hdr.type;
+            const auto subgroup_properties = quicr::messages::StreamHeaderProperties(s_hdr.type);
             if (stream_buffer_ >> obj) {
                 subscribe_track_metrics_.objects_received++;
 
                 if (!s_hdr.subgroup_id.has_value()) {
-                    if (s_hdr.type != quicr::messages::StreamHeaderType::kSubgroupFirstObjectNoExtensions &&
-                        s_hdr.type != quicr::messages::StreamHeaderType::kSubgroupFirstObjectWithExtensions) {
+                    if (subgroup_properties.subgroup_id_type != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
                         SPDLOG_ERROR("Bad stream header type when no subgroup ID: {0}",
                                      static_cast<std::uint8_t>(s_hdr.type));
                         return;
@@ -233,7 +233,7 @@ namespace laps {
                   sub_info.track_full_name,
                   track_mode,
                   sub_info.priority == 0 ? GetPriority() : sub_info.priority,
-                  server_.config_.object_ttl_ /* TODO: Update this when MoQ adds TTL */);
+                  sub_info.object_ttl == 0 ? server_.config_.object_ttl_ : sub_info.object_ttl);
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
                 server_.BindPublisherTrack(connection_handle, sub_info.request_id, pub_track_h, false);

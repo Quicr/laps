@@ -194,7 +194,7 @@ namespace laps::peering {
                                            subscribe_info.track_hash.track_fullname_hash);
 
                         if (client_manager_ != nullptr) {
-                            client_manager_->RemovePublisherSubscribe(subscribe_info.track_hash);
+                            client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash);
                         }
                     }
                 }
@@ -590,7 +590,9 @@ namespace laps::peering {
                             quicr::messages::SubscribeAttributes s_attrs;
                             s_attrs.priority = 10;
 
-                            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub_info.track_hash);
+                            SPDLOG_LOGGER_INFO(LOGGER,
+                                               "Subscribe to client manager track alias: {}",
+                                               sub_info.track_hash.track_fullname_hash);
 
                             cm->ProcessSubscribe(0,
                                                  0,
