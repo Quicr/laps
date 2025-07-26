@@ -30,6 +30,12 @@ namespace laps {
                  std::shared_ptr<quicr::SubscribeTrackHandler>>
           pub_subscribes;
 
+        /**
+         * Active publisher initiated subscribes by request Id
+         */
+        std::map<std::pair<uint64_t, quicr::ConnectionHandle>, std::shared_ptr<quicr::SubscribeTrackHandler>>
+          pub_subscribes_by_req_id;
+
         /// Subscriber connection handles by subscribe prefix namespace for subscribe announces
         std::map<quicr::TrackNamespace, std::set<quicr::ConnectionHandle>> subscribes_announces;
 
@@ -59,10 +65,10 @@ namespace laps {
          *      Used to lookup the track alias for a given request ID
          *
          * @example
-         *      track_alias = subscribe_alias_sub_id[connection handle, request_id]
+         *      track_alias = subscribe_alias_req_id[connection handle, request_id]
          */
         std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, quicr::messages::TrackAlias>
-          subscribe_alias_sub_id;
+          subscribe_alias_req_id;
 
         /**
          * Map of subscribes set by namespace and track name hash

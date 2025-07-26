@@ -11,8 +11,14 @@ namespace laps {
     SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                                                  quicr::messages::ObjectPriority priority,
                                                  quicr::messages::GroupOrder group_order,
-                                                 ClientManager& server)
-      : quicr::SubscribeTrackHandler(full_track_name, priority, group_order, quicr::messages::FilterType::kLatestObject)
+                                                 ClientManager& server,
+                                                 bool is_publisher_initiated)
+      : quicr::SubscribeTrackHandler(full_track_name,
+                                     priority,
+                                     group_order,
+                                     quicr::messages::FilterType::kLargestObject,
+                                     std::nullopt,
+                                     is_publisher_initiated)
       , server_(server)
     {
     }
@@ -41,26 +47,30 @@ namespace laps {
             cache_entry.Insert(object_headers.group_id, { std::move(object) }, server_.cache_duration_ms_);
         }
 
-        // Fanout object to subscribers
-        for (auto it = server_.state_.subscribes.lower_bound({ GetTrackAlias().value(), 0 });
-             it != server_.state_.subscribes.end();
-             ++it) {
-            auto& [key, sub_info] = *it;
-            const auto& sub_track_alias = key.first;
+        try {
+            // Fanout object to subscribers
+            for (auto it = server_.state_.subscribes.lower_bound({ GetTrackAlias().value(), 0 });
+                 it != server_.state_.subscribes.end();
+                 ++it) {
+                auto& [key, sub_info] = *it;
+                const auto& sub_track_alias = key.first;
 
-            if (sub_track_alias != GetTrackAlias().value())
-                break;
+                if (sub_track_alias != GetTrackAlias().value())
+                    break;
 
-            if (sub_info.publish_handlers[self_connection_handle] == nullptr) {
-                continue;
+                if (sub_info.publish_handlers[self_connection_handle] == nullptr) {
+                    continue;
+                }
+
+                if (sub_info.publish_handlers[self_connection_handle]->pipeline) {
+                    continue;
+                }
+
+                sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
+                sub_info.publish_handlers[self_connection_handle]->pipeline = true;
             }
-
-            if (sub_info.publish_handlers[self_connection_handle]->pipeline) {
-                continue;
-            }
-
-            sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
-            sub_info.publish_handlers[self_connection_handle]->pipeline = true;
+        } catch (const std::exception& e) {
+            SPDLOG_ERROR("Caught exception trying to publish. (error={})", e.what());
         }
     }
 

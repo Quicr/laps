@@ -7,7 +7,8 @@
 #include <quicr/server.h>
 
 namespace laps {
-    FetchTrackHandler::FetchTrackHandler(const quicr::FullTrackName& full_track_name,
+    FetchTrackHandler::FetchTrackHandler(const std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler,
+                                         const quicr::FullTrackName& full_track_name,
                                          quicr::messages::ObjectPriority priority,
                                          quicr::messages::GroupOrder group_order,
                                          quicr::messages::GroupId start_group,
@@ -23,12 +24,18 @@ namespace laps {
                                  start_object,
                                  end_object)
       , server_(server)
+      , publish_fetch_handler_(std::move(publish_fetch_handler))
     {
     }
 
-    void FetchTrackHandler::ObjectReceived(const quicr::ObjectHeaders&, quicr::BytesSpan)
+    void FetchTrackHandler::ObjectReceived(const quicr::ObjectHeaders& headers, quicr::BytesSpan data)
     {
         std::lock_guard<std::mutex> _(server_.state_.state_mutex);
+        // Simple - forward what we get to the fetch handler
+        if (publish_fetch_handler_) {
+            publish_fetch_handler_->PublishObject(headers, data);
+        }
+
     }
 
     void FetchTrackHandler::StatusChanged(Status status)

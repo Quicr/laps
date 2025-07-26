@@ -19,7 +19,8 @@ namespace laps {
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               quicr::messages::ObjectPriority priority,
                               quicr::messages::GroupOrder group_order,
-                              ClientManager& server);
+                              ClientManager& server,
+                              bool is_publisher_initiated = false);
 
         void StreamDataRecv(bool is_start,
                             uint64_t stream_id,
