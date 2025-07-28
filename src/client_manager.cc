@@ -249,7 +249,7 @@ namespace laps {
 
         SubscribeTrack(connection_handle, sub_track_handler);
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
-        state_.pub_subscribes_by_req_id[{ request_id, connection_handle}] = sub_track_handler;
+        state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
 
         ResolvePublish(connection_handle,
                        request_id,
@@ -260,7 +260,8 @@ namespace laps {
 
         // Check if there are any subscribers
         bool has_subs{ false };
-        for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end(); ++it) {
+        for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
+             ++it) {
             if (it->first.first == th.track_fullname_hash) {
                 has_subs = true;
                 break;
@@ -387,9 +388,10 @@ namespace laps {
         return client_setup_response;
     }
 
-        void ClientManager::SubscribeDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)
+    void ClientManager::SubscribeDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)
     {
-        SPDLOG_LOGGER_INFO(LOGGER, "Subscribe Done connection handle: {0} request_id: {1}", connection_handle, request_id);
+        SPDLOG_LOGGER_INFO(
+          LOGGER, "Subscribe Done connection handle: {0} request_id: {1}", connection_handle, request_id);
 
         const auto s_it = state_.pub_subscribes_by_req_id.find({ connection_handle, request_id });
         if (s_it == state_.pub_subscribes_by_req_id.end()) {
@@ -561,7 +563,6 @@ namespace laps {
         return false;
     }
 
-
     bool ClientManager::OnFetchOk(quicr::ConnectionHandle connection_handle,
                                   uint64_t request_id,
                                   const quicr::FullTrackName& track_full_name,
@@ -683,7 +684,9 @@ namespace laps {
         }
 
         // Resume publisher initiated subscribes
-        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.pub_subscribes.end(); ++it) {
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
             if (it->second->IsPublisherInitiated()) {
                 it->second->Resume();
             }

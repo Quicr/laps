@@ -262,7 +262,7 @@ namespace laps::peering {
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect length: {}", connect.Serialize().size());
         transport_->Enqueue(
-          t_conn_id_, control_data_ctx_id_,0, std::make_shared<std::vector<uint8_t>>(connect.Serialize()), 0, 1000);
+          t_conn_id_, control_data_ctx_id_, 0, std::make_shared<std::vector<uint8_t>>(connect.Serialize()), 0, 1000);
     }
 
     void PeerSession::SendConnectOk()
@@ -272,8 +272,12 @@ namespace laps::peering {
         connect_resp.node_info = node_info_;
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect ok length: {}", connect_resp.Serialize().size());
 
-        transport_->Enqueue(
-          t_conn_id_, control_data_ctx_id_, 0, std::make_shared<std::vector<uint8_t>>(connect_resp.Serialize()), 0, 1000);
+        transport_->Enqueue(t_conn_id_,
+                            control_data_ctx_id_,
+                            0,
+                            std::make_shared<std::vector<uint8_t>>(connect_resp.Serialize()),
+                            0,
+                            1000);
     }
 
     /*

@@ -35,7 +35,6 @@ namespace laps {
         if (publish_fetch_handler_) {
             publish_fetch_handler_->PublishObject(headers, data);
         }
-
     }
 
     void FetchTrackHandler::StatusChanged(Status status)
