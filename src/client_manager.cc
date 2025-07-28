@@ -8,6 +8,7 @@
 
 #include "client_manager.h"
 #include "config.h"
+#include "fetch_handler.h"
 #include "publish_handler.h"
 #include "spdlog/fmt/bundled/chrono.h"
 #include "subscribe_handler.h"
@@ -547,6 +548,87 @@ namespace laps {
         }
         return quicr::messages::Location{ .group = largest_group_id.value(), .object = largest_object_id.value() };
     }
+
+    bool ClientManager::FetchReceived(quicr::ConnectionHandle connection_handle,
+                                      uint64_t request_id,
+                                      const quicr::FullTrackName& track_full_name,
+                                      const quicr::messages::FetchAttributes& attributes)
+    {
+        // Lambda to setup the fetch handler
+        auto setup_fetch_handler = [&](quicr::ConnectionHandle pub_connection_handle) {
+            auto pub_fetch_h = quicr::PublishFetchHandler::Create(
+              track_full_name, attributes.priority, request_id, attributes.group_order, 50000);
+            BindFetchTrack(connection_handle, pub_fetch_h);
+
+            auto fetch_track_handler =
+              FetchTrackHandler::Create(pub_fetch_h,
+                                        track_full_name,
+                                        attributes.priority,
+                                        attributes.group_order,
+                                        attributes.start_location.group,
+                                        attributes.start_location.object,
+                                        attributes.end_group,
+                                        attributes.end_object.has_value() ? attributes.end_object.value() : 0,
+                                        *this);
+
+            FetchTrack(pub_connection_handle, fetch_track_handler);
+            return true;
+        };
+
+
+        /*
+         * @TODO: Currently only the first match publisher will receive the fetch if cache is not available
+         *      Consider updating this to support multi publisher matches
+         */
+        const auto th = quicr::TrackHash(track_full_name);
+
+        // First try publisher subscribes - Active publisher
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.pub_subscribes.end(); ++it) {
+
+        }
+        // lookup Announcer/Publisher for this Fetch request
+        for (auto& [key, track_aliases] : state_.announce_active) {
+            if (!key.first.HasSamePrefix(track_full_name.name_space)) {
+                continue;
+            }
+
+
+        }
+
+        auto anno_ns_it = qserver_vars::announce_active.find(track_full_name.name_space);
+
+        if (anno_ns_it == qserver_vars::announce_active.end()) {
+            return false;
+        }
+
+        auto setup_fetch_handler = [&](quicr::ConnectionHandle pub_connection_handle) {
+            auto pub_fetch_h = quicr::PublishFetchHandler::Create(
+              track_full_name, attributes.priority, request_id, attributes.group_order, 50000);
+            BindFetchTrack(connection_handle, pub_fetch_h);
+
+            auto fetch_track_handler =
+              FetchTrackHandler::Create(pub_fetch_h,
+                                        track_full_name,
+                                        attributes.priority,
+                                        attributes.group_order,
+                                        attributes.start_location.group,
+                                        attributes.start_location.object,
+                                        attributes.end_group,
+                                        attributes.end_object.has_value() ? attributes.end_object.value() : 0,
+                                        *this);
+
+            FetchTrack(pub_connection_handle, fetch_track_handler);
+            return true;
+        };
+
+        // Handle announcer case
+        for (auto& [pub_connection_handle, _] : anno_ns_it->second) {
+            return setup_fetch_handler(pub_connection_handle);
+        }
+
+        return false;
+    }
+
 
     bool ClientManager::OnFetchOk(quicr::ConnectionHandle connection_handle,
                                   uint64_t request_id,

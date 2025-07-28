@@ -111,7 +111,7 @@ main(int argc, char* argv[])
 
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Starting LAPS Relay (version {0})", laps_config.Version());
 
-    cxxopts::Options options("qclient", "MOQ Example Client");
+    cxxopts::Options options("laps", "Latency Aware Pub/Sub");
     options.set_width(75).set_tab_expansion().allow_unrecognised_options().add_options()("h,help", "Print help")(
       "d,debug", "Enable debugging") // a bool parameter
       ("b,bind_ip", "Bind IP", cxxopts::value<std::string>()->default_value("127.0.0.1"))(

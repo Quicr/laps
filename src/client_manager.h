@@ -95,6 +95,11 @@ namespace laps {
 
         void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
 
+        bool FetchReceived(quicr::ConnectionHandle connection_handle,
+                           uint64_t request_id,
+                           const quicr::FullTrackName& track_full_name,
+                           const quicr::messages::FetchAttributes& attributes) override;
+
         void PublishReceived(quicr::ConnectionHandle connection_handle,
                              uint64_t request_id,
                              const quicr::FullTrackName& track_full_name,
