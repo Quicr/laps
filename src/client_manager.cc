@@ -227,7 +227,7 @@ namespace laps {
     void ClientManager::PublishReceived(quicr::ConnectionHandle connection_handle,
                                         uint64_t request_id,
                                         const quicr::FullTrackName& track_full_name,
-                                        const quicr::messages::SubscribeAttributes& subscribe_attributes)
+                                        const quicr::messages::PublishAttributes& publish_attributes)
     {
         auto th = quicr::TrackHash(track_full_name);
 
@@ -244,8 +244,8 @@ namespace laps {
           track_full_name, 0, quicr::messages::GroupOrder::kAscending, *this, true);
 
         sub_track_handler->SetRequestId(request_id);
-        sub_track_handler->SetReceivedTrackAlias(subscribe_attributes.track_alias.value());
-        sub_track_handler->SetPriority(subscribe_attributes.priority);
+        sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
+        sub_track_handler->SetPriority(publish_attributes.priority);
 
         SubscribeTrack(connection_handle, sub_track_handler);
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
@@ -254,8 +254,8 @@ namespace laps {
         ResolvePublish(connection_handle,
                        request_id,
                        true,
-                       subscribe_attributes.priority,
-                       subscribe_attributes.group_order,
+                       publish_attributes.priority,
+                       publish_attributes.group_order,
                        publish_response);
 
         // Check if there are any subscribers
@@ -275,7 +275,6 @@ namespace laps {
             sub_track_handler->Pause();
         }
     }
-
 
     ClientManager::SubscribeAnnouncesResponse ClientManager::SubscribeAnnouncesReceived(
       quicr::ConnectionHandle connection_handle,
@@ -521,7 +520,7 @@ namespace laps {
                              { quicr::SubscribeResponse::ReasonCode::kOk, std::nullopt, largest });
         } else {
             ResolveSubscribe(
-              connection_handle, th.track_fullname_hash, request_id, { quicr::SubscribeResponse::ReasonCode::kOk });
+              connection_handle, request_id, th.track_fullname_hash, { quicr::SubscribeResponse::ReasonCode::kOk });
         }
 
         ProcessSubscribe(connection_handle, request_id, th, track_full_name, filter_type, attrs);
@@ -554,78 +553,11 @@ namespace laps {
                                       const quicr::FullTrackName& track_full_name,
                                       const quicr::messages::FetchAttributes& attributes)
     {
-        // Lambda to setup the fetch handler
-        auto setup_fetch_handler = [&](quicr::ConnectionHandle pub_connection_handle) {
-            auto pub_fetch_h = quicr::PublishFetchHandler::Create(
-              track_full_name, attributes.priority, request_id, attributes.group_order, 50000);
-            BindFetchTrack(connection_handle, pub_fetch_h);
-
-            auto fetch_track_handler =
-              FetchTrackHandler::Create(pub_fetch_h,
-                                        track_full_name,
-                                        attributes.priority,
-                                        attributes.group_order,
-                                        attributes.start_location.group,
-                                        attributes.start_location.object,
-                                        attributes.end_group,
-                                        attributes.end_object.has_value() ? attributes.end_object.value() : 0,
-                                        *this);
-
-            FetchTrack(pub_connection_handle, fetch_track_handler);
-            return true;
-        };
-
-
         /*
-         * @TODO: Currently only the first match publisher will receive the fetch if cache is not available
-         *      Consider updating this to support multi publisher matches
+         * @TODO: Need to refactor fetch flow handling before we forward fetch to publisher
+         *    Returning false results in only pulling fetch from cache and if not available,
+         *    error is returned.
          */
-        const auto th = quicr::TrackHash(track_full_name);
-
-        // First try publisher subscribes - Active publisher
-        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.pub_subscribes.end(); ++it) {
-
-        }
-        // lookup Announcer/Publisher for this Fetch request
-        for (auto& [key, track_aliases] : state_.announce_active) {
-            if (!key.first.HasSamePrefix(track_full_name.name_space)) {
-                continue;
-            }
-
-
-        }
-
-        auto anno_ns_it = qserver_vars::announce_active.find(track_full_name.name_space);
-
-        if (anno_ns_it == qserver_vars::announce_active.end()) {
-            return false;
-        }
-
-        auto setup_fetch_handler = [&](quicr::ConnectionHandle pub_connection_handle) {
-            auto pub_fetch_h = quicr::PublishFetchHandler::Create(
-              track_full_name, attributes.priority, request_id, attributes.group_order, 50000);
-            BindFetchTrack(connection_handle, pub_fetch_h);
-
-            auto fetch_track_handler =
-              FetchTrackHandler::Create(pub_fetch_h,
-                                        track_full_name,
-                                        attributes.priority,
-                                        attributes.group_order,
-                                        attributes.start_location.group,
-                                        attributes.start_location.object,
-                                        attributes.end_group,
-                                        attributes.end_object.has_value() ? attributes.end_object.value() : 0,
-                                        *this);
-
-            FetchTrack(pub_connection_handle, fetch_track_handler);
-            return true;
-        };
-
-        // Handle announcer case
-        for (auto& [pub_connection_handle, _] : anno_ns_it->second) {
-            return setup_fetch_handler(pub_connection_handle);
-        }
-
         return false;
     }
 
@@ -736,9 +668,7 @@ namespace laps {
                   attrs.group_order,
                   true,
                   quicr::messages::FilterType::kLargestObject, // Filters are only for edge to apply
-                  nullptr,
                   std::nullopt,
-                  nullptr,
                   std::nullopt,
                   {});
 

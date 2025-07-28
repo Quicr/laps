@@ -112,7 +112,7 @@ namespace laps::peering {
                   LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
                 if (client_manager_ != nullptr) {
-                    quicr::messages::SubscribeAttributes s_attrs;
+                    quicr::messages::PublishAttributes s_attrs;
                     s_attrs.priority = 10;
 
                     SPDLOG_LOGGER_INFO(LOGGER,
@@ -587,7 +587,7 @@ namespace laps::peering {
                             continue;
 
                         if (auto cm = client_manager_) {
-                            quicr::messages::SubscribeAttributes s_attrs;
+                            quicr::messages::PublishAttributes s_attrs;
                             s_attrs.priority = 10;
 
                             SPDLOG_LOGGER_INFO(LOGGER,

@@ -161,7 +161,6 @@ namespace laps {
         stream_buffer_.Clear();
 
         stream_buffer_.Push(*data);
-        stream_buffer_.Pop(); // Remove type header
 
         quicr::messages::ObjectDatagram msg;
         if (stream_buffer_ >> msg) {
