@@ -47,8 +47,8 @@ cclean:
 
 ## docs: Make docs
 docs:
-	 @echo "Creating docs/peering.pdf"
-	 @pandoc docs/peering.md -f markdown -V geometry:landscape --toc=true -o docs/peering.pdf --filter=mermaid-filter
+	 @echo "Creating docs/relay-protocol.pdf"
+	 @pandoc docs/relay-protocol.md -f markdown -V geometry:landscape --toc=true -o docs/relay-protocol.pdf --filter=mermaid-filter
 
 ## format: Format c/c++ code
 format:
