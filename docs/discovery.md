@@ -5,10 +5,10 @@ advanced selection to choose the best relay.
 
 ## Relay Discovery
 
-Relays discover themselves via the [Relay peering protocol](peering.md) using node advertisements.
+Relays discover themselves via the [Relay peering protocol](relay-protocol.md) using node advertisements.
 Relays update their advertisement to indicate various metrics, such as load, network bandwidth, loss, ...
 The relays can use out-of-band query API to a control server to query for relays to use. Discovery,
-best path selection, and node advertisements are described in the [Relay peering protocol](peering.md)
+best path selection, and node advertisements are described in the [Relay peering protocol](relay-protocol.md)
 document. 
 
 ## Client Discovery

@@ -8,4 +8,4 @@ protocol.
 
 ## Contents
 
-### [Peering](peering.md) between relays
+### [Peering](relay-protocol.md) between relays

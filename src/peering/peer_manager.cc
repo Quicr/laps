@@ -112,16 +112,18 @@ namespace laps::peering {
                   LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
 
                 if (client_manager_ != nullptr) {
-                    quicr::messages::SubscribeAttributes s_attrs;
+                    quicr::messages::PublishAttributes s_attrs;
                     s_attrs.priority = 10;
 
-                    SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
+                    SPDLOG_LOGGER_INFO(LOGGER,
+                                       "Subscribe to client manager track alias: {}",
+                                       subscribe_info.track_hash.track_fullname_hash);
 
                     client_manager_->ProcessSubscribe(0,
                                                       0,
                                                       subscribe_info.track_hash,
-                                                      { sub.track_namespace, sub.track_name, std::nullopt },
-                                                      quicr::messages::FilterType::kLatestObject,
+                                                      { sub.track_namespace, sub.track_name },
+                                                      quicr::messages::FilterType::kLargestObject,
                                                       s_attrs);
                 }
 
@@ -192,7 +194,7 @@ namespace laps::peering {
                                            subscribe_info.track_hash.track_fullname_hash);
 
                         if (client_manager_ != nullptr) {
-                            client_manager_->RemovePublisherSubscribe(subscribe_info.track_hash);
+                            client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash);
                         }
                     }
                 }
@@ -472,13 +474,9 @@ namespace laps::peering {
                                       bool withdraw)
     {
         auto tfn = track_full_name;
-        quicr::TrackHash th(tfn);
-
-        tfn.track_alias = th.track_fullname_hash;
-
         SubscribeInfo si;
 
-        si.track_hash = th;
+        si.track_hash = quicr::TrackHash(tfn);
         si.subscribe_data.assign(subscribe_data.begin(), subscribe_data.end());
         si.source_node_id = node_info_.id;
 
@@ -558,7 +556,7 @@ namespace laps::peering {
                 if (sub_map.empty())
                     continue;
 
-                for (const auto si_it : sub_map) {
+                for (const auto& si_it : sub_map) {
                     if (si_it.first == node_info_.id)
                         continue;
                     const auto& sub_info = si_it.second;
@@ -589,16 +587,18 @@ namespace laps::peering {
                             continue;
 
                         if (auto cm = client_manager_) {
-                            quicr::messages::SubscribeAttributes s_attrs;
+                            quicr::messages::PublishAttributes s_attrs;
                             s_attrs.priority = 10;
 
-                            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe to client manager track alias: {}", sub.track_alias);
+                            SPDLOG_LOGGER_INFO(LOGGER,
+                                               "Subscribe to client manager track alias: {}",
+                                               sub_info.track_hash.track_fullname_hash);
 
                             cm->ProcessSubscribe(0,
                                                  0,
                                                  sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name, std::nullopt },
-                                                 quicr::messages::FilterType::kLatestObject,
+                                                 { sub.track_namespace, sub.track_name },
+                                                 quicr::messages::FilterType::kLargestObject,
                                                  s_attrs);
                         }
 
