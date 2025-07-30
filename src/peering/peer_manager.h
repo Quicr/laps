@@ -79,6 +79,8 @@ namespace laps::peering {
             client_manager_ = std::move(client_manager);
         }
 
+        bool HasSubscribers(uint64_t track_fullname_hash);
+
         void InfoBaseSyncPeer(PeerSession& peer_session);
 
         void SnsReceived(PeerSession& peer_session, const SubscribeNodeSet& sns, bool withdraw = false);

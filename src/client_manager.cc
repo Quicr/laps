@@ -460,25 +460,29 @@ namespace laps {
 
         state_.subscribes.erase(sub_it);
 
-        // Are there any other subscribers?
-        bool unsub_pub{ true };
-        for (auto it = state_.subscribes.lower_bound({ track_alias, 0 }); it != state_.subscribes.end(); ++it) {
-            if (it->first.first == track_alias) {
-                unsub_pub = false;
-                break;
-            }
-        }
-
-        if (unsub_pub) {
-            SPDLOG_LOGGER_INFO(LOGGER, "No subscribers left, unsubscribe publisher track_alias: {0}", track_alias);
-
-            peer_manager_.ClientUnsubscribe(ftn);
-            RemoveOrPausePublisherSubscribe(th);
-        }
+        peer_manager_.ClientUnsubscribe(ftn);
+        RemoveOrPausePublisherSubscribe(th);
     }
 
     void ClientManager::RemoveOrPausePublisherSubscribe(const quicr::TrackHash& track_hash)
     {
+        // Do nothing if peering still has a subscriber
+        if (peer_manager_.HasSubscribers(track_hash.track_fullname_hash)) {
+            return;
+        }
+
+        // Do nothing if there is still one direct client subscribe
+        for (auto it = state_.subscribes.lower_bound({ track_hash.track_fullname_hash, 0 });
+             it != state_.subscribes.end();
+             ++it) {
+            if (it->first.first == track_hash.track_fullname_hash) {
+                return;
+            }
+        }
+
+        SPDLOG_LOGGER_INFO(
+          LOGGER, "No subscribers left, unsubscribe publisher track_alias: {0}", track_hash.track_fullname_hash);
+
         std::vector<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>> remove_sub_pub;
         for (auto it = state_.pub_subscribes.lower_bound({ track_hash.track_fullname_hash, 0 });
              it != state_.pub_subscribes.end();
@@ -698,6 +702,24 @@ namespace laps {
             }
             if (it->second->IsPublisherInitiated()) {
                 it->second->Resume();
+            }
+
+            if (not last_subscription_refresh_time.has_value()) {
+                last_subscription_refresh_time = std::chrono::steady_clock::now();
+                continue;
+            }
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed =
+              std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())
+                .count();
+            if (elapsed > subscription_refresh_interval_ms) {
+                SPDLOG_LOGGER_INFO(
+                  LOGGER,
+                  "Sending subscribe-update to publish connection handler: {0} subscribe track_alias: {1}",
+                  it->first.second,
+                  th.track_fullname_hash);
+
+                UpdateTrackSubscription(it->first.second, it->second);
             }
         }
 

@@ -49,6 +49,22 @@ namespace laps::peering {
                             node_info.contact);
     }
 
+    bool PeerManager::HasSubscribers(uint64_t track_fullname_hash)
+    {
+        for (auto it = info_base_->client_fib_.lower_bound({ track_fullname_hash, 0 });
+             it != info_base_->client_fib_.end();
+             ++it) {
+            auto& [key, fib] = *it;
+
+            if (key.first != track_fullname_hash)
+                break;
+
+            return true;
+        }
+
+        return false;
+    }
+
     void PeerManager::SubscribeInfoReceived(PeerSessionId peer_session_id, SubscribeInfo& subscribe_info, bool withdraw)
     try {
         SPDLOG_LOGGER_INFO(
@@ -190,21 +206,7 @@ namespace laps::peering {
 
                     info_base_->client_fib_.erase({ subscribe_info.track_hash.track_fullname_hash, peer_session_id });
 
-                    bool has_subscribe_peers{ false };
-                    for (auto it =
-                           info_base_->client_fib_.lower_bound({ subscribe_info.track_hash.track_fullname_hash, 0 });
-                         it != info_base_->client_fib_.end();
-                         ++it) {
-                        auto& [key, _] = *it;
-
-                        if (key.first != subscribe_info.track_hash.track_fullname_hash)
-                            break;
-
-                        has_subscribe_peers = true;
-                        break;
-                    }
-
-                    if (not has_subscribe_peers) {
+                    if (not HasSubscribers(subscribe_info.track_hash.track_fullname_hash)) {
                         SPDLOG_LOGGER_INFO(LOGGER,
                                            "No peers left for subscribe fullname: {}, removing client subscribe state",
                                            subscribe_info.track_hash.track_fullname_hash);

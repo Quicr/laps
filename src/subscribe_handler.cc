@@ -204,15 +204,17 @@ namespace laps {
 
             if (is_new_stream) {
                 d_type = peering::DataType::kNewStream;
+
+                if (GetDeliveryTimeout().count() == 0) {
+                    // Use default if delivery timeout is not set
+                    SetDeliveryTimeout(std::chrono::milliseconds(server_.config_.object_ttl_));
+                }
             }
         }
 
         if (not is_from_peer_) {
-            server_.peer_manager_.ClientDataRecv(*track_alias,
-                                                 GetPriority(),
-                                                 server_.config_.object_ttl_, /* TODO: Update this when MoQ adds TTL */
-                                                 d_type,
-                                                 data);
+            server_.peer_manager_.ClientDataRecv(
+              *track_alias, GetPriority(), GetDeliveryTimeout().count(), d_type, data);
         }
 
         // Fanout object to subscribers
