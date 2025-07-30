@@ -51,13 +51,14 @@ namespace laps::peering {
 
     void PeerManager::SubscribeInfoReceived(PeerSessionId peer_session_id, SubscribeInfo& subscribe_info, bool withdraw)
     try {
-        SPDLOG_LOGGER_INFO(LOGGER,
-                           "Subscribe info received peer_session_id: {} fullname: {} namespace: {} source_node: {} withdraw: {}",
-                           peer_session_id,
-                           subscribe_info.track_hash.track_fullname_hash,
-                           subscribe_info.track_hash.track_namespace_hash,
-                           NodeId().Value(subscribe_info.source_node_id),
-                           withdraw);
+        SPDLOG_LOGGER_INFO(
+          LOGGER,
+          "Subscribe info received peer_session_id: {} fullname: {} namespace: {} source_node: {} withdraw: {}",
+          peer_session_id,
+          subscribe_info.track_hash.track_fullname_hash,
+          subscribe_info.track_hash.track_namespace_hash,
+          NodeId().Value(subscribe_info.source_node_id),
+          withdraw);
 
         auto peer_session = GetPeerSession(peer_session_id);
 
@@ -99,17 +100,32 @@ namespace laps::peering {
 
             std::lock_guard _(state_.state_mutex);
             bool announce_matches{ false };
-            for (auto& [key, track_aliases] : state_.announce_active) {
-                if (!key.first.HasSamePrefix(sub.track_namespace)) {
-                    continue;
+            for (auto it = state_.pub_subscribes.lower_bound({ subscribe_info.track_hash.track_fullname_hash, 0 });
+                 it != state_.pub_subscribes.end();
+                 ++it) {
+
+                if (it->first.first != subscribe_info.track_hash.track_fullname_hash) {
+                    break;
                 }
+
                 announce_matches = true;
-                break;
+            }
+
+            // If no publish, then check announces
+            if (not announce_matches) {
+                for (auto& [key, track_aliases] : state_.announce_active) {
+                    if (!key.first.HasSamePrefix(sub.track_namespace)) {
+                        continue;
+                    }
+                    announce_matches = true;
+                    break;
+                }
             }
 
             if (announce_matches) {
-                SPDLOG_LOGGER_INFO(
-                  LOGGER, "Announce matched subscribe fullname: {}", subscribe_info.track_hash.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "Matched publish or announce for subscribe fullname: {}",
+                                   subscribe_info.track_hash.track_fullname_hash);
 
                 if (client_manager_ != nullptr) {
                     quicr::messages::PublishAttributes s_attrs;

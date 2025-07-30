@@ -687,6 +687,9 @@ namespace laps {
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
              it != state_.pub_subscribes.end();
              ++it) {
+            if (it->first.first != th.track_fullname_hash) {
+                break;
+            }
             if (it->second->IsPublisherInitiated()) {
                 it->second->Resume();
             }
