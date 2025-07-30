@@ -128,7 +128,7 @@ namespace laps::peering {
                                    subscribe_info.track_hash.track_fullname_hash);
 
                 if (client_manager_ != nullptr) {
-                    quicr::messages::PublishAttributes s_attrs;
+                    quicr::messages::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
                     SPDLOG_LOGGER_INFO(LOGGER,
@@ -502,6 +502,8 @@ namespace laps::peering {
                                                   quicr::messages::GroupOrder::kAscending,
                                                   *client_manager_);
 
+        si.client_subscribe_handler->SetTrackAlias(si.track_hash.track_fullname_hash);
+        si.client_subscribe_handler->SetRequestId(0);
         si.client_subscribe_handler->SetFromPeer();
 
         if (not withdraw) {
@@ -603,7 +605,7 @@ namespace laps::peering {
                             continue;
 
                         if (auto cm = client_manager_) {
-                            quicr::messages::PublishAttributes s_attrs;
+                            quicr::messages::SubscribeAttributes s_attrs;
                             s_attrs.priority = 10;
 
                             SPDLOG_LOGGER_INFO(LOGGER,

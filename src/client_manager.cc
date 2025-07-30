@@ -275,6 +275,12 @@ namespace laps {
 
             sub_track_handler->Pause();
         }
+
+        /*
+         * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and data
+         * forwarding path creation. This needs to be done last to all other client work.
+         */
+        peer_manager_.ClientAnnounce(track_full_name, {}, false);
     }
 
     ClientManager::SubscribeAnnouncesResponse ClientManager::SubscribeAnnouncesReceived(
