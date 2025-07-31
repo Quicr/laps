@@ -719,7 +719,7 @@ namespace laps {
                   it->first.second,
                   th.track_fullname_hash);
 
-                UpdateTrackSubscription(it->first.second, it->second);
+                UpdateTrackSubscription(it->first.second, it->second, true);
             }
         }
 
@@ -767,7 +767,7 @@ namespace laps {
                         SPDLOG_LOGGER_INFO(LOGGER, "Subscription Handler is null");
                         return;
                     }
-                    UpdateTrackSubscription(key.second, sub_track_h);
+                    UpdateTrackSubscription(key.second, sub_track_h, true);
                 }
             }
 
