@@ -12,8 +12,10 @@ namespace laps {
     PublishTrackHandler::PublishTrackHandler(const quicr::FullTrackName& full_track_name,
                                              quicr::TrackMode track_mode,
                                              uint8_t default_priority,
-                                             uint32_t default_ttl)
+                                             uint32_t default_ttl,
+                                             ClientManager& server)
       : quicr::PublishTrackHandler(full_track_name, track_mode, default_priority, default_ttl)
+      , server_(server)
     {
     }
 
@@ -41,6 +43,25 @@ namespace laps {
                     break;
                 case Status::kSendingUnannounce:
                     reason = "sending unannounce";
+                    break;
+                case Status::kPaused:
+                    reason = "paused";
+                    break;
+                case Status::kNewGroupRequested:
+                    reason = "new group requested";
+
+                    /// @todo: Dampen updating each publisher
+                    /// @todo: Update peering to indicate new group requested
+
+                    // Notify all publishers that there is a new group request
+                    for (auto it = server_.state_.pub_subscribes.lower_bound({ GetTrackAlias().value(), 0 });
+                         it != server_.state_.pub_subscribes.end();
+                         ++it) {
+                        if (it->first.first != GetTrackAlias().value()) {
+                            break;
+                        }
+                        server_.UpdateTrackSubscription(it->first.second, it->second, true);
+                    }
                     break;
                 default:
                     break;
