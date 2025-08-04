@@ -238,7 +238,8 @@ namespace laps {
                   server_);
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(connection_handle, sub_info.request_id, pub_track_h, false);
+                server_.BindPublisherTrack(
+                  connection_handle, self_connection_handle, sub_info.request_id, pub_track_h, false);
                 sub_info.publish_handlers[self_connection_handle] = pub_track_h;
             }
 

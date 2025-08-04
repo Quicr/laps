@@ -445,7 +445,7 @@ namespace laps {
 
         for (auto& [pub_conn_handle, handler] : sub_it->second.publish_handlers) {
             if (handler != nullptr) {
-                UnbindPublisherTrack(pub_conn_handle, handler);
+                UnbindPublisherTrack(connection_handle, pub_conn_handle, handler);
                 handler.reset();
             }
         }
@@ -560,10 +560,10 @@ namespace laps {
         return quicr::messages::Location{ .group = largest_group_id.value(), .object = largest_object_id.value() };
     }
 
-    bool ClientManager::FetchReceived(quicr::ConnectionHandle connection_handle,
-                                      uint64_t request_id,
-                                      const quicr::FullTrackName& track_full_name,
-                                      const quicr::messages::FetchAttributes& attributes)
+    bool ClientManager::FetchReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
+                                      [[maybe_unused]] uint64_t request_id,
+                                      [[maybe_unused]] const quicr::FullTrackName& track_full_name,
+                                      [[maybe_unused]] const quicr::messages::FetchAttributes& attributes)
     {
         /*
          * @TODO: Need to refactor fetch flow handling before we forward fetch to publisher
@@ -659,7 +659,7 @@ namespace laps {
               State::SubscribeInfo{ connection_handle, request_id, th.track_fullname_hash });
             state_.subscribe_alias_req_id[{ connection_handle, request_id }] = th.track_fullname_hash;
 
-            state_.subscribes.try_emplace(
+            auto [sub_it, _] = state_.subscribes.try_emplace(
               { th.track_fullname_hash, connection_handle },
               State::SubscribePublishHandlerInfo{ track_full_name,
                                                   th.track_fullname_hash,
@@ -670,27 +670,25 @@ namespace laps {
                                                   {} });
 
             // Always send updates to peers to support subscribe updates and refresh group support
-            if (not is_from_peer) {
-                quicr::messages::Subscribe sub(
-                  request_id,
-                  track_full_name.name_space,
-                  track_full_name.name,
-                  attrs.priority,
-                  attrs.group_order,
-                  true,
-                  quicr::messages::FilterType::kLargestObject, // Filters are only for edge to apply
-                  std::nullopt,
-                  std::nullopt,
-                  {});
+            quicr::messages::Subscribe sub(
+              request_id,
+              track_full_name.name_space,
+              track_full_name.name,
+              attrs.priority,
+              attrs.group_order,
+              true,
+              quicr::messages::FilterType::kLargestObject, // Filters are only for edge to apply
+              std::nullopt,
+              std::nullopt,
+              {});
 
-                quicr::Bytes sub_data;
-                sub_data << sub;
+            quicr::Bytes sub_data;
+            sub_data << sub;
 
-                auto mt_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin());
-                sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + sizeof(uint16_t));
+            auto mt_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin());
+            sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + sizeof(uint16_t));
 
-                peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data, false);
-            }
+            peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data, false);
         }
 
         // Resume publisher initiated subscribes
