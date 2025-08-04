@@ -47,6 +47,9 @@ namespace laps {
                 case Status::kPaused:
                     reason = "paused";
                     break;
+                case Status::kSubscriptionUpdated:
+                    reason = "subscription updated";
+                    break;
                 case Status::kNewGroupRequested:
                     reason = "new group requested";
 
@@ -66,7 +69,7 @@ namespace laps {
                 default:
                     break;
             }
-            SPDLOG_INFO("Publish track alias: {0} not ready, reason: {1}", GetTrackAlias().value(), reason);
+            SPDLOG_INFO("Publish track alias: {0} state change, reason: {1}", GetTrackAlias().value(), reason);
         }
     }
 
