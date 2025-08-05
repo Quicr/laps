@@ -64,6 +64,17 @@ namespace laps::peering {
         bool HasSubscribers(const SubscribeInfo& subscribe_info);
 
         /**
+         * @brief Gets subscribe information
+         * @details Get the subscribe information for track fullname hash and source node id
+         *
+         * @param track_fullname_hash       Track fullname has for the client manager subscription
+         * @param src_node_id               Source node ID for the subscribe info
+         *
+         * @return SubscribeInfo detailing for the matching subscribe, nullopt if not found
+         */
+        std::optional<SubscribeInfo> GetSubscribe(uint64_t track_fullname_hash, NodeIdValueType src_node_id);
+
+        /**
          * @brief Add or update announce in the info base
          * @details This will add or update a announce in the info base.
          *

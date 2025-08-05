@@ -53,18 +53,39 @@ namespace laps {
                 case Status::kNewGroupRequested:
                     reason = "new group requested";
 
-                    /// @todo: Dampen updating each publisher
-                    /// @todo: Update peering to indicate new group requested
+                    // Update peering
+                    // TODO: update peering with dampening
+                    server_.peer_manager_.ClientSubscribeUpdate(GetTrackAlias().value(), true, true);
 
                     // Notify all publishers that there is a new group request
                     for (auto it = server_.state_.pub_subscribes.lower_bound({ GetTrackAlias().value(), 0 });
                          it != server_.state_.pub_subscribes.end();
                          ++it) {
-                        if (it->first.first != GetTrackAlias().value()) {
+                        auto& track_alias = it->first.first;
+                        auto& pub_conn_id = it->first.second;
+
+                        if (track_alias != GetTrackAlias().value()) {
                             break;
                         }
-                        server_.UpdateTrackSubscription(it->first.second, it->second, true);
+
+                        // dampen excessive floods
+                        if (not server_.last_subscription_refresh_time.has_value()) {
+                            server_.last_subscription_refresh_time = std::chrono::steady_clock::now();
+                            break;
+                        }
+
+                        auto now = std::chrono::steady_clock::now();
+                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         now - server_.last_subscription_refresh_time.value())
+                                         .count();
+                        if (elapsed > server_.subscription_refresh_interval_ms) {
+                            SPDLOG_INFO("Updating subscribe connection handler: {0} subscribe track_alias: {1}",
+                                        pub_conn_id,
+                                        track_alias);
+                            server_.UpdateTrackSubscription(pub_conn_id, it->second, true);
+                        }
                     }
+
                     break;
                 default:
                     break;

@@ -136,6 +136,18 @@ namespace laps::peering {
         return false;
     }
 
+    std::optional<SubscribeInfo> InfoBase::GetSubscribe(uint64_t track_fullname_hash, NodeIdValueType src_node_id)
+    {
+        std::lock_guard _(mutex_);
+
+        auto it = subscribes_[track_fullname_hash].find(src_node_id);
+        if (it != subscribes_[track_fullname_hash].end()) {
+            return it->second;
+        }
+
+        return std::nullopt;
+    }
+
     bool InfoBase::AddAnnounce(const AnnounceInfo& announce_info)
     {
         std::lock_guard _(mutex_);

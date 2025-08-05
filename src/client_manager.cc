@@ -460,7 +460,6 @@ namespace laps {
 
         state_.subscribes.erase(sub_it);
 
-        peer_manager_.ClientUnsubscribe(ftn);
         RemoveOrPausePublisherSubscribe(th);
     }
 
@@ -479,6 +478,8 @@ namespace laps {
                 return;
             }
         }
+
+        peer_manager_.ClientUnsubscribe(track_hash.track_fullname_hash);
 
         SPDLOG_LOGGER_INFO(
           LOGGER, "No subscribers left, unsubscribe publisher track_alias: {0}", track_hash.track_fullname_hash);
@@ -636,6 +637,36 @@ namespace laps {
                                          quicr::messages::FilterType filter_type,
                                          const quicr::messages::SubscribeAttributes& attrs)
     {
+
+        auto update_peer_func = [&](quicr::ConnectionHandle conn_handle) -> bool {
+            if (not last_subscription_refresh_time.has_value()) {
+                last_subscription_refresh_time = std::chrono::steady_clock::now();
+                return false;
+            }
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed =
+              std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())
+                .count();
+            if (elapsed > subscription_refresh_interval_ms) {
+                SPDLOG_LOGGER_INFO(
+                  LOGGER,
+                  "Sending subscribe-update to publisher connection handler: {0} subscribe track_alias: {1}",
+                  conn_handle,
+                  th.track_fullname_hash);
+
+                auto sub_track_h = state_.pub_subscribes[{ th.track_fullname_hash, conn_handle }];
+                if (sub_track_h == nullptr) {
+                    SPDLOG_LOGGER_INFO(LOGGER, "Subscription Handler is null");
+                    return false;
+                }
+
+                UpdateTrackSubscription(conn_handle, sub_track_h, false);
+                return true;
+            }
+
+            return false;
+        };
+
         bool is_from_peer{ false };
         if (connection_handle == 0 && request_id == 0) {
             SPDLOG_LOGGER_DEBUG(
@@ -688,7 +719,7 @@ namespace laps {
             auto mt_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin());
             sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + sizeof(uint16_t));
 
-            peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data, false);
+            peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data);
         }
 
         // Resume publisher initiated subscribes
@@ -700,6 +731,10 @@ namespace laps {
             }
             if (it->second->IsPublisherInitiated()) {
                 it->second->Resume();
+            }
+
+            if (is_from_peer) {
+                update_peer_func(it->first.second);
             }
         }
 
@@ -727,32 +762,11 @@ namespace laps {
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
 
             } else if (filter_type != quicr::messages::FilterType::kLargestObject) {
-                if (not last_subscription_refresh_time.has_value()) {
-                    last_subscription_refresh_time = std::chrono::steady_clock::now();
-                    continue;
-                }
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed =
-                  std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())
-                    .count();
-                if (elapsed > subscription_refresh_interval_ms) {
-                    SPDLOG_LOGGER_INFO(
-                      LOGGER,
-                      "Sending subscribe-update to announcer connection handler: {0} subscribe track_alias: {1}",
-                      key.second,
-                      th.track_fullname_hash);
-
-                    auto sub_track_h = state_.pub_subscribes[{ th.track_fullname_hash, key.second }];
-                    if (sub_track_h == nullptr) {
-                        SPDLOG_LOGGER_INFO(LOGGER, "Subscription Handler is null");
-                        return;
-                    }
-                    UpdateTrackSubscription(key.second, sub_track_h, false);
-                }
+                update_peer_func(key.second);
             }
-
-            last_subscription_refresh_time = std::chrono::steady_clock::now();
         }
+
+        last_subscription_refresh_time = std::chrono::steady_clock::now();
     }
 
     void ClientManager::MetricsSampled(const quicr::ConnectionHandle connection_handle,
