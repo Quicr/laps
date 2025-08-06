@@ -234,10 +234,12 @@ namespace laps {
                   sub_info.track_full_name,
                   track_mode,
                   sub_info.priority == 0 ? GetPriority() : sub_info.priority,
-                  sub_info.object_ttl == 0 ? server_.config_.object_ttl_ : sub_info.object_ttl);
+                  sub_info.object_ttl == 0 ? server_.config_.object_ttl_ : sub_info.object_ttl,
+                  server_);
 
                 // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(connection_handle, sub_info.request_id, pub_track_h, false);
+                server_.BindPublisherTrack(
+                  connection_handle, self_connection_handle, sub_info.request_id, pub_track_h, false);
                 sub_info.publish_handlers[self_connection_handle] = pub_track_h;
             }
 
@@ -281,6 +283,12 @@ namespace laps {
                     break;
                 case Status::kSendingUnsubscribe:
                     reason = "unsubscribing";
+                    break;
+                case Status::kPaused:
+                    reason = "paused";
+                    break;
+                case Status::kNewGroupRequested:
+                    reason = "new group requested";
                     break;
                 default:
                     break;

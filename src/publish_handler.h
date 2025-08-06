@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client_manager.h"
 #include "state.h"
 #include <quicr/common.h>
 #include <quicr/subscribe_track_handler.h>
@@ -15,12 +16,16 @@ namespace laps {
         PublishTrackHandler(const quicr::FullTrackName& full_track_name,
                             quicr::TrackMode track_mode,
                             uint8_t default_priority,
-                            uint32_t default_ttl);
+                            uint32_t default_ttl,
+                            ClientManager& server);
 
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
 
         bool pipeline{ false }; // True indicates using pipeline forwarding, false is object forwarding
+
+      private:
+        ClientManager& server_;
     };
 
 } // namespace laps

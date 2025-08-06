@@ -100,6 +100,7 @@ namespace laps::peering {
          */
         if (not withdraw) {
             uint64_t update_ref = rand();
+
             quicr::messages::Subscribe sub(
               [](quicr::messages::Subscribe& msg) {
                   if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
@@ -210,16 +211,17 @@ namespace laps::peering {
                         SPDLOG_LOGGER_INFO(LOGGER,
                                            "No peers left for subscribe fullname: {}, removing client subscribe state",
                                            subscribe_info.track_hash.track_fullname_hash);
-
-                        if (client_manager_ != nullptr) {
-                            client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash);
-                        }
                     }
                 }
             }
+
+            if (client_manager_ != nullptr) {
+                client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash);
+            }
         }
 
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+        SPDLOG_LOGGER_ERROR(LOGGER, "Caught exception during subscribe info received: {}", e.what());
         // ignore
     }
 
@@ -486,10 +488,65 @@ namespace laps::peering {
         }
     }
 
+    void PeerManager::ClientSubscribeUpdate(uint64_t track_fullname_hash,
+                                            [[maybe_unused]] bool new_group_request,
+                                            [[maybe_unused]] bool forward)
+    {
+        if (auto si = info_base_->GetSubscribe(track_fullname_hash, node_info_.id)) {
+            for (const auto& sess : client_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER, "Sending subscribe update fullname: {} peer_session_id: {}", track_fullname_hash, sess.first);
+                sess.second->SendSubscribeInfo(*si, false);
+            }
+
+            for (const auto& sess : server_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER, "Sending subscribe update fullname: {} peer_session_id: {}", track_fullname_hash, sess.first);
+                sess.second->SendSubscribeInfo(*si, false);
+            }
+        }
+    }
+
+    void PeerManager::ClientUnsubscribe(uint64_t track_fullname_hash)
+    {
+        if (auto si = info_base_->GetSubscribe(track_fullname_hash, node_info_.id)) {
+            quicr::messages::Subscribe sub(
+              [](quicr::messages::Subscribe& msg) {
+                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
+                      msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
+                      msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
+                  }
+              },
+              [](quicr::messages::Subscribe& msg) {
+                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
+                      msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
+                  }
+              });
+            si->subscribe_data >> sub;
+
+            info_base_->RemoveSubscribe(*si);
+
+            for (const auto& sess : client_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Sending subscribe withdraw fullname: {} peer_session_id: {}",
+                                    si->track_hash.track_fullname_hash,
+                                    sess.first);
+                sess.second->SendSubscribeInfo(*si, true);
+            }
+
+            for (const auto& sess : server_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Sending subscribe withdraw fullname: {} peer_session_id: {}",
+                                    si->track_hash.track_fullname_hash,
+                                    sess.first);
+                sess.second->SendSubscribeInfo(*si, true);
+            }
+        }
+    }
+
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
                                       const quicr::messages::SubscribeAttributes&,
-                                      std::span<const uint8_t> subscribe_data,
-                                      bool withdraw)
+                                      std::span<const uint8_t> subscribe_data)
     {
         auto tfn = track_full_name;
         SubscribeInfo si;
@@ -508,18 +565,14 @@ namespace laps::peering {
         si.client_subscribe_handler->SetRequestId(0);
         si.client_subscribe_handler->SetFromPeer();
 
-        if (not withdraw) {
-            info_base_->AddSubscribe(si);
-        } else {
-            info_base_->RemoveSubscribe(si);
-        }
+        info_base_->AddSubscribe(si);
 
         for (const auto& sess : client_peer_sessions_) {
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Sending subscribe fullname: {} peer_session_id: {}",
                                 si.track_hash.track_fullname_hash,
                                 sess.first);
-            sess.second->SendSubscribeInfo(si, withdraw);
+            sess.second->SendSubscribeInfo(si, false);
         }
 
         for (const auto& sess : server_peer_sessions_) {
@@ -527,7 +580,7 @@ namespace laps::peering {
                                 "Sending subscribe fullname: {} peer_session_id: {}",
                                 si.track_hash.track_fullname_hash,
                                 sess.first);
-            sess.second->SendSubscribeInfo(si, withdraw);
+            sess.second->SendSubscribeInfo(si, false);
         }
     }
 
