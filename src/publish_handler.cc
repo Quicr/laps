@@ -55,6 +55,7 @@ namespace laps {
 
                     // Update peering
                     // TODO: update peering with dampening
+                    // TODO: Pass in contstructed subscribe data instead of using bools
                     server_.peer_manager_.ClientSubscribeUpdate(GetTrackAlias().value(), true, true);
 
                     // Notify all publishers that there is a new group request
