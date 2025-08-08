@@ -660,7 +660,7 @@ namespace laps {
                     return false;
                 }
 
-                UpdateTrackSubscription(conn_handle, sub_track_h, false);
+                UpdateTrackSubscription(conn_handle, sub_track_h, attrs.new_group_request);
                 return true;
             }
 
@@ -712,6 +712,8 @@ namespace laps {
               std::nullopt,
               std::nullopt,
               {});
+
+            // TODO: Current new group is not sent by client in subscribe. It's only in subscribe updates.
 
             quicr::Bytes sub_data;
             sub_data << sub;

@@ -526,9 +526,8 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
-                                      const quicr::messages::SubscribeAttributes&,
-                                      std::span<const uint8_t> subscribe_data,
-                                      bool new_group_request)
+                                      const quicr::messages::SubscribeAttributes& attrs,
+                                      std::span<const uint8_t> subscribe_data)
     {
         auto tfn = track_full_name;
         auto th = quicr::TrackHash(tfn);
@@ -557,7 +556,7 @@ namespace laps::peering {
                     if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
                         has_new_group_request = true;
 
-                        if (not new_group_request) {
+                        if (not attrs.new_group_request) {
                             // Remove new group request since it's not requested but was found
                             sub.subscribe_parameters.erase(it);
                             quicr::Bytes sub_data;
@@ -569,7 +568,7 @@ namespace laps::peering {
                     }
                 }
 
-                if (new_group_request && not has_new_group_request) {
+                if (attrs.new_group_request && not has_new_group_request) {
                     sub.subscribe_parameters.push_back(
                       { .type = quicr::messages::ParameterType::kNewGroupRequest, .value = { 1 } });
 
@@ -721,6 +720,13 @@ namespace laps::peering {
                         if (auto cm = client_manager_) {
                             quicr::messages::SubscribeAttributes s_attrs;
                             s_attrs.priority = 10;
+
+                            for (const auto& param : sub.subscribe_parameters) {
+                                if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
+                                    s_attrs.new_group_request = true;
+                                    break;
+                                }
+                            }
 
                             SPDLOG_LOGGER_INFO(LOGGER,
                                                "Subscribe to client manager track alias: {}",
