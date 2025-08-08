@@ -488,25 +488,6 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::ClientSubscribeUpdate(uint64_t track_fullname_hash,
-                                            [[maybe_unused]] bool new_group_request,
-                                            [[maybe_unused]] bool forward)
-    {
-        if (auto si = info_base_->GetSubscribe(track_fullname_hash, node_info_.id)) {
-            for (const auto& sess : client_peer_sessions_) {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER, "Sending subscribe update fullname: {} peer_session_id: {}", track_fullname_hash, sess.first);
-                sess.second->SendSubscribeInfo(*si, false);
-            }
-
-            for (const auto& sess : server_peer_sessions_) {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER, "Sending subscribe update fullname: {} peer_session_id: {}", track_fullname_hash, sess.first);
-                sess.second->SendSubscribeInfo(*si, false);
-            }
-        }
-    }
-
     void PeerManager::ClientUnsubscribe(uint64_t track_fullname_hash)
     {
         if (auto si = info_base_->GetSubscribe(track_fullname_hash, node_info_.id)) {
@@ -546,9 +527,87 @@ namespace laps::peering {
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
                                       const quicr::messages::SubscribeAttributes&,
-                                      std::span<const uint8_t> subscribe_data)
+                                      std::span<const uint8_t> subscribe_data,
+                                      bool new_group_request)
     {
         auto tfn = track_full_name;
+        auto th = quicr::TrackHash(tfn);
+
+        quicr::messages::Subscribe sub(
+          [](quicr::messages::Subscribe& msg) {
+              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
+                  msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
+                  msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
+              }
+          },
+          [](quicr::messages::Subscribe& msg) {
+              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
+                  msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
+              }
+          });
+
+        // Check for existing subscribe and update
+        if (auto si = info_base_->GetSubscribe(th.track_fullname_hash, node_info_.id)) {
+            try {
+                // Update subscription params with new group request
+                si->subscribe_data >> sub;
+
+                bool has_new_group_request = false;
+                for (auto it = sub.subscribe_parameters.begin(); it != sub.subscribe_parameters.end(); ++it) {
+                    if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
+                        has_new_group_request = true;
+
+                        if (not new_group_request) {
+                            // Remove new group request since it's not requested but was found
+                            sub.subscribe_parameters.erase(it);
+                            quicr::Bytes sub_data;
+                            sub_data << sub;
+
+                            si->subscribe_data.assign(sub_data.begin(), sub_data.end());
+                        }
+                        break;
+                    }
+                }
+
+                if (new_group_request && not has_new_group_request) {
+                    sub.subscribe_parameters.push_back(
+                      { .type = quicr::messages::ParameterType::kNewGroupRequest, .value = { 1 } });
+
+                    quicr::Bytes sub_data;
+                    sub_data << sub;
+
+                    si->subscribe_data.assign(sub_data.begin(), sub_data.end());
+                }
+
+            } catch (const std::exception& e) {
+                SPDLOG_LOGGER_ERROR(LOGGER, "Unable to parse subscribe message {}", e.what());
+                return;
+            }
+
+            // Existing subscribe, update it with new data and attributes
+            for (const auto& sess : client_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Sending subscribe update fullname: {} peer_session_id: {}",
+                                    th.track_fullname_hash,
+                                    sess.first);
+                sess.second->SendSubscribeInfo(*si, false);
+            }
+
+            for (const auto& sess : server_peer_sessions_) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Sending subscribe update fullname: {} peer_session_id: {}",
+                                    th.track_fullname_hash,
+                                    sess.first);
+                sess.second->SendSubscribeInfo(*si, false);
+            }
+
+            return;
+        }
+
+        // New subscribe
+        if (subscribe_data.empty())
+            return; // Empty means it was supposed to be an update which didn't happen
+
         SubscribeInfo si;
 
         si.track_hash = quicr::TrackHash(tfn);
