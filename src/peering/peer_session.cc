@@ -225,10 +225,11 @@ namespace laps::peering {
         if (status_ != StatusValue::kConnected)
             return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Sending subscribe fullname: {} source_node_id: {} withdraw: {}",
+                            "Sending subscribe fullname: {} source_node_id: {} withdraw: {} sub_data_size: {}",
                             subscribe_info.track_hash.track_fullname_hash,
                             NodeId().Value(subscribe_info.source_node_id),
-                            withdraw);
+                            withdraw,
+                            subscribe_info.subscribe_data.size());
 
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,

@@ -648,11 +648,12 @@ namespace laps {
               std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())
                 .count();
             if (elapsed > subscription_refresh_interval_ms) {
-                SPDLOG_LOGGER_INFO(
-                  LOGGER,
-                  "Sending subscribe-update to publisher connection handler: {0} subscribe track_alias: {1}",
-                  conn_handle,
-                  th.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "Sending subscribe-update to publisher connection handler: {0} subscribe "
+                                   "track_alias: {1} new_group: {2}",
+                                   conn_handle,
+                                   th.track_fullname_hash,
+                                   attrs.new_group_request);
 
                 auto sub_track_h = state_.pub_subscribes[{ th.track_fullname_hash, conn_handle }];
                 if (sub_track_h == nullptr) {

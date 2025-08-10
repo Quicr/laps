@@ -148,6 +148,13 @@ namespace laps::peering {
                     quicr::messages::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
+                    for (const auto& param : sub.subscribe_parameters) {
+                        if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
+                            s_attrs.new_group_request = true;
+                            break;
+                        }
+                    }
+
                     SPDLOG_LOGGER_INFO(LOGGER,
                                        "Subscribe to client manager track alias: {}",
                                        subscribe_info.track_hash.track_fullname_hash);
@@ -525,9 +532,8 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
-                                      const quicr::messages::SubscribeAttributes& attrs,
-                                      std::span<const uint8_t> subscribe_data)
+    void PeerManager::ClientSubscribeUpdate(const quicr::FullTrackName& track_full_name,
+                                            const quicr::messages::SubscribeAttributes& attrs)
     {
         auto tfn = track_full_name;
         auto th = quicr::TrackHash(tfn);
@@ -562,20 +568,25 @@ namespace laps::peering {
                             quicr::Bytes sub_data;
                             sub_data << sub;
 
-                            si->subscribe_data.assign(sub_data.begin(), sub_data.end());
+                            si->subscribe_data.assign(sub_data.begin() + sizeof(uint8_t) +
+                                                        sizeof(uint16_t) /* Strip type and control header length */,
+                                                      sub_data.end());
                         }
                         break;
                     }
                 }
 
                 if (attrs.new_group_request && not has_new_group_request) {
+                    uint64_t val = 1;
                     sub.subscribe_parameters.push_back(
                       { .type = quicr::messages::ParameterType::kNewGroupRequest, .value = { 1 } });
 
                     quicr::Bytes sub_data;
                     sub_data << sub;
 
-                    si->subscribe_data.assign(sub_data.begin(), sub_data.end());
+                    si->subscribe_data.assign(sub_data.begin() + sizeof(uint8_t) +
+                                                sizeof(uint16_t) /* Strip type and control header length */,
+                                              sub_data.end());
                 }
 
             } catch (const std::exception& e) {
@@ -586,24 +597,44 @@ namespace laps::peering {
             // Existing subscribe, update it with new data and attributes
             for (const auto& sess : client_peer_sessions_) {
                 SPDLOG_LOGGER_DEBUG(LOGGER,
-                                    "Sending subscribe update fullname: {} peer_session_id: {}",
+                                    "Sending subscribe update fullname: {} peer_session_id: {} new_group: {}",
                                     th.track_fullname_hash,
-                                    sess.first);
+                                    sess.first,
+                                    attrs.new_group_request);
                 sess.second->SendSubscribeInfo(*si, false);
             }
 
             for (const auto& sess : server_peer_sessions_) {
                 SPDLOG_LOGGER_DEBUG(LOGGER,
-                                    "Sending subscribe update fullname: {} peer_session_id: {}",
+                                    "Sending subscribe update fullname: {} peer_session_id: {} new_group: {}",
                                     th.track_fullname_hash,
-                                    sess.first);
+                                    sess.first,
+                                    attrs.new_group_request);
                 sess.second->SendSubscribeInfo(*si, false);
             }
-
-            return;
         }
+    }
 
-        // New subscribe
+    void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
+                                      const quicr::messages::SubscribeAttributes& attrs,
+                                      std::span<const uint8_t> subscribe_data)
+    {
+        auto tfn = track_full_name;
+        auto th = quicr::TrackHash(tfn);
+
+        quicr::messages::Subscribe sub(
+          [](quicr::messages::Subscribe& msg) {
+              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
+                  msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
+                  msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
+              }
+          },
+          [](quicr::messages::Subscribe& msg) {
+              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
+                  msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
+              }
+          });
+
         if (subscribe_data.empty())
             return; // Empty means it was supposed to be an update which didn't happen
 

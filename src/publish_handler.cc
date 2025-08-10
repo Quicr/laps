@@ -55,12 +55,14 @@ namespace laps {
 
                     // Update peering subscribe info - This will update existing instead of creating new
                     // TODO: update peering with dampening
-                    server_.peer_manager_.ClientSubscribe(full_track_name_,
-                                                          { default_priority_,
-                                                            quicr::messages::GroupOrder::kAscending,
-                                                            std::chrono::milliseconds(default_ttl_),
-                                                            1 },
-                                                          {});
+                    server_.peer_manager_.ClientSubscribeUpdate(full_track_name_,
+                                                                {
+                                                                  default_priority_,
+                                                                  quicr::messages::GroupOrder::kAscending,
+                                                                  std::chrono::milliseconds(default_ttl_),
+                                                                  1,
+                                                                  true,
+                                                                });
 
                     // Notify all publishers that there is a new group request
                     for (auto it = server_.state_.pub_subscribes.lower_bound({ GetTrackAlias().value(), 0 });
@@ -84,9 +86,10 @@ namespace laps {
                                          now - server_.last_subscription_refresh_time.value())
                                          .count();
                         if (elapsed > server_.subscription_refresh_interval_ms) {
-                            SPDLOG_INFO("Updating subscribe connection handler: {0} subscribe track_alias: {1}",
-                                        pub_conn_id,
-                                        track_alias);
+                            SPDLOG_INFO(
+                              "Updating subscribe connection handler: {0} subscribe track_alias: {1} for new-group",
+                              pub_conn_id,
+                              track_alias);
                             server_.UpdateTrackSubscription(pub_conn_id, it->second, true);
                         }
                     }
