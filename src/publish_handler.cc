@@ -54,7 +54,6 @@ namespace laps {
                     reason = "new group requested";
 
                     // Update peering subscribe info - This will update existing instead of creating new
-                    // TODO: update peering with dampening
                     server_.peer_manager_.ClientSubscribeUpdate(full_track_name_,
                                                                 {
                                                                   default_priority_,
@@ -75,23 +74,7 @@ namespace laps {
                             break;
                         }
 
-                        // dampen excessive floods
-                        if (not server_.last_subscription_refresh_time.has_value()) {
-                            server_.last_subscription_refresh_time = std::chrono::steady_clock::now();
-                            break;
-                        }
-
-                        auto now = std::chrono::steady_clock::now();
-                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                         now - server_.last_subscription_refresh_time.value())
-                                         .count();
-                        if (elapsed > server_.subscription_refresh_interval_ms) {
-                            SPDLOG_INFO(
-                              "Updating subscribe connection handler: {0} subscribe track_alias: {1} for new-group",
-                              pub_conn_id,
-                              track_alias);
-                            server_.UpdateTrackSubscription(pub_conn_id, it->second, true);
-                        }
+                        server_.DampenOrUpdateTrackSubscription(it->second, true);
                     }
 
                     break;

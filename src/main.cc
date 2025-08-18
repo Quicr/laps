@@ -77,6 +77,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     cfg.tls_key_filename_ = cli_opts["key"].as<std::string>();
     cfg.peering.listening_port = cli_opts["peer_port"].as<uint16_t>();
     cfg.object_ttl_ = cli_opts["object_ttl"].as<uint32_t>();
+    cfg.sub_dampen_ms_ = cli_opts["sub_dampen_ms"].as<uint32_t>();
 
     cfg.relay_id_ = cli_opts["endpoint_id"].as<std::string>();
 
@@ -111,29 +112,36 @@ main(int argc, char* argv[])
 
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Starting LAPS Relay (version {0})", laps_config.Version());
 
+    // clang-format off
     cxxopts::Options options("laps", "Latency Aware Pub/Sub");
-    options.set_width(75).set_tab_expansion().allow_unrecognised_options().add_options()("h,help", "Print help")(
-      "d,debug", "Enable debugging") // a bool parameter
-      ("b,bind_ip", "Bind IP", cxxopts::value<std::string>()->default_value("127.0.0.1"))(
-        "p,port", "Listening port", cxxopts::value<uint16_t>()->default_value(std::to_string(kDefaultClientPort)))(
-        "e,endpoint_id", "This relay/server endpoint ID", cxxopts::value<std::string>()->default_value("moq-server"))(
-        "c,cert", "Certificate file", cxxopts::value<std::string>()->default_value("./server-cert.pem"))(
-        "k,key", "Certificate key file", cxxopts::value<std::string>()->default_value("./server-key.pem"))(
-        "q,qlog", "Enable qlog using path", cxxopts::value<std::string>())(
-        "t,object_ttl",
-        "Object TTL in milliseconds",
-        cxxopts::value<uint32_t>()->default_value(std::to_string(kDefaultObjectTtl)))(
-        "cache_duration",
-        "Duration of cache objects in milliseconds",
-        cxxopts::value<size_t>()->default_value("60000"))("cache_key",
-                                                          "Value of isCached extension key",
-                                                          cxxopts::value<std::uint64_t>()); // end of options
+    options.set_width(75).set_tab_expansion().allow_unrecognised_options().add_options()
+        ("h,help", "Print help")
+        ("d,debug", "Enable debugging") // a bool parameter
+        ("b,bind_ip", "Bind IP", cxxopts::value<std::string>()->default_value("127.0.0.1"))
+        ("p,port", "Listening port", cxxopts::value<uint16_t>()->default_value(std::to_string(kDefaultClientPort)))
+        ("e,endpoint_id", "This relay/server endpoint ID", cxxopts::value<std::string>()->default_value("moq-server"))
+        ("c,cert", "Certificate file", cxxopts::value<std::string>()->default_value("./server-cert.pem"))
+        ("k,key", "Certificate key file", cxxopts::value<std::string>()->default_value("./server-key.pem"))
+        ("q,qlog", "Enable qlog using path", cxxopts::value<std::string>())
+        ("s,sub_dampen_ms", "Subscription update dampen interval in milliseconds",
+            cxxopts::value<uint32_t>()->default_value(std::to_string(kDefaultCacheTimeQueueMaxDuration)))
+        ("t,object_ttl", "Object TTL in milliseconds",
+            cxxopts::value<uint32_t>()->default_value(std::to_string(kDefaultObjectTtl)))
+        ("cache_duration",
+            "Duration of cache objects in milliseconds",
+            cxxopts::value<size_t>()->default_value("60000"))
+        ("cache_key", "Value of isCached extension key", cxxopts::value<std::uint64_t>()
+    ); // end of options
 
-    options.add_options("Peering")("peer_port",
-                                   "Listening port for peering connections",
-                                   cxxopts::value<uint16_t>()->default_value(std::to_string(kDefaultPeerPort)))(
-      "peer", "Peer array host[:port],...", cxxopts::value<std::vector<std::string>>())(
-      "node_type", "Peer type as 'edge', 'via', 'stub'. Default is edge", cxxopts::value<std::string>());
+
+    options.add_options("Peering")
+        ("peer_port", "Listening port for peering connections",
+            cxxopts::value<uint16_t>()->default_value(std::to_string(kDefaultPeerPort)))
+        ("peer", "Peer array host[:port],...", cxxopts::value<std::vector<std::string>>())
+        ("node_type", "Peer type as 'edge', 'via', 'stub'. Default is edge",
+            cxxopts::value<std::string>());
+
+    // clang-format on
 
     auto result = options.parse(argc, argv);
 

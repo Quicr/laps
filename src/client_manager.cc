@@ -630,6 +630,38 @@ namespace laps {
             stop_fetch_[{ connection_handle, request_id }] = true;
     }
 
+    bool ClientManager::DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
+                                                        bool new_group_request)
+    {
+        auto now = std::chrono::steady_clock::now();
+
+        uint64_t elapsed = config_.sub_dampen_ms_ + 1;
+
+        if (sub_to_pub_track_handler->pub_last_update_info_.time.has_value()) {
+            elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now - *sub_to_pub_track_handler->pub_last_update_info_.time)
+                        .count();
+        }
+
+        if (elapsed > config_.sub_dampen_ms_ ||
+            sub_to_pub_track_handler->pub_last_update_info_.new_group_request != new_group_request) {
+            SPDLOG_LOGGER_INFO(LOGGER,
+                               "Sending subscribe-update to publisher connection handler: {0} subscribe "
+                               "track_alias: {1} new_group: {2}",
+                               sub_to_pub_track_handler->GetConnectionId(),
+                               sub_to_pub_track_handler->GetTrackAlias().value(),
+                               new_group_request);
+
+            sub_to_pub_track_handler->pub_last_update_info_.time = now;
+            UpdateTrackSubscription(
+              sub_to_pub_track_handler->GetConnectionId(), sub_to_pub_track_handler, new_group_request);
+        }
+
+        sub_to_pub_track_handler->pub_last_update_info_.new_group_request = new_group_request;
+
+        return false;
+    }
+
     void ClientManager::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
                                          uint64_t request_id,
                                          const quicr::TrackHash& th,
@@ -637,54 +669,27 @@ namespace laps {
                                          quicr::messages::FilterType filter_type,
                                          const quicr::messages::SubscribeAttributes& attrs)
     {
-
-        auto update_peer_func = [&](quicr::ConnectionHandle conn_handle) -> bool {
-            if (not last_subscription_refresh_time.has_value()) {
-                last_subscription_refresh_time = std::chrono::steady_clock::now();
-                return false;
-            }
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(now - last_subscription_refresh_time.value())
-                .count();
-            if (elapsed > subscription_refresh_interval_ms) {
-                SPDLOG_LOGGER_INFO(LOGGER,
-                                   "Sending subscribe-update to publisher connection handler: {0} subscribe "
-                                   "track_alias: {1} new_group: {2}",
-                                   conn_handle,
-                                   th.track_fullname_hash,
-                                   attrs.new_group_request);
-
-                auto sub_track_h = state_.pub_subscribes[{ th.track_fullname_hash, conn_handle }];
-                if (sub_track_h == nullptr) {
-                    SPDLOG_LOGGER_INFO(LOGGER, "Subscription Handler is null");
-                    return false;
-                }
-
-                UpdateTrackSubscription(conn_handle, sub_track_h, attrs.new_group_request);
-                return true;
-            }
-
-            return false;
-        };
-
         bool is_from_peer{ false };
         if (connection_handle == 0 && request_id == 0) {
-            SPDLOG_LOGGER_DEBUG(
-              LOGGER, "Processing peer subscribe track alias: {} priority: {}", th.track_fullname_hash, attrs.priority);
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Processing peer subscribe track alias: {} priority: {} new_group_request: {}",
+                                th.track_fullname_hash,
+                                attrs.priority,
+                                attrs.new_group_request);
             is_from_peer = true;
         }
 
         else {
             SPDLOG_LOGGER_INFO(LOGGER,
                                "Processing subscribe connection handle: {} request_id: {} track alias: {} priority: "
-                               "{} ns: {} name: {}",
+                               "{} ns: {} name: {} new_group_request: {}",
                                connection_handle,
                                request_id,
                                th.track_fullname_hash,
                                attrs.priority,
                                th.track_namespace_hash,
-                               th.track_name_hash);
+                               th.track_name_hash,
+                               attrs.new_group_request);
 
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
@@ -737,7 +742,7 @@ namespace laps {
             }
 
             if (is_from_peer) {
-                update_peer_func(it->first.second);
+                DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request);
             }
         }
 
@@ -749,7 +754,8 @@ namespace laps {
 
             // if we have already forwarded subscription for the track alias
             // don't forward unless we have expired the refresh period
-            if (state_.pub_subscribes.count({ th.track_fullname_hash, key.second }) == 0) {
+            auto pub_handler_it = state_.pub_subscribes.find({ th.track_fullname_hash, key.second });
+            if (pub_handler_it == state_.pub_subscribes.end()) {
                 SPDLOG_LOGGER_INFO(LOGGER,
                                    "Sending subscribe to announcer connection handler: {0} subscribe track_alias: {1}",
                                    key.second,
@@ -762,14 +768,20 @@ namespace laps {
                                                           quicr::messages::GroupOrder::kAscending,
                                                           *this);
                 SubscribeTrack(key.second, sub_track_h);
+
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
 
-            } else if (filter_type != quicr::messages::FilterType::kLargestObject) {
-                update_peer_func(key.second);
+                if (attrs.new_group_request) {
+                    sub_track_h->RequestNewGroup();
+                }
+
+            } else {
+                auto pub_handler_it = state_.pub_subscribes.find({ th.track_fullname_hash, key.second });
+                if (pub_handler_it != state_.pub_subscribes.end()) {
+                    DampenOrUpdateTrackSubscription(pub_handler_it->second, attrs.new_group_request);
+                }
             }
         }
-
-        last_subscription_refresh_time = std::chrono::steady_clock::now();
     }
 
     void ClientManager::MetricsSampled(const quicr::ConnectionHandle connection_handle,

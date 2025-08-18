@@ -112,6 +112,9 @@ namespace laps {
                               quicr::messages::FilterType filter_type,
                               const quicr::messages::SubscribeAttributes&);
 
+        bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
+                                             bool new_group_request);
+
         void RemoveOrPausePublisherSubscribe(const quicr::TrackHash& track_hash);
 
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
@@ -123,8 +126,6 @@ namespace laps {
         State& state_;
         const Config& config_;
         peering::PeerManager& peer_manager_;
-        const int subscription_refresh_interval_ms = 500;
-        std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_subscription_refresh_time;
 
         /**
          * @brief Map of atomic bools to mark if a fetch thread should be interrupted.

@@ -36,7 +36,7 @@ RUN openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
     -keyout server-key.pem -out server-cert.pem
 
 # Run layer
-FROM debian:11-slim
+FROM debian:12-slim
 RUN apt-get install -y libstdc++ bash
 
 COPY --from=builder /usr/local/bin/lapsRelay /usr/local/bin/.

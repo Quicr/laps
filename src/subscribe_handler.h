@@ -32,6 +32,12 @@ namespace laps {
 
         void SetFromPeer();
 
+        struct PublisherLastUpdateInfo
+        {
+            std::optional<std::chrono::time_point<std::chrono::steady_clock>> time;
+            bool new_group_request{ false };
+        } pub_last_update_info_;
+
       private:
         void ForwardReceivedData(bool is_new_stream, std::shared_ptr<const std::vector<uint8_t>> data);
 

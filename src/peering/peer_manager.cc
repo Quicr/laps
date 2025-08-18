@@ -156,8 +156,9 @@ namespace laps::peering {
                     }
 
                     SPDLOG_LOGGER_INFO(LOGGER,
-                                       "Subscribe to client manager track alias: {}",
-                                       subscribe_info.track_hash.track_fullname_hash);
+                                       "Subscribe to client manager track alias: {} new_group_request: {}",
+                                       subscribe_info.track_hash.track_fullname_hash,
+                                       s_attrs.new_group_request);
 
                     client_manager_->ProcessSubscribe(0,
                                                       0,
