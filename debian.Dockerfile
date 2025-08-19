@@ -5,7 +5,7 @@
 # Build layer
 FROM debian:12-slim as builder
 
-RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake libssl-dev python3 python3-venv
+RUN apt-get update && apt-get install -y make openssl golang wget git cmake libssl-dev python3 python3-venv
 
 WORKDIR /tmp
 
