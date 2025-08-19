@@ -5,7 +5,7 @@
 # Build layer
 FROM debian:12-slim as builder
 
-RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake ca-certificates libssl-dev python3
+RUN apt-get update && apt-get install -y make openssl golang perl wget git cmake libssl-dev python3 python3-venv
 
 WORKDIR /tmp
 
@@ -37,7 +37,7 @@ RUN openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
 
 # Run layer
 FROM debian:12-slim
-RUN apt-get install -y libstdc++ bash
+RUN apt-get install -y bash
 
 COPY --from=builder /usr/local/bin/lapsRelay /usr/local/bin/.
 
