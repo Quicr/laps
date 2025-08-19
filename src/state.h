@@ -6,6 +6,7 @@
 #include <set>
 
 namespace laps {
+    class SubscribeTrackHandler;
     class PublishTrackHandler;
 
     struct State
@@ -28,13 +29,13 @@ namespace laps {
          *      track_delegate = pub_subscribes[track_alias, connection handle]
          */
         std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>,
-                 std::shared_ptr<quicr::SubscribeTrackHandler>>
+                 std::shared_ptr<SubscribeTrackHandler>>
           pub_subscribes;
 
         /**
          * Active publisher initiated subscribes by request Id
          */
-        std::map<std::pair<uint64_t, quicr::ConnectionHandle>, std::shared_ptr<quicr::SubscribeTrackHandler>>
+        std::map<std::pair<uint64_t, quicr::ConnectionHandle>, std::shared_ptr<SubscribeTrackHandler>>
           pub_subscribes_by_req_id;
 
         /// Subscriber connection handles by subscribe prefix namespace for subscribe announces

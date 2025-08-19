@@ -53,10 +53,15 @@ namespace laps {
                 case Status::kNewGroupRequested:
                     reason = "new group requested";
 
-                    // Update peering
-                    // TODO: update peering with dampening
-                    // TODO: Pass in contstructed subscribe data instead of using bools
-                    server_.peer_manager_.ClientSubscribeUpdate(GetTrackAlias().value(), true, true);
+                    // Update peering subscribe info - This will update existing instead of creating new
+                    server_.peer_manager_.ClientSubscribeUpdate(full_track_name_,
+                                                                {
+                                                                  default_priority_,
+                                                                  quicr::messages::GroupOrder::kAscending,
+                                                                  std::chrono::milliseconds(default_ttl_),
+                                                                  1,
+                                                                  true,
+                                                                });
 
                     // Notify all publishers that there is a new group request
                     for (auto it = server_.state_.pub_subscribes.lower_bound({ GetTrackAlias().value(), 0 });
@@ -69,22 +74,7 @@ namespace laps {
                             break;
                         }
 
-                        // dampen excessive floods
-                        if (not server_.last_subscription_refresh_time.has_value()) {
-                            server_.last_subscription_refresh_time = std::chrono::steady_clock::now();
-                            break;
-                        }
-
-                        auto now = std::chrono::steady_clock::now();
-                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                         now - server_.last_subscription_refresh_time.value())
-                                         .count();
-                        if (elapsed > server_.subscription_refresh_interval_ms) {
-                            SPDLOG_INFO("Updating subscribe connection handler: {0} subscribe track_alias: {1}",
-                                        pub_conn_id,
-                                        track_alias);
-                            server_.UpdateTrackSubscription(pub_conn_id, it->second, true);
-                        }
+                        server_.DampenOrUpdateTrackSubscription(it->second, true);
                     }
 
                     break;

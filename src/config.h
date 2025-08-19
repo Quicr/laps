@@ -18,6 +18,7 @@ namespace laps {
     constexpr uint32_t kDefaultObjectTtl = 5'000;
     constexpr uint32_t kDefaultCacheTimeQueueMaxDuration = 10'000;
     constexpr uint32_t kDefaultCacheTimeQueueObjectTtl = 6'000;
+    constexpr uint32_t kDefaultSubscriptionRefreshIntervalMs = 500;
 
     class Config
     {
@@ -34,6 +35,7 @@ namespace laps {
         std::string tls_key_filename_;
         std::string qlog_path_;
         uint32_t object_ttl_;
+        uint32_t sub_dampen_ms_;
 
         peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
 
