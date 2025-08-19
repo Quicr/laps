@@ -669,14 +669,12 @@ namespace laps {
                                          quicr::messages::FilterType filter_type,
                                          const quicr::messages::SubscribeAttributes& attrs)
     {
-        bool is_from_peer{ false };
         if (connection_handle == 0 && request_id == 0) {
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Processing peer subscribe track alias: {} priority: {} new_group_request: {}",
                                 th.track_fullname_hash,
                                 attrs.priority,
                                 attrs.new_group_request);
-            is_from_peer = true;
         }
 
         else {
@@ -741,9 +739,7 @@ namespace laps {
                 it->second->Resume();
             }
 
-            if (is_from_peer) {
-                DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request);
-            }
+            DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request);
         }
 
         // Subscribe to announcer if announcer is active
