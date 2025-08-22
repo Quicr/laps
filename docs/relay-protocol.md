@@ -1,20 +1,10 @@
 # LAPS Peering Protocol and Architecture
 
-LAPS peering architecture enables peering between relays and clients supporting granular traffic engineering and optimizations. Peering can be simple mesh style or it can be highly scalable for a large infrastructure by using
- on-demand Via peering sessions to aggregate traffic flows in the most efficient way to provide low loss/latency
-fan-out delivery.
+LAPS peering architecture enables peering between relays and clients, supporting granular traffic engineering and optimizations. Peering can be simple mesh style, or it can be highly scalable for large infrastructure by using on-demand Via peering sessions to aggregate traffic flows in the most efficient way to provide low loss/latency fan-out delivery.
 
-Peering sessions support administrative policy constraints to ensure that traffic is
-forwarded via a traffic engineered path using one or more relays in the network. Traffic engineered paths
-can be human or AI defined to provide low duplication and even load distribution
-while maintaining administrative policies.  For example, AI can optimize relay forwarding to support different classes
-of service (e.g., gold, silver, bronze) while also supporting geographic region constraints. IP forwarding paths 
-are a factor in maintaining administrative policies. For example, if forwarding between relay A in New York to
-relay B in Seattle would IP packet forward via Canada, AI would find another relay to ensure IP forwarding
-path compliance with the administrative policy. 
+Peering sessions support administrative policy constraints to ensure that traffic is forwarded via a traffic-engineered path using one or more relays in the network. Traffic-engineered paths can be human or AI-defined to provide low duplication and even load distribution while maintaining administrative policies. For example, AI can optimize relay forwarding to support different classes of service (e.g., gold, silver, bronze) while also supporting geographic region constraints. IP forwarding paths are a factor in maintaining administrative policies. For example, if forwarding between relay A in New York to relay B in Seattle would IP packet forward via Canada, AI would find another relay to ensure IP forwarding path compliance with the administrative policy. 
 
-Peering scales to a global network of relays supporting scale into hundreds of millions of active
-tracks with any combination of publishers and subscribers.
+Peering scales to a global network of relays supporting hundreds of millions of active tracks with any combination of publishers and subscribers.
 
 - [LAPS Peering Protocol and Architecture](#laps-peering-protocol-and-architecture)
   - [Relay Types](#relay-types)
@@ -82,42 +72,34 @@ tracks with any combination of publishers and subscribers.
     - [Connection Establishment](#connection-establishment-1)
     - [Node Advertisement](#node-advertisement)
     - [Subscribe Advertisement](#subscribe-advertisement)
-    - [TODO Implementaton](#todo-implementaton)
+    - [TODO Implementation](#todo-implementation)
 
 ## Relay Types
 
-The relay type is configured upon start of the relay process. A relay can change its type at runtime, but it must
-disconnect all peers and reconnect them to synchronize the type. The relay type is advertised in [node information](#node-information) upon connection establishment. 
+The relay type is configured upon startup of the relay process. A relay can change its type at runtime, but it must disconnect all peers and reconnect them to synchronize the type. The relay type is advertised in [node information](#node-information) upon connection establishment. 
 
-Not all relays need to perform the same functions. There are also specific use-cases for relays based on their
-position in the topology and how they are used. 
+Not all relays need to perform the same functions. There are also specific use cases for relays based on their position in the topology and how they are used. 
 
 
-Relays are *therefore* categorized into the following types:
+Relays are therefore categorized into the following types:
 
 ### Via
 
-A Via relay is used by Edge relays to forward data between other Edge relays. A Via relay is an intermediate relay that
-does not participate in all the [Information Base](#information-bases) exchanges. Specifically, it only needs to participate in node information base exchanges. 
+A Via relay is used by Edge relays to forward data between other Edge relays. A Via relay is an intermediate relay that does not participate in all the [Information Base](#information-bases) exchanges. Specifically, it only needs to participate in node information base exchanges. 
 
-These relays have high vertical scale due to the lower number of QUIC connections between other Edge/Via relays and because
-of [source routing](#source-routing) and no MoQT client connections. 
+These relays have high vertical scale due to the lower number of QUIC connections between other Edge/Via relays and because of [source routing](#source-routing) and no MoQT client connections. 
 
 > [!NOTE]
-> A Via is not intended to be burdened by the global state of subscriptions... but a Via can be configured
-> to reflect [subscribe information](#subscribe-information) when [control peering](#1-control-peering) servers are not used or available. The Via in this case merely stores and propagates subscriptions. 
+> A Via is not intended to be burdened by the global state of subscriptions, but a Via can be configured to reflect [subscribe information](#subscribe-information) when [control peering](#1-control-peering) servers are not used or available. The Via in this case merely stores and propagates subscriptions. 
 
 **Via relay operations:**
 
-- Does not need to be part of the `announce` and `subscribe` advertisements and withdrawals selection
-  for data-plane forwarding
-- It participates in the `node` advertisements and withdrawals to maintain reachability information to all nodes.
-- `announce` and `subscribe` advertisements/withdrawals are state maintained, but only to prevent looping and
-  duplication. The retention for this state is set to the maximum convergence time. In this sense, it is a cache
-  of seen announces and subscribes in the last several seconds.
-- Forwards data streams and datagram objects based on [source routing](#source-routing) using the node information base.
-- Traditionally has high vertical scale to support large number of tracks and bandwidth
-- Strategically placed geographically near Edge relays to provide an aggregation point for fan-out of many Edge relays.
+- Does not need to be part of the `announce` and `subscribe` advertisements and withdrawals selection for data plane forwarding
+- Participates in the `node` advertisements and withdrawals to maintain reachability information to all nodes
+- `announce` and `subscribe` advertisements/withdrawals are state-maintained, but only to prevent looping and duplication. The retention for this state is set to the maximum convergence time. In this sense, it is a cache of seen announces and subscribes in the last several seconds
+- Forwards data streams and datagram objects based on [source routing](#source-routing) using the node information base
+- Traditionally has high vertical scale to support a large number of tracks and bandwidth
+- Strategically placed geographically near Edge relays to provide an aggregation point for fan-out of many Edge relays
 - Used by Edge relays to form a topology to a set of subscriber relays
 
 Peering can go directly to Via or other Edge relays, depending on the [selection algorithm](#selection-algorithm),
@@ -172,31 +154,25 @@ flowchart TD
 
 ### Edge
 
-Edge relays are core relays that facilitate connections from clients and all [relay types](#relay-types). The Edge
-relay is a "**can do it all relay.**"
+Edge relays are core relays that facilitate connections from clients and all [relay types](#relay-types). The Edge relay is a "**can do it all relay**."
 
-These relays often have a lower vertical scale due to them having to maintain MoQT client connections.  It 
-is expected that there will be many edge relays based on MoQT client connections and bandwidth. 
+These relays often have a lower vertical scale due to them having to maintain MoQT client connections. It is expected that there will be many Edge relays based on MoQT client connections and bandwidth. 
 
 **Edge relay operations:**
 
-- Performs everything a Via relay does.
-- Client connection server implementation of MoQT.
-- Handle several client connections, each of which have different QUIC transport encryption/decryption with varying
-  high volume of stream changes based on group and subgroups as defined in MoQT.
-- Establishes data forwarding-plane to all subscribers based on subscribes and publisher announcements/connections.
-- Perform authorization validation and enforcement
-- Enforces administrative policy.
-- Perform edge defense with client connections by implementing rate limiting and other DoS mitigations
-- On-demand peering based on [selection algorithm](#selection-algorithm) to bring in Via relays to establish
-  an optimized and efficient data forwarding-plane to subscribers. 
-- Receives and state maintains announcements from both MoQT client publishers and Stub relays.
+- Performs everything a Via relay does
+- Client connection server implementation of MoQT
+- Handles several client connections, each of which have different QUIC transport encryption/decryption with varying high volume of stream changes based on group and subgroups as defined in MoQT
+- Establishes data forwarding plane to all subscribers based on subscribes and publisher announcements/connections
+- Performs authorization validation and enforcement
+- Enforces administrative policy
+- Performs edge defense with client connections by implementing rate limiting and other DoS mitigations
+- On-demand peering based on [selection algorithm](#selection-algorithm) to bring in Via relays to establish an optimized and efficient data forwarding plane to subscribers 
+- Receives and state-maintains announcements from both MoQT client publishers and Stub relays
 
-Edge relays are expected to scale horizontally in a stateless fashion, supporting scale up and scale down based
-on demand in the region. Edge relays can be "right-sized" to fit the need of subscriber and publisher demand.
+Edge relays are expected to scale horizontally in a stateless fashion, supporting scale-up and scale-down based on demand in the region. Edge relays can be "right-sized" to fit the need of subscriber and publisher demand.
 
-Edges relays are often placed behind network load balancers, which can support **anycast** for both client
-and peering connections.
+Edge relays are often placed behind network load balancers, which can support **anycast** for both client and peering connections.
 
 ```mermaid
 ---
@@ -217,39 +193,27 @@ flowchart TB
 
 ### Stub
 
-Stub relays are intended to be super lightweight and simple relays. They connect to one or more Edge relays only
-and do not accept inbound connections. They implement MoQT server functionality to accept client connections and
-to establish a data forwarding-plane for them via the relay infrastructure. A Stub relay is a **child** of
-the **Edge** relay that it is connected to. 
+Stub relays are intended to be super lightweight and simple relays. They connect to one or more Edge relays only and do not accept inbound connections. They implement MoQT server functionality to accept client connections and to establish a data forwarding plane for them via the relay infrastructure. A Stub relay is a **child** of the **Edge** relay that it is connected to. 
 
-Primary use-case for a Stub relay is to fan-out subscribers in a local area network. Example placement for Stub
-relays are in residential access routers, branch offices, NAT routers, access points, floor switches, firewalls, etc. 
+Primary use case for a Stub relay is to fan-out subscribers in a local area network. Example placement for Stub relays are in residential access routers, branch offices, NAT routers, access points, floor switches, firewalls, etc. 
 
 > [!NOTE]
-> While this protocol fully supports [MoQT](https://github.com/moq-wg/moq-transport/) client connections and
-> features of MoQT, it does not require publisher and subscribing clients to use MoQT. Clients can implement this
-> protocol as a Stub relay. In this sense, the client is a stub relay of only one client (publisher, subscriber
-> or both). 
-> There are some interesting use-cases where this could be implemented on a client as a different process
-> Stub relay that could efficiently optimize and aggregate multiple applications running on the same host system.
-> For example, if many applications  use the Pub/Sub model and need to connect to the relay infrastructure,
-> they could use this protocol as a Stub relay to aggregate those applications. 
+> While this protocol fully supports [MoQT](https://github.com/moq-wg/moq-transport/) client connections and features of MoQT, it does not require publisher and subscribing clients to use MoQT. Clients can implement this protocol as a Stub relay. In this sense, the client is a stub relay of only one client (publisher, subscriber, or both). 
+> There are some interesting use cases where this could be implemented on a client as a different process Stub relay that could efficiently optimize and aggregate multiple applications running on the same host system. For example, if many applications use the Pub/Sub model and need to connect to the relay infrastructure, they could use this protocol as a Stub relay to aggregate those applications. 
 
 
 Stub relays have the following uses, feature capabilities and restrictions:
 
 - Must peer directly with Edge relays
-- Can peer to more than one edge relay
+- Can peer to more than one Edge relay
 - Will only receive subscribes based on the advertised announcements to the Edge relay
 - Uses very little memory and CPU for peering
-- Use-case for more than one peer is to optimize reachability to other edges
+- Use case for more than one peer is to optimize reachability to other edges
 - Fully supports NAT and return traffic over the established peer connection, can be placed behind a firewall/NAT router
-- Uses peer mode `Both`, control and data via the same peer connection.
-- It does not connect to a cloud provider control server (not needed)
+- Uses peer mode `Both`, control and data via the same peer connection
+- Does not connect to a cloud provider control server (not needed)
 - Will not accept inbound peer connections and will not implement the full peering protocol
-- The Edge relay that the Stub connects to will forward subscribes by marking itself as the source
-  node. Stubs are transparent and stateless. Only the Edge relay is aware of the Stub. Other Edge and Via relays
-  are unaware of Stub relays.
+- The Edge relay that the Stub connects to will forward subscribes by marking itself as the source node. Stubs are transparent and stateless. Only the Edge relay is aware of the Stub. Other Edge and Via relays are unaware of Stub relays
 
 ```mermaid
 ---
@@ -264,78 +228,51 @@ flowchart TD
     end
 ```
 
-In the above diagram, the Stub is the **child** relay and the Edge relay is the **parent**. All subscriptions
-sent by the Stub will be regenerated by the Edge relay with itself as the originator of that subscription.
-In this sense, the Edge relay appears to the rest of the Relay network as the relay that has the subscriber.
-**This is by design to ensure that the Stub relays, which may be in the millions, do not need to be known by
-any other relay in the relay network.**
+In the above diagram, the Stub is the **child** relay and the Edge relay is the **parent**. All subscriptions sent by the Stub will be regenerated by the Edge relay with itself as the originator of that subscription. In this sense, the Edge relay appears to the rest of the relay network as the relay that has the subscriber. **This is by design to ensure that the Stub relays, which may be in the millions, do not need to be known by any other relay in the relay network.**
 
 ### Relay Terms
 
-In addition to [relay types](#relay-types), relays are described using additional terms.  This section describes
-the terms commonly used to describe relays. 
+In addition to [relay types](#relay-types), relays are described using additional terms. This section describes the terms commonly used to describe relays. 
 
 #### o-relay = Origin Relay
 
-The origin relay node is always an [Edge Relay](#edge) **type**.  When a client session sends a publish
-announcement (aka intent to publish), the relay becomes an origin relay. Client connections are only
-accepted on Edge and Stub relay types. 
+The origin relay node is always an [Edge Relay](#edge) **type**. When a client session sends a publish announcement (aka intent to publish), the relay becomes an origin relay. Client connections are only accepted on Edge and Stub relay types. 
 
-A [Stub Relay](#stub) **type** can have one or more publishers, which technically means the stub is
-an origin relay, but the design of this protocol has Stub relays as a child of an Edge relay. The
-Edge relay that the stub is connected to becomes the o-relay for the publisher in the data
-forwarding-plane topology. 
+A [Stub Relay](#stub) **type** can have one or more publishers, which technically means the stub is an origin relay, but the design of this protocol has Stub relays as a child of an Edge relay. The Edge relay that the stub is connected to becomes the o-relay for the publisher in the data forwarding plane topology. 
  
 #### s-relay = Subscriber Relay
 
-The subscriber relay node is always an [Edge Relay](#edge) **type**.  When a client session subscribes,
-the relay becomes the subscriber relay. Client connections are only accepted on Edge and Stub relay types. 
+The subscriber relay node is always an [Edge Relay](#edge) **type**. When a client session subscribes, the relay becomes the subscriber relay. Client connections are only accepted on Edge and Stub relay types. 
 
-A [Stub Relay](#stub) **type** can have one or more subscribers, which technically means the stub is
-a subscriber relay, but the design of this protocol has Stub relays as a child of an Edge relay. The
-Edge relay that the stub is connected to becomes the s-relay for the subscriber in the data forwarding-plane topology. 
+A [Stub Relay](#stub) **type** can have one or more subscribers, which technically means the stub is a subscriber relay, but the design of this protocol has Stub relays as a child of an Edge relay. The Edge relay that the stub is connected to becomes the s-relay for the subscriber in the data forwarding plane topology. 
 
 #### e-relay = General edge relay
 
-An edge relay is of **type** [Edge](#edge). It implements MoQT and accepts inbound client connections as well as implement peering to act as a Via relay. Edge relays can peer with each other, with STUBs and Via relays.  An edge relay is
-a do all relay. The term e-relay is a general term for an edge relay that may be an o-relay, s-relay, or acting
-as a Via. 
+An edge relay is of **type** [Edge](#edge). It implements MoQT and accepts inbound client connections as well as implements peering to act as a Via relay. Edge relays can peer with each other, with STUBs and Via relays. An edge relay is a do-all relay. The term e-relay is a general term for an edge relay that may be an o-relay, s-relay, or acting as a Via. 
 
 #### v-relay = Via relay
 
-A via relay is a relay that of **type** [Via](#via). It implements peering but not client access. A Via relay is
-intended to be an aggregator (reduce bandwidth by optimized fan-out) and hairpin for traffic steering. It's lightweight
-and has higher vertical scale supporting very low latency. 
+A via relay is a relay of **type** [Via](#via). It implements peering but not client access. A Via relay is intended to be an aggregator (reduce bandwidth by optimized fan-out) and hairpin for traffic steering. It's lightweight and has higher vertical scale supporting very low latency. 
 
 #### Node
 
-Relay could be implemented in a client, such as a Stub relay in the client. In this case, the client relay would not be called a node.  Node term is used to clarify that the relay of any type is an infrastructure level relay that participates
-in peering. 
+Relay could be implemented in a client, such as a Stub relay in the client. In this case, the client relay would not be called a node. Node term is used to clarify that the relay of any type is an infrastructure-level relay that participates in peering. 
 
 
 ## Topologies
 
-There are numerous topology options to form the data forwarding-plane from publisher to one or more subscribers.
-The general rule of thumb is to optimize with hub-and-spoke (aka Star) peering if possible and inject Via 
-relays as and where needed to aggregate efficiently to reduce congestion/bandwidth.  Injecting Via relays are used
-to steer data forwarding via different IP forwarding paths to avoid and workaround problems (e.g.,
-congestion, loss, high cost path, ...). They are also injected to steer data forwarding based on
-administrative policy. By utilizing both Edge and Via relays, data forwarding paths can be granularly
-controlled to provide highly scalable efficient low latency-loss between publisher and subscriber(s). 
+There are numerous topology options to form the data forwarding plane from publisher to one or more subscribers. The general rule of thumb is to optimize with hub-and-spoke (aka Star) peering if possible and inject Via relays as and where needed to aggregate efficiently to reduce congestion/bandwidth. Injecting Via relays are used to steer data forwarding via different IP forwarding paths to avoid and work around problems (e.g., congestion, loss, high cost path, etc.). They are also injected to steer data forwarding based on administrative policy. By utilizing both Edge and Via relays, data forwarding paths can be granularly controlled to provide highly scalable, efficient, low latency-loss between publisher and subscriber(s). 
 
 ### Hub-and-Spoke Topology
 
-A hub-and-spoke (star) topology provides a simple data forwarding-plane that often results in the lowest
-latency between publisher and subscribers. The design is simple; the relay that has the directly attached
-publisher client session sending data (aka origin of the data) establishes peering to relays that directly have
-the subscribers connected. 
+A hub-and-spoke (star) topology provides a simple data forwarding plane that often results in the lowest latency between publisher and subscribers. The design is simple; the relay that has the directly attached publisher client session sending data (aka origin of the data) establishes peering to relays that directly have the subscribers connected. 
 
 The [selection algorithm](#selection-algorithm) attempts to use hub-and-spoke if all the below are true:
 
-* Administrative policy permits it
-* Network path has enough bandwidth and has little to no loss and acceptable latency
-* Publish origin relay is not overloaded with connections to other edges
-* Duplication fan-out is not more than configured maximum with a default of 2
+- Administrative policy permits it
+- Network path has enough bandwidth and has little to no loss and acceptable latency
+- Publish origin relay is not overloaded with connections to other edges
+- Duplication fan-out is not more than configured maximum with a default of 2
 
 ```mermaid
 ---
@@ -352,16 +289,11 @@ flowchart TD
     E3 --> S2([Subscriber 2])
 ```
 
-In the above diagram, there are two subscribers in different regions, so aggregation using a Via relay is not needed.
-The seattle origin relay establishes peering to the subscriber relay and forwards data. 
+In the above diagram, there are two subscribers in different regions, so aggregation using a Via relay is not needed. The Seattle origin relay establishes peering to the subscriber relay and forwards data. 
 
 ### Typical Topology
 
-The typical topology is used to support optimized data forwarding with bandwidth and network forwarding efficiency. It uses
-hub-and-spoke when it make sense and adds Via(s) when needed. Via relays are a resource that is engaged on-demand or via predefined peering to establish hairpin/aggregation points in an optimized fashion. The Via(s) that are used are ones that are not overloaded and have optimal forwarding to the target subscriber edge relays. 
-A Via is added upon [selection](#selection-algorithm) of peering to establish the data forwarding.  Vias can be
-added or removed with zero-loss in data forwarding. For example, the data forwarding-plane may start off as
-hub-and-spoke and then transition to use a Via to aggregate e-relays in a region. 
+The typical topology is used to support optimized data forwarding with bandwidth and network forwarding efficiency. It uses hub-and-spoke when it makes sense and adds Via(s) when needed. Via relays are a resource that is engaged on-demand or via predefined peering to establish hairpin/aggregation points in an optimized fashion. The Via(s) that are used are ones that are not overloaded and have optimal forwarding to the target subscriber edge relays. A Via is added upon [selection](#selection-algorithm) of peering to establish the data forwarding. Vias can be added or removed with zero-loss in data forwarding. For example, the data forwarding plane may start off as hub-and-spoke and then transition to use a Via to aggregate e-relays in a region. 
 
 ```mermaid
 ---
@@ -421,11 +353,7 @@ Peering connections operate in one of three modes.
 
 ### (1) Control Peering
 
-In this mode, only control messages are exchanged. Mostly [Information Base](#information-bases) messages are exchanged
-in this mode. This mode allows a single connection for control plane functions without requiring the control signaling
-to follow data forwarding paths. Control signaling does not often need more than a single connection
-(can include redundant connection for HA) while [data peering](#2-data-peering) messages can benefit
-from having more than one QUIC connection to scale data forwarding over network ECMP paths. 
+In this mode, only control messages are exchanged. Mostly [Information Base](#information-bases) messages are exchanged in this mode. This mode allows a single connection for control plane functions without requiring the control signaling to follow data forwarding paths. Control signaling does not often need more than a single connection (can include redundant connection for HA) while [data peering](#2-data-peering) messages can benefit from having more than one QUIC connection to scale data forwarding over network ECMP paths. 
 
 ```mermaid
 ---
@@ -453,32 +381,20 @@ flowchart TD
 
 #### Sending/Receiving Control Messages
 
-Control messages are exchanged over a QUIC bi-directional stream. The peer that makes the connection is required
-to create the bi-directional stream that will be used for control messaging. All control messages will
-go over this QUIC stream. [Connect](#connect-message) is required to be the first message exchanged on a new
-connection. To exchange this message, the client **MUST** create the control bi-directional QUIC stream. The
-server side will latch onto this stream to send back responses and subsequent control messages to the client. 
-The latching allows the client to recreate the control bi-directional stream if needed. The server will
-latch and move to the new stream based on received control messages from the client. At no point can
-two bi-directional controls streams be in use. To ensure this, the server will reset the previous control
-bidir stream if it wasn't already reset/fin closed. 
+Control messages are exchanged over a QUIC bi-directional stream. The peer that makes the connection is required to create the bi-directional stream that will be used for control messaging. All control messages will go over this QUIC stream. [Connect](#connect-message) is required to be the first message exchanged on a new connection. To exchange this message, the client **MUST** create the control bi-directional QUIC stream. The server side will latch onto this stream to send back responses and subsequent control messages to the client. The latching allows the client to recreate the control bi-directional stream if needed. The server will latch and move to the new stream based on received control messages from the client. At no point can two bi-directional control streams be in use. To ensure this, the server will reset the previous control bidir stream if it wasn't already reset/fin closed. 
 
 ### (2) Data Peering
 
-Data peering is used to forward data objects in a [pipeline fashion](#pipelining). Data peering can operate in
-**uni-directional** or **bi-directional** modes.
+Data peering is used to forward data objects in a [pipeline fashion](#pipeline-forwarding). Data peering can operate in **uni-directional** or **bi-directional** modes.
 
-In bi-directional mode, data peering will reuse the connection to send data back to the peer. This is to
-support NAT and/or firewall constraints.
+In bi-directional mode, data peering will reuse the connection to send data back to the peer. This is to support NAT and/or firewall constraints.
 
 In uni-directional mode, the peer is used only for receiving data.
 
 Data peering mode is indicated in the `connect` and `connect_response` messages.
 
 > [!IMPORTANT]
-> In data peering mode only, the Control bidirectional stream is used to convey [SNS](#data-forwarding)
-> advertisements. In this sense, the control stream is always established, even when control peering is
-> not used for the data peer. 
+> In data peering mode only, the control bidirectional stream is used to convey [SNS](#data-forwarding) advertisements. In this sense, the control stream is always established, even when control peering is not used for the data peer. 
 
 ```mermaid
 ---
@@ -491,13 +407,11 @@ flowchart LR
     E1 <-- "bidir" --> E3[Edge 3]
 ```
 
-[Stub](#peering-modes) peers always operate in bi-directional mode because it is assumed that they are behind NAT/FW.
-Stub relays also do not have the scale that requires multiple connections to support network ECMP. 
+[Stub](#stub) peers always operate in bi-directional mode because it is assumed that they are behind NAT/FW. Stub relays also do not have the scale that requires multiple connections to support network ECMP. 
 
 ### (3) Both control and data peering
 
-When multiple parallel connections are used, only a single peer **MUST** be used in this mode. The peer can opperate
-in uni-directional or bi-directional modes. 
+When multiple parallel connections are used, only a single peer **MUST** be used in this mode. The peer can operate in uni-directional or bi-directional modes. 
 
 ```mermaid
 ---
@@ -514,37 +428,27 @@ Control peering is always bi-directional and uses the same peering session.
 
 ## Information Bases
 
-Information bases (IB) hold the control plane information. Information is advertised and withdrawn to maintain the
-information bases.
+Information bases (IB) hold the control plane information. Information is advertised and withdrawn to maintain the information bases.
 
 ### Node Information
 
-Node information base (NIB) conveys information about a node itself. It is exchanged in [connect](#connect-message) 
-and [connect_response](#connect-response-message) messages to indicate the peer info of the nodes
-connecting. If the peer is a control peer, node information of other nodes are sent to the peer. 
-Upon transmission of the node information, the path is appended with self node ID. This forms a node path so
-that forwarding can stop when it sees remote or itself in the path list. Only best nodes selected are advertised. 
-Nodes information is not sent if it's the same as received before, duplicate. It will be advertised if there is
-a change. This is to support metric changes, such as load and reachability information changing in node information.
+Node information base (NIB) conveys information about a node itself. It is exchanged in [connect](#connect-message) and [connect_response](#connect-response-message) messages to indicate the peer info of the nodes connecting. If the peer is a control peer, node information of other nodes are sent to the peer. Upon transmission of the node information, the path is appended with self node ID. This forms a node path so that forwarding can stop when it sees remote or itself in the path list. Only best nodes selected are advertised. Node information is not sent if it's the same as received before (duplicate). It will be advertised if there is a change. This is to support metric changes, such as load and reachability information changing in node information.
 
 Currently a version of the node update is not required, but may be added in the future if race conditions arise. 
 
-Removal of `node_info` is performed when the direct peering session is terminated or upon receiving a withdraw of
-the node information.  The node withdraw will be sent to all peers except the one that sent it and if the peer
-is in the path. 
+Removal of `node_info` is performed when the direct peering session is terminated or upon receiving a withdraw of the node information. The node withdraw will be sent to all peers except the one that sent it and if the peer is in the path. 
 
-The best path selection will take place to find another path for active subscribes that are using the 
-node that is withdrawn. 
+The best path selection will take place to find another path for active subscribes that are using the node that is withdrawn. 
 
 The NIB contains the following:
 
 | Field/Attributes          | Description                                                                          |
 | ------------------------- | ------------------------------------------------------------------------------------ |
-| [NodeId](#node-id)        | Node ID of the node as a unsigned 64bit integer                                      |
+| [NodeId](#node-id)        | Node ID of the node as an unsigned 64-bit integer                                    |
 | [Node Type](#relay-types) | Node Relay Type                                                                      |
-| **Contact**               | FQDN or IP to reach the node. This maybe an FQDN of the load balancer or anycast IP  |
-| **Longitude**             | Longitude of the node location as a double 64bit value                               |
-| **latitude**              | Latitude of the node location as a double 64bit value                                |
+| **Contact**               | FQDN or IP to reach the node. This may be an FQDN of the load balancer or anycast IP  |
+| **Longitude**             | Longitude of the node location as a double 64-bit value                               |
+| **Latitude**              | Latitude of the node location as a double 64-bit value                                |
 | [Node Path](#node-path)   | Path of nodes the node information has traversed                                     |
 | SumSrtt                   | Sum of SRTT in microseconds for peering sessions in the path, zero if peer is direct |
 
@@ -557,13 +461,13 @@ The NIB contains the following:
 Node ID is the unique ID of the node. Nodes **MUST** be configured with different Node IDs. If more than one Node
 uses the same ID, only the first (oldest) will work. The others will be dropped.
 
-The Node ID is an unsigned 64bit integer that is configured using the below
+The Node ID is an unsigned 64-bit integer that is configured using the below
 textual scheme. The textual scheme aids in simplified assignment, automation,
 administrative configuration and troubleshooting.
 
 **Scheme**: `<high value>:<low value>` textual format. The colon is **REQUIRED**.
 
-The values can be represented as an unsigned 32bit integer or dotted notation of 16bit integers,
+The values can be represented as an unsigned 32-bit integer or dotted notation of 16-bit integers,
 such as `<uint16>.<uint16>`. The values can be mixed in how they are represented.
 
 **Examples**: All the below are valid configurations of the Node ID
@@ -573,7 +477,7 @@ such as `<uint16>.<uint16>`. The values can be mixed in how they are represented
 - `100.2:9001.2001`
 - `123456:789.100`
 
-> Simple deployments may automate the Node ID value using a 64bit hash of the node device or host ID or FQDN (if unique).
+> Simple deployments may automate the Node ID value using a 64-bit hash of the node device or host ID or FQDN (if unique).
 
 #### Node Path
 
@@ -635,7 +539,7 @@ Announce Information (`announce_info`) contains the following:
 
 | Field          | Description                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------- |
-| FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64bit hashes are encoded. |
+| FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64-bit hashes are encoded. |
 | source_node_id | The node ID that received the MoQT announce                                                             |
 
 ### Subscribe Information
@@ -650,8 +554,8 @@ the original subscribe message. The original subscribe data is not used by other
 transparently passed along. 
 
 `subscribe_info` is advertised to all control peering peers. As described in
-[Control Peering](#1-control-peering), this may be forwarded in a highly scalable decentralized control-plane
-for peering information bases.  The control-plane is not the data forwarding-plane.  It's only for control and
+[Control Peering](#1-control-peering), this may be forwarded in a highly scalable decentralized control plane
+for peering information bases.  The control plane is not the data forwarding plane.  It's only for control and
 information base messages, which will mostly be subscribe information.  
 
 Subscribe information is designed to be scoped by administrative policy controls. This is similar to BGP
@@ -685,7 +589,7 @@ Subscribe information (`subscribe_info`) contains the following:
 | -------------- | ------------------------------------------------------------------------------------------- |
 | sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay    |
 | source_node_id | The node ID that received the MoQT subscribe                                                |
-| TrackHash      | Array of the **namespace tuple** hashes and hash of **name**. Only 64bit hashes are encoded |
+| TrackHash      | Array of the **namespace tuple** hashes and hash of **name**. Only 64-bit hashes are encoded |
 | subscribe_data | Original MoQT subscribe message (wire format) that initiated the subscribe                  |
 
 ## MoQT Track and Relay Peer Handling
@@ -804,7 +708,7 @@ AI and ML will be used in the very near future to optimize v-relay nodes to inje
 algorithm will be updated to establish the selection of nodes at start and ongoing. For example, 
 it is expected and fully supported to inject or change v-relays at any time to mitigate network issues,
 load issues, or to aggregate bandwidth based on changing of subscribers and other factors. The
-forwarding-plane change is ZERO loss. 
+forwarding plane change is ZERO loss. 
 
 In the near future; Reachability is checked and maintained by nodes to know if it can reach v-relays and other e-relays. 
 It is also likely that a pre-selection of v-relays by the s-relay will be added to Node information. Node advertisements convey this information via control peering. All nodes know which nodes can reach the s-relay and other relays.
@@ -876,10 +780,10 @@ Unlike segment routing where it utilizes a stack of labels/sids, this protocol u
 a **subscriber node set (SNS)** that **describes the set of subscriber edge relay (s-relays) node IDs that
 need to receive the data**. It does **not describe** the path that the data will traverse. 
 
-The forwarding-plane will be established relay by relay based on node advertisements. Subscribe source node id
+The forwarding plane will be established relay by relay based on node advertisements. Subscribe source node id
 is lookup to find the best peer based the [selection](#selection-algorithm). Considering the nodes
 and some peering are provisioned before any publishers/subscribers connect, the computation of best
-peer is done well before any data is being forwarded. Establishing a forwarding-plane for a publisher to any set of subscribers happens in microseconds internally and upon first data object, hop-by-hop.  
+peer is done well before any data is being forwarded. Establishing a forwarding plane for a publisher to any set of subscribers happens in microseconds internally and upon first data object, hop-by-hop.  
 
 SNS is exchanged via the control bidirectional stream on the peering session that will be used to receive 
 the data. Utilizing the control bidir stream within the peer session ensures scope of the SNS to be within
@@ -887,7 +791,7 @@ the peer session to support parallel peer sessions and control information based
 the same data path. Each SNS will be assigned an SNS ID that is unique to the session.
 The sender generates the SNS ID.
 
-The SNS ID is an `unsigned 32bit` integer that is a monotonic series increasing.
+The SNS ID is an `unsigned 32-bit` integer that is a monotonic series increasing.
 The ID starts at ONE and can wrap to ONE as needed. Zero is reserved to indicate no ID. The ID can skip
 forward but cannot be less than the previous, unless wrap occurs. 
 
@@ -1317,7 +1221,7 @@ Node information is sent to all control peers that do not contain the node ID in
 
 #### Node Information Withdraw Message
 
-A node information withdraw message removes the state of the node information. The forwarding-plane
+A node information withdraw message removes the state of the node information. The forwarding plane
 is recomputed to remove the node and select another node for active subscribes. 
 
 The full node information is provided instead of just the ID to support removal of an inferior node
@@ -1814,7 +1718,7 @@ sequenceDiagram
 
 ```
 
-### TODO Implementaton
+### TODO Implementation
 
 Items to be implemented still
 
