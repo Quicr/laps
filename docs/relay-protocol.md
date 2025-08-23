@@ -30,9 +30,9 @@ Peering scales to a global network of relays supporting hundreds of millions of 
     - [Node Information](#node-information)
       - [Node ID](#node-id)
       - [Node Path](#node-path)
-    - [Announcement Information](#announcement-information)
+    - [Publish Information](#publish-information)
     - [Subscribe Information](#subscribe-information)
-  - [MoQT Track and Relay Peer Handling](#moqt-track-and-relay-peer-handling)
+  - [MOQT Track and Relay Peer Handling](#moqt-track-and-relay-peer-handling)
   - [Connection Establishment](#connection-establishment)
   - [Selection Algorithm](#selection-algorithm)
   - [Data Forwarding](#data-forwarding)
@@ -66,7 +66,7 @@ Peering scales to a global network of relays supporting hundreds of millions of 
       - [Start of New Stream Data Object](#start-of-new-stream-data-object)
       - [Subsequent Stream Data Objects](#subsequent-stream-data-objects)
   - [Considerations](#considerations)
-    - [Optimizing Peering using MoQT GOAWAY](#optimizing-peering-using-moqt-goaway)
+    - [Optimizing Peering using MOQT GOAWAY](#optimizing-peering-using-moqt-goaway)
     - [Unsubscribe/Subscribe Misuse](#unsubscribesubscribe-misuse)
   - [Message Flows](#message-flows)
     - [Connection Establishment](#connection-establishment-1)
@@ -87,16 +87,16 @@ Relays are therefore categorized into the following types:
 
 A Via relay is used by Edge relays to forward data between other Edge relays. A Via relay is an intermediate relay that does not participate in all the [Information Base](#information-bases) exchanges. Specifically, it only needs to participate in node information base exchanges. 
 
-These relays have high vertical scale due to the lower number of QUIC connections between other Edge/Via relays and because of [source routing](#source-routing) and no MoQT client connections. 
+These relays have high vertical scale due to the lower number of QUIC connections between other Edge/Via relays and because of [source routing](#source-routing) and no MOQT client connections. 
 
 > [!NOTE]
-> A Via is not intended to be burdened by the global state of subscriptions, but a Via can be configured to reflect [subscribe information](#subscribe-information) when [control peering](#1-control-peering) servers are not used or available. The Via in this case merely stores and propagates subscriptions. 
+> A Via is not intended to be burdened by the global state of subscriptions, but a Via can be configured to reflect [Information Bases](#information-bases) when [control peering](#1-control-peering) servers are not used or available. The Via in this case merely stores and propagates subscriptions. 
 
 **Via relay operations:**
 
-- Does not need to be part of the `announce` and `subscribe` advertisements and withdrawals selection for data plane forwarding
+- Does not need to be part of the `publish` and `subscribe` advertisements and withdrawals selection for data plane forwarding
 - Participates in the `node` advertisements and withdrawals to maintain reachability information to all nodes
-- `announce` and `subscribe` advertisements/withdrawals are state-maintained, but only to prevent looping and duplication. The retention for this state is set to the maximum convergence time. In this sense, it is a cache of seen announces and subscribes in the last several seconds
+- `publish` and `subscribe` advertisements/withdrawals are state-maintained, but only to prevent looping and duplication. The retention for this state is set to the maximum convergence time. In this sense, it is a cache of seen publishes and subscribes in the last several seconds
 - Forwards data streams and datagram objects based on [source routing](#source-routing) using the node information base
 - Traditionally has high vertical scale to support a large number of tracks and bandwidth
 - Strategically placed geographically near Edge relays to provide an aggregation point for fan-out of many Edge relays
@@ -156,19 +156,19 @@ flowchart TD
 
 Edge relays are core relays that facilitate connections from clients and all [relay types](#relay-types). The Edge relay is a "**can do it all relay**."
 
-These relays often have a lower vertical scale due to them having to maintain MoQT client connections. It is expected that there will be many Edge relays based on MoQT client connections and bandwidth. 
+These relays often have a lower vertical scale due to them having to maintain MOQT client connections. It is expected that there will be many Edge relays based on MOQT client connections and bandwidth. 
 
 **Edge relay operations:**
 
 - Performs everything a Via relay does
-- Client connection server implementation of MoQT
-- Handles several client connections, each of which have different QUIC transport encryption/decryption with varying high volume of stream changes based on group and subgroups as defined in MoQT
+- Client connection server implementation of MOQT
+- Handles several client connections, each of which have different QUIC transport encryption/decryption with varying high volume of stream changes based on group and subgroups as defined in MOQT
 - Establishes data forwarding plane to all subscribers based on subscribes and publisher announcements/connections
 - Performs authorization validation and enforcement
 - Enforces administrative policy
 - Performs edge defense with client connections by implementing rate limiting and other DoS mitigations
 - On-demand peering based on [selection algorithm](#selection-algorithm) to bring in Via relays to establish an optimized and efficient data forwarding plane to subscribers 
-- Receives and state-maintains announcements from both MoQT client publishers and Stub relays
+- Receives and state-maintains publishes from both MOQT client publishers and Stub relays
 
 Edge relays are expected to scale horizontally in a stateless fashion, supporting scale-up and scale-down based on demand in the region. Edge relays can be "right-sized" to fit the need of subscriber and publisher demand.
 
@@ -193,12 +193,12 @@ flowchart TB
 
 ### Stub
 
-Stub relays are intended to be super lightweight and simple relays. They connect to one or more Edge relays only and do not accept inbound connections. They implement MoQT server functionality to accept client connections and to establish a data forwarding plane for them via the relay infrastructure. A Stub relay is a **child** of the **Edge** relay that it is connected to. 
+Stub relays are intended to be super lightweight and simple relays. They connect to one or more Edge relays only and do not accept inbound connections. They implement MOQT server functionality to accept client connections and to establish a data forwarding plane for them via the relay infrastructure. A Stub relay is a **child** of the **Edge** relay that it is connected to. 
 
 Primary use case for a Stub relay is to fan-out subscribers in a local area network. Example placement for Stub relays are in residential access routers, branch offices, NAT routers, access points, floor switches, firewalls, etc. 
 
 > [!NOTE]
-> While this protocol fully supports [MoQT](https://github.com/moq-wg/moq-transport/) client connections and features of MoQT, it does not require publisher and subscribing clients to use MoQT. Clients can implement this protocol as a Stub relay. In this sense, the client is a stub relay of only one client (publisher, subscriber, or both). 
+> While this protocol fully supports [MOQT](https://github.com/moq-wg/moq-transport/) client connections and features of MOQT, it does not require publisher and subscribing clients to use MOQT. Clients can implement this protocol as a Stub relay. In this sense, the client is a stub relay of only one client (publisher, subscriber, or both). 
 > There are some interesting use cases where this could be implemented on a client as a different process Stub relay that could efficiently optimize and aggregate multiple applications running on the same host system. For example, if many applications use the Pub/Sub model and need to connect to the relay infrastructure, they could use this protocol as a Stub relay to aggregate those applications. 
 
 
@@ -206,7 +206,7 @@ Stub relays have the following uses, feature capabilities and restrictions:
 
 - Must peer directly with Edge relays
 - Can peer to more than one Edge relay
-- Will only receive subscribes based on the advertised announcements to the Edge relay
+- Will only receive subscribes based on the advertised publish information to the Edge relay
 - Uses very little memory and CPU for peering
 - Use case for more than one peer is to optimize reachability to other edges
 - Fully supports NAT and return traffic over the established peer connection, can be placed behind a firewall/NAT router
@@ -248,7 +248,7 @@ A [Stub Relay](#stub) **type** can have one or more subscribers, which technical
 
 #### e-relay = General edge relay
 
-An edge relay is of **type** [Edge](#edge). It implements MoQT and accepts inbound client connections as well as implements peering to act as a Via relay. Edge relays can peer with each other, with STUBs and Via relays. An edge relay is a do-all relay. The term e-relay is a general term for an edge relay that may be an o-relay, s-relay, or acting as a Via. 
+An edge relay is of **type** [Edge](#edge). It implements MOQT and accepts inbound client connections as well as implements peering to act as a Via relay. Edge relays can peer with each other, with STUBs and Via relays. An edge relay is a do-all relay. The term e-relay is a general term for an edge relay that may be an o-relay, s-relay, or acting as a Via. 
 
 #### v-relay = Via relay
 
@@ -524,32 +524,33 @@ Node `1:1`
 If a new connection were established between `1:4` and `1:6` with a sRTT of less than `75ms`, `1:4` would
 select the path via `1:6` with a path length of `2` and sum(sRTT) of less than `135ms`
 
-### Announcement Information
+### Publish Information
 
-MoQT announce of namespace tuple and name are advertised in `announce_info` messages. Only the hash of each namespace
-item and name are advertised. `announce_info` is advertised to all peers **from Stub relays only**. Announce information
+MOQT announce of namespace tuple and name are advertised in `publish_info` messages. Only the hash of each namespace
+item and name are advertised. `publish_info` is advertised to all peers **from Stub relays only**. Announce information
 is not used by the other relays because they have all subscribe information. Stubs do not have all subscribes, so
 the o-relay needs the announce info so that it can send only the subscribes matching the announces to the stub.
 
 Loop prevention is performed by not forwarding `announce_info` messages that have already been seen. 
 
-Withdraw of `announce_info` is sent to all peers to remove an entry upon MoQT unannounce.
+Withdraw of `announce_info` is sent to all peers to remove an entry upon MOQT unannounce.
 
 Announce Information (`announce_info`) contains the following:
 
 | Field          | Description                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------- |
 | FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64-bit hashes are encoded. |
-| source_node_id | The node ID that received the MoQT announce                                                             |
+| source_node_id | The node ID that received the MOQT announce                                                             |
+
 
 ### Subscribe Information
 
-MoQT subscribe namespace tuple and name are advertised in `subscribe_info` messages. The hashes of namespace tuple
+MOQT subscribe namespace tuple and name are advertised in `subscribe_info` messages. The hashes of namespace tuple
 and name are the primary information being used by the relays for peering.  The hashes combined establish a unique subscribe. 
 
-Subscribe information in MoQT includes more information, such as parameters, priority, etc. These
+Subscribe information in MOQT includes more information, such as parameters, priority, etc. These
 values, including the original opaque data of the subscribe namespace and name, are needed by o-relays to
-interact with the MoQT publisher. In order to ensure that nothing is left out, the original subscribe data (entire subscribe) message is encoded in the `subscribe_info`. This allows any relay or control server to inspect and process
+interact with the MOQT publisher. In order to ensure that nothing is left out, the original subscribe data (entire subscribe) message is encoded in the `subscribe_info`. This allows any relay or control server to inspect and process
 the original subscribe message. The original subscribe data is not used by other non o-relays and is instead
 transparently passed along. 
 
@@ -570,7 +571,7 @@ Subscribe to publisher is a function of [matching announce](#matching-subscribes
 Loop prevention is performed by not forwarding `subscribe_info` messages that have already been seen and by
 not sending the subscribe back to the one that originated it. 
 
-Withdraw of `subscribe_info` is sent by the node that received the MoQT unsubscribe. Withdraws are sent
+Withdraw of `subscribe_info` is sent by the node that received the MOQT unsubscribe. Withdraws are sent
 in the same fashion as advertisements to control peers. 
 
 > [!NOTE]
@@ -588,20 +589,20 @@ Subscribe information (`subscribe_info`) contains the following:
 | Field          | Description                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------- |
 | sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay    |
-| source_node_id | The node ID that received the MoQT subscribe                                                |
+| source_node_id | The node ID that received the MOQT subscribe                                                |
 | TrackHash      | Array of the **namespace tuple** hashes and hash of **name**. Only 64-bit hashes are encoded |
-| subscribe_data | Original MoQT subscribe message (wire format) that initiated the subscribe                  |
+| subscribe_data | Original MOQT subscribe message (wire format) that initiated the subscribe                  |
 
-## MoQT Track and Relay Peer Handling
+## MOQT Track and Relay Peer Handling
 
-Track as defined by MoQT is a data flow that is identified by track alias, which is a unique value that 
+Track as defined by MOQT is a data flow that is identified by track alias, which is a unique value that 
 represents the full track name (namespace tuple and name) in subscribes. Fan-out is made possible by relaying
 the data from a given track alias to all subscribes (e.g., s-relay, subscribers) that match the same
 track alias. 
 
 ```mermaid
 ---
-title: MoQT Fan-out
+title: MOQT Fan-out
 ---
 flowchart TD
     P(Publisher) --> TA@{ shape: bow-rect, label: "Track Alias = **ABC**" }
@@ -617,20 +618,20 @@ a set of subscribers using the same alias. Publisher **MUST** publish to the exa
 Data is then fanned-out to all the matching subscribers. 
 
 > [!IMPORTANT]
-> In MoQT the track alias can be different between subscribers and publishers.  The peering architecture normalizes track alias to be a consistent hash of the opaque namespace tuple and name.  Subscribers and publishers can still use their own track alias, but those will be mapped to the consistent hash upon forwarding via peering. For efficiency, it's recommended to use the `SUBSCRIBE_ERROR(retry track alias)` method to have both publisher and subscribers use the same consistent hash algorithm for track alias.
+> In MOQT the track alias can be different between subscribers and publishers.  The peering architecture normalizes track alias to be a consistent hash of the opaque namespace tuple and name.  Subscribers and publishers can still use their own track alias, but those will be mapped to the consistent hash upon forwarding via peering. For efficiency, it's recommended to use the `SUBSCRIBE_ERROR(retry track alias)` method to have both publisher and subscribers use the same consistent hash algorithm for track alias.
 
-In peering, the track is referred to as a **data context** using QUIC layer transmission. In MoQT,
+In peering, the track is referred to as a **data context** using QUIC layer transmission. In MOQT,
 the data context uniquely identifies a flow of same content data (e.g., track, file, ...) that can
-span over many streams. As with MoQT, there can only be one active QUIC stream at a time for the same
+span over many streams. As with MOQT, there can only be one active QUIC stream at a time for the same
 data context (e.g., track). Transitioning to a new QUIC stream primarily is to mitigate some problem with
 the stream of data, such as head of line blocking. It can also be used by an application to restart
 a content stream at a new point. For this reason, a new stream results in a replacement operation of the
 previously active QUIC stream. Data relating to the previous QUIC stream is cleared and upon new stream data flows
 afresh. This is required for [pipeline forwarding](#pipeline-forwarding) so that data does not become corrupted. 
 
-A **data context** has an `Id` that is provided by the transport, that is connection (peer and MoQT client) session
+A **data context** has an `Id` that is provided by the transport, that is connection (peer and MOQT client) session
 specific.  [Subscriber Node Set Id](#source-routing) is created for each data context, which is for each
-MoQT track.  An implementation may use the same `Id` for both SNS and data context ID.  
+MOQT track.  An implementation may use the same `Id` for both SNS and data context ID.  
 
 > [!NOTE]
 > The reason why data context Id is not directly using track alias value is because connections
@@ -640,8 +641,8 @@ MoQT track.  An implementation may use the same `Id` for both SNS and data conte
 > to support multiple publishers, where publishers are publihsing to the same track alias. Data is
 > [pipline forwarded](#pipeline-forwarding) and requires a single publisher for the pipe (aka data context).
 
-In MoQT, data objects contain a **group-id**, **subgroup-id**, and **object-id**.  When the 
-**group-id** or **subgroup-id** changes, the MoQT behavior is to transition to a new QUIC stream. MoQT
+In MOQT, data objects contain a **group-id**, **subgroup-id**, and **object-id**.  When the 
+**group-id** or **subgroup-id** changes, the MOQT behavior is to transition to a new QUIC stream. MOQT
 in this case adds more state and comparison tracking that isn't needed needed for relay forwarding,
 especially with peering. The publisher will be the one that detects group/subgroup id changes and will
 start a new QUIC stream. The receiving relay will efficiently see that a new stream is being
@@ -671,7 +672,7 @@ flowchart TD
 
 > [!IMPORTANT]
 > In the above diagram there is a single publisher, but there could be more than one publisher that is
-publishing to the same track alias. While MoQT doesn't yet handle multiple publishers to the same
+publishing to the same track alias. While MOQT doesn't yet handle multiple publishers to the same
 subscription, this protocol does by using data contexts in this fashion.  This protocol therefore
 supports [pipeline forwarding](#pipeline-forwarding) with **one or more publishers to the same track**.
 
@@ -770,7 +771,7 @@ reduces the end-to-end latency and jitter on data between publisher edge relay t
 ### Source Routing
 
 Data forwarding is source routed in a similar fashion as described in [Segment Routing Architecture](https://www.rfc-editor.org/rfc/rfc8402.html).
-Data forwarding in MoQT is designed to support fan-out of one or more publishers to one or more subscribers. This
+Data forwarding in MOQT is designed to support fan-out of one or more publishers to one or more subscribers. This
 is different from IP forwarding (point to point) in terms of the label stack size. Building a stack of labels
 for all target nodes could grow into the thousands with a large number of subscribers spanning thousands
 of edge relays. It would not scale to send the set of node IDs in every datagram frame or even start of every QUIC
@@ -808,21 +809,21 @@ without invalidating a previous set id.
 title: Source Routing Data Forwarding
 ---
 flowchart TD
-    P([Publisher]) -- MoQT Data Object --> OE[Origin 101.2:10]
+    P([Publisher]) -- MOQT Data Object --> OE[Origin 101.2:10]
     OE -- " SNSid: 1=[100.2:1, 100.2:2, 103.2:1] " --> V1[Via 100.1:1]
 
     subgraph US-WEST
         V1 -- " SNSid: 18=[100.2:1] " --> w1[Edge 100.2:1]
-        w1 -- MoQT Data Object --> wS1([Subscriber 1])
-        w1 -- MoQT Data Object --> wS2([Subscriber 2])
+        w1 -- MOQT Data Object --> wS1([Subscriber 1])
+        w1 -- MOQT Data Object --> wS2([Subscriber 2])
         V1 -- " SNSid: 27=[100.2:2] " --> w2[Edge 100.2:2]
-        w2 -- MoQT Data Object --> wS3([Subscriber 3])
-        w2 -- MoQT Data Object --> wS4([Subscriber 4])
+        w2 -- MOQT Data Object --> wS3([Subscriber 3])
+        w2 -- MOQT Data Object --> wS4([Subscriber 4])
     end
     subgraph US-EAST
         V1 -- " SNSid: 99=[103.2:1] " --> e1[Edge 103.2:1]
-        e1 -- MoQT Data Object --> eS3([Subscriber 1])
-        e1 -- MoQT Data Object --> eS4([Subscriber 2])
+        e1 -- MOQT Data Object --> eS3([Subscriber 1])
+        e1 -- MOQT Data Object --> eS4([Subscriber 2])
 
     end
 ```
@@ -906,10 +907,10 @@ Withdraw SNS information message has the following fields:
 Datagram objects are inherently pipelined and no special handling is needed. 
 
 Data forwarded by relays are pipeline forwarded at the stream level. Every byte received is immediately 
-sent out to other peers and clients. MoQT publishers encode all needed headers for the subscribing clients
+sent out to other peers and clients. MOQT publishers encode all needed headers for the subscribing clients
 to reassemble. This includes the cache implementation within the relay that acts as a client receiving the data.
-Relay nodes do not need to mutate any received data. MoQT data object headers are unchanged from received to
-all peers and MoQT sessions. The relay in this sense is forwarding every byte received on a stream to peer
+Relay nodes do not need to mutate any received data. MOQT data object headers are unchanged from received to
+all peers and MOQT sessions. The relay in this sense is forwarding every byte received on a stream to peer
 and client sessions on a stream. 
 
 ```mermaid
@@ -917,7 +918,7 @@ and client sessions on a stream.
 title: Pipeline Forwarding
 ---
 flowchart LR
-    P(MoQT Publisher) --> DO@{ shape: doc, label: "MoQT Large\nData Object 4000B" }
+    P(MOQT Publisher) --> DO@{ shape: doc, label: "MOQT Large\nData Object 4000B" }
     style DO fill:#AED6F1,stroke:#424949,stroke-width:1px,color:#1C2833
 
     DO -- "slice" --> OR[o-relay]
@@ -955,12 +956,12 @@ flowchart LR
     SR --> Dd3
     SR --> Dd4
 
-    Dd1 --> S(MoQT Subscriber)
+    Dd1 --> S(MOQT Subscriber)
     Dd2 --> S
     Dd3 --> S
     Dd4 --> S
 
-    S -- Reassemble --> DdO@{ shape: doc, label: "MoQT Large\nData Object 4000B" }
+    S -- Reassemble --> DdO@{ shape: doc, label: "MOQT Large\nData Object 4000B" }
     style DdO fill:#AED6F1,stroke:#424949,stroke-width:1px,color:#1C2833
 ```
 
@@ -969,18 +970,18 @@ as is all the way to each subscriber. It is the subscriber that reassembles. Thi
 delay. End to end latency is close, if not better, than a point to point connection between publisher
 and subscriber. 
 
-MoQT Track QUIC stream transitions (e.g, group/subgroup change) received are mirrored to all peer and client sessions. 
+MOQT Track QUIC stream transitions (e.g, group/subgroup change) received are mirrored to all peer and client sessions. 
 
 Reassembly of data objects is only performed by subscribing clients and relays that implement caching. A relay that
-implements caching is acting like a MoQT client that subscribes and publishes. 
+implements caching is acting like a MOQT client that subscribes and publishes. 
 
 In order to support pipeline forwarding there is a need to convey some extra information about how to forward and
 start a new stream for egress peers and client sessions.  The [start of stream header](#start-of-stream-data-header) defines
 the fields that are added for peering. SNS Id is used to lookup outgoing peer sessions and SNS Ids for each. When
-the the SNS Id contains the node itself, then the node lookups up MoQT client sessions that should receive
-the data. Looking up MoQT client sessions do not use SNS Id, so the track alias is used instead. 
+the the SNS Id contains the node itself, then the node lookups up MOQT client sessions that should receive
+the data. Looking up MOQT client sessions do not use SNS Id, so the track alias is used instead. 
 
-Client MoQT sessions do not need this header and are sent data minus this header.  
+Client MOQT sessions do not need this header and are sent data minus this header.  
 
 The reason why this extra information is encoded in data start of QUIC stream header instead of SNS advertisement
 is to allow SNS to be reused for different track aliases and priorities later.  We will revisit
@@ -1262,8 +1263,8 @@ or from a Stub relay. The source node Id is set to self. Sequence number is incr
 for each advertisement and withdraw. Only the s-relay increments the sequence number. 
 
 The relays mainly use the `track_hash` information. The `subscribe_data` is provided
-for MoQT compliance as some of the MoQT subscribe data is needed when sending
-MoQT subscribe toward the publisher. Other parameters could be used by control
+for MOQT compliance as some of the MOQT subscribe data is needed when sending
+MOQT subscribe toward the publisher. Other parameters could be used by control
 servers to further authorize the subscribe. 
 
 ```
@@ -1279,7 +1280,7 @@ SUBSCRIBE_INFO_ADV {
         full_name_hash(8),      // Combined hash of both namespace and name hashes
     }
 
-    subscribe_data(variable),   // Raw MoQT received subscribe message
+    subscribe_data(variable),   // Raw MOQT received subscribe message
 }
 ```
 
@@ -1292,7 +1293,7 @@ Subscribe information withdraw is to remove the subscribe from the control plane
 which will trigger a recompute of the data plane. Due to the churn that is seen
 with subscribes, sequence number is used to ensure correct state convergence. 
 
-All information is needed in the withdraw to support MoQT compliance on o-relays. 
+All information is needed in the withdraw to support MOQT compliance on o-relays. 
 
 Withdraw is the same subscribe message as subscribe with the exception of the type
 being withdraw. 
@@ -1310,7 +1311,7 @@ SUBSCRIBE_INFO_WD {
         full_name_hash(8),      // Combined hash of both namespace and name hashes
     }
 
-    subscribe_data(variable),   // Raw MoQT received subscribe message
+    subscribe_data(variable),   // Raw MOQT received subscribe message
 }
 ```
 
@@ -1321,14 +1322,14 @@ in it's path or back to itself.
 #### Announce Information Advertisement Message
 
 Announce information is advertised by Stub relays to o-relays only. o-relays state maintain
-this information for MoQT compliance.  Announce information is not sent to
+this information for MOQT compliance.  Announce information is not sent to
 other control peers. In the future, we may want to send it, but at this time
 it is not needed by the LAPS peering protocol. 
 
 Announce information is needed by the o-relay to know which client session should receive
-the MoQT subscribe to start the flow of publish track data. When a Stub relay is used, 
+the MOQT subscribe to start the flow of publish track data. When a Stub relay is used, 
 the Stub appears as a client to the o-relay and the subscribe will be sent to the Stub.
-The stub will then send the MoQT subscribe to the publisher. 
+The stub will then send the MOQT subscribe to the publisher. 
 
 Subscribes are [matched to announce](#matching-subscribes-to-announcements) based on the
 the `track_full_name_hash` data.  
@@ -1350,7 +1351,7 @@ ANNOUNCE_INFO_ADV {
 
 #### Announce Information Withdraw Message
 
-Announce withdraw happens with MoQT client unannounces.  This will trigger a withdraw
+Announce withdraw happens with MOQT client unannounces.  This will trigger a withdraw
 of the announce information. 
 
 ```
@@ -1375,7 +1376,7 @@ consumed by the receiving peer and not propagated to any other peer. It is sessi
 
 Upon receiving the SNS advertisement, the receiving peer will look at the `nodes` set
 and create egress SNS advertisements to other peers based on [selection](#selection-algorithm)
-for best node to reach s-relay node id.  If self is in the `nodes` set, then MoQT
+for best node to reach s-relay node id.  If self is in the `nodes` set, then MOQT
  forwarding will take place to forward to a directly attached client or Stub relay. 
 
 > [!IMPORTANT]
@@ -1448,7 +1449,7 @@ are included.
 
 Datagram objects are limited to MTU, which may be up to 64K or as little as 1280 bytes.  Datagram
 suffers from the problem of MTU not being equal hop-by-hop. If the publisher supports 64K and the subscriber supports only 1280, then the datagram object will be dropped on initial
-transmission because it is too large.  This is an issue with MoQT not supporting datagram fragmentation.
+transmission because it is too large.  This is an issue with MOQT not supporting datagram fragmentation.
 The limitation is not with this peering protocol. 
 
 ```mermaid
@@ -1526,7 +1527,7 @@ NEW_STREAM_DATA_OBJECT {
 }
 ```
 
-Priority is used when creating egress streams to peering sessions as well as to MoQT clients. 
+Priority is used when creating egress streams to peering sessions as well as to MOQT clients. 
 
 TTL is applied to all objects received via the stream. The TTL time starts upon receiving
 each object. In this sense, each object received will not expire till TTL time has elapsed
@@ -1549,14 +1550,14 @@ EXISTING_STREAM_DATA_OBJECT {
 
 ## Considerations
 
-### Optimizing Peering using MoQT GOAWAY
+### Optimizing Peering using MOQT GOAWAY
 
 In large scale deployments, the usage of [source routing data forwarding](#source-routing) can result in large sets
 of target edge nodes that have subscribers to receive data. This can be suboptimal if every subscriber was on
 a different edge relay, especially when in the same region. This could happen due to network load balances,
 including anycast, where subscriber clients are distributed to one of hundreds of relays within the same region.
 It is desirable to align subscribers of the same content to use the same relays, providing load/capacity is available.
-MoQT provides a mechanism to redirect a client connection to another relay. This method is to use a GOWAY with
+MOQT provides a mechanism to redirect a client connection to another relay. This method is to use a GOWAY with
 a new connect URL. This protocol uses the GOAWAY (aka redirect) to redirect client connections to a nearby relay that
 has the same subscriptions.
 
@@ -1566,12 +1567,12 @@ other relays that have the same subscribes.
 
 ### Unsubscribe/Subscribe Misuse
 
-The last MoQT subscriber unsubscribe can result in many relays having to change states. If the subscriber is
+The last MOQT subscriber unsubscribe can result in many relays having to change states. If the subscriber is
 repeatedly unsubscribing and subscribing, it will result in a ripple effect over many relays, which
 causes unnessary churn in the relay network. To mitigate this churn, unsubscribes in peering could be
-scheduled in the future based on some configurable time, such as 5 seconds. If a MoQT subscriber
+scheduled in the future based on some configurable time, such as 5 seconds. If a MOQT subscriber
 subscribes again before the scheduled unsubscribe being sent, it would simply be canceled and
-data would continue as if there was no unsubscribe. Only the MoQT client would be the one that
+data would continue as if there was no unsubscribe. Only the MOQT client would be the one that
 would stop and start repeatedly. The churn of misuse with unsubscribe and subscribe would
 be contained to the s-relay instead of spreading the churn to many other relays.
 
@@ -1700,10 +1701,10 @@ flowchart LR
 title: Subscriber Information Advertisement
 ---
 sequenceDiagram
-    actor S as MoQT Subscriber
+    actor S as MOQT Subscriber
     participant SR as s-relay
     participant OR as o-relay
-    actor P as MoQT Publisher
+    actor P as MOQT Publisher
 
     S ->> SR: SUBSCRIBE(abc)
     SR ->> SR: Process
@@ -1711,10 +1712,10 @@ sequenceDiagram
     OR ->> OR: Process
     note right of OR: Upon receiving, do announce matching
     OR ->> P: SUBSCRIBE(abc)
-    note right of OR: MoQT exchanges
-    P -->> OR: MoQT Data Object(...)
+    note right of OR: MOQT exchanges
+    P -->> OR: MOQT Data Object(...)
     OR --> SR: DATA_OBJECT(...)
-    SR --> S: MoQT Data Object(...)
+    SR --> S: MOQT Data Object(...)
 
 ```
 
