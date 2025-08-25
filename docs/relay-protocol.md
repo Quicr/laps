@@ -430,6 +430,20 @@ Control peering is always bi-directional and uses the same peering session.
 
 Information bases (IB) hold the control plane information. Information is advertised and withdrawn to maintain the information bases.
 
+```mermaid
+block-beta
+  ib["Information Base"]:3
+  columns 3
+    node["Node Info"]
+    pub["Publish Info"]
+    sub["Subscribe Info"]  
+
+style ib fill:#939,stroke:#333,stroke-width:4px
+style node fill:#949494,color:#3d3d3d,stroke:#333,stroke-width:4px
+style pub fill:#949494,color:#3d3d3d,stroke:#333,stroke-width:4px
+style sub fill:#949494,color:#3d3d3d,stroke:#333,stroke-width:4px
+```
+
 ### Node Information
 
 Node information base (NIB) conveys information about a node itself. It is exchanged in [connect](#connect-message) and [connect_response](#connect-response-message) messages to indicate the peer info of the nodes connecting. If the peer is a control peer, node information of other nodes are sent to the peer. Upon transmission of the node information, the path is appended with self node ID. This forms a node path so that forwarding can stop when it sees remote or itself in the path list. Only best nodes selected are advertised. Node information is not sent if it's the same as received before (duplicate). It will be advertised if there is a change. This is to support metric changes, such as load and reachability information changing in node information.
@@ -526,21 +540,47 @@ select the path via `1:6` with a path length of `2` and sum(sRTT) of less than `
 
 ### Publish Information
 
-MOQT announce of namespace tuple and name are advertised in `publish_info` messages. Only the hash of each namespace
-item and name are advertised. `publish_info` is advertised to all peers **from Stub relays only**. Announce information
-is not used by the other relays because they have all subscribe information. Stubs do not have all subscribes, so
-the o-relay needs the announce info so that it can send only the subscribes matching the announces to the stub.
+MOQT announce of namespace tuple and name are advertised in `publish_info` messages. 
+Only the hash of each namespace item and name are advertised.
 
-Loop prevention is performed by not forwarding `announce_info` messages that have already been seen. 
+MOQT publish messages provide full track name and addtional parameters that convey capablities
+and features of the publisher. Some of these paraemters are added to the `publish_info` so that they
+are available to the subscriber edge relays and STUBs. 
 
-Withdraw of `announce_info` is sent to all peers to remove an entry upon MOQT unannounce.
+In the case of multiple publishers to the same full track name on the same o-relay, the parameters
+are reconciled to merge. The duplicate parameter that enables the capability and/or has a better value
+based on the parameter definition in MOQT is chosen.  
 
-Announce Information (`announce_info`) contains the following:
+`publish_info` is advertised to all control peering peers. As described in
+[Control Peering](#1-control-peering), this may be forwarded in a highly scalable decentralized control plane
+for peering information bases.  The control plane is not the data forwarding plane.  
 
-| Field          | Description                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------- |
+A message that is the same in comparision to what is already in IB is supressed as a duplicate. 
+If received sequence number less than or equal to the current one in the IB, the
+received `publish_info` is discarded as old.
+ 
+Loop prevention is performed by not forwarding `publish_info` messages that have already been seen. 
+
+Publish information is designed to be scoped by administrative policy controls. This is similar to BGP
+route policies. The lack of publish info is a form of control and filtering that directly impacts 
+subscribers knowing about publishers and having insight into publisher parameters. To support
+MOQT, the s-relay/stub relay will use the `publish_info` IB to interwork with SUBSCRIBE_NAMESPACES.
+
+Withdraw of `publish_info` is sent to all peers to remove an entry upon MOQT unannounce and/or unpublish.
+
+Publish Information (`publish_info`) contains the following:
+
+| Field          | Description                                                                                              |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay                 |
 | FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64-bit hashes are encoded. |
-| source_node_id | The node ID that received the MOQT announce                                                             |
+| source_node_id | The node ID that received the MOQT announce/publish                                                      |
+| parameters     | MOQT encoded set of paramters that should be made avaialble to s-relays and stub relays                  |
+
+**parameters** is not decoded when stored in the IB or when transmitted. It is encoded in the original format as defined by
+MOQT. This allows the relay protocol to be agnostic on parameters and to support any number of parameters. It is up to the
+s-relay/stub relay to decide if the parameter should be added or removed when communicating with subscribers of the same
+track. 
 
 
 ### Subscribe Information
