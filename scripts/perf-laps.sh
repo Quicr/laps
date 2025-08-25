@@ -12,6 +12,12 @@
 #   sudo apt-get install -y linux-perf parallel git
 #   git clone https://github.com/brendangregg/FlameGraph
 #   ./perf-laps.sh
+#
+# LAPS must be built with the correct debug info for linux perf. Set
+#  the below before running cmake (e.g. make build)
+#
+#    export CXXFLAGS="-fno-omit-frame-pointer -Wno-error=maybe-uninitialized -fno-inline -O0" CFLAGS="$CXXFLAGS"
+#    export CXXFLAGS="-fno-omit-frame-pointer -Wno-error=maybe-uninitialized -fno-inline -Og -ggdb3" CFLAGS="$CXXFLAGS"
 # ----------------------------------------------------------------
 
 printf -v START_TIME '%(%Y-%m-%dT%H:%M:%S)T' -1
