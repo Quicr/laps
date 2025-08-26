@@ -1,20 +1,10 @@
 # LAPS Peering Protocol and Architecture
 
-LAPS peering architecture enables peering between relays and clients supporting granular traffic engineering and optimizations. Peering can be simple mesh style or it can be highly scalable for a large infrastructure by using
- on-demand Via peering sessions to aggregate traffic flows in the most efficient way to provide low loss/latency
-fan-out delivery.
+LAPS peering architecture enables peering between relays and clients, supporting granular traffic engineering and optimizations. Peering can be simple mesh style, or it can be highly scalable for large infrastructure by using on-demand Via peering sessions to aggregate traffic flows in the most efficient way to provide low loss/latency fan-out delivery.
 
-Peering sessions support administrative policy constraints to ensure that traffic is
-forwarded via a traffic engineered path using one or more relays in the network. Traffic engineered paths
-can be human or AI defined to provide low duplication and even load distribution
-while maintaining administrative policies.  For example, AI can optimize relay forwarding to support different classes
-of service (e.g., gold, silver, bronze) while also supporting geographic region constraints. IP forwarding paths 
-are a factor in maintaining administrative policies. For example, if forwarding between relay A in New York to
-relay B in Seattle would IP packet forward via Canada, AI would find another relay to ensure IP forwarding
-path compliance with the administrative policy. 
+Peering sessions support administrative policy constraints to ensure that traffic is forwarded via a traffic-engineered path using one or more relays in the network. Traffic-engineered paths can be human or AI-defined to provide low duplication and even load distribution while maintaining administrative policies. For example, AI can optimize relay forwarding to support different classes of service (e.g., gold, silver, bronze) while also supporting geographic region constraints. IP forwarding paths are a factor in maintaining administrative policies. For example, if forwarding between relay A in New York to relay B in Seattle would IP packet forward via Canada, AI would find another relay to ensure IP forwarding path compliance with the administrative policy. 
 
-Peering scales to a global network of relays supporting scale into hundreds of millions of active
-tracks with any combination of publishers and subscribers.
+Peering scales to a global network of relays supporting hundreds of millions of active tracks with any combination of publishers and subscribers.
 
 - [LAPS Peering Protocol and Architecture](#laps-peering-protocol-and-architecture)
   - [Relay Types](#relay-types)
@@ -40,18 +30,19 @@ tracks with any combination of publishers and subscribers.
     - [Node Information](#node-information)
       - [Node ID](#node-id)
       - [Node Path](#node-path)
-    - [Announcement Information](#announcement-information)
+    - [Publish Information](#publish-information)
     - [Subscribe Information](#subscribe-information)
-  - [MoQT Track and Relay Peer Handling](#moqt-track-and-relay-peer-handling)
+  - [MOQT Track and Relay Peer Handling](#moqt-track-and-relay-peer-handling)
   - [Connection Establishment](#connection-establishment)
   - [Selection Algorithm](#selection-algorithm)
   - [Data Forwarding](#data-forwarding)
+    - [Edge to Edge](#edge-to-edge)
     - [Source Routing](#source-routing)
       - [SNS Advertisement](#sns-advertisement)
         - [FIB](#fib)
       - [SNS Withdrawal](#sns-withdrawal)
     - [Pipeline forwarding](#pipeline-forwarding)
-    - [Matching Subscribes to Announcements](#matching-subscribes-to-announcements)
+    - [Matching Subscribes to Announcements and Publishes](#matching-subscribes-to-announcements-and-publishes)
   - [Messages](#messages)
     - [Errors](#errors)
       - [QUIC APP Error Codes](#quic-app-error-codes)
@@ -65,59 +56,53 @@ tracks with any combination of publishers and subscribers.
       - [Node Information Withdraw Message](#node-information-withdraw-message)
       - [Subscribe Information Advertisement Message](#subscribe-information-advertisement-message)
       - [Subscribe Information Withdraw Message](#subscribe-information-withdraw-message)
-      - [Announce Information Advertisement Message](#announce-information-advertisement-message)
-      - [Announce Information Withdraw Message](#announce-information-withdraw-message)
+      - [Publish Information Advertisement Message](#publish-information-advertisement-message)
+      - [Publish Information Withdraw Message](#publish-information-withdraw-message)
       - [Subscribe Node Set Advertisement Message](#subscribe-node-set-advertisement-message)
       - [Subscribe Node Set Withdraw Message](#subscribe-node-set-withdraw-message)
-    - [Data Object Messages](#data-object-messages)
-        - [Data Object Common Header](#data-object-common-header)
-          - [Data Object Types](#data-object-types)
-      - [Datagram Objects](#datagram-objects)
-      - [Start of New Stream Data Object](#start-of-new-stream-data-object)
-      - [Subsequent Stream Data Objects](#subsequent-stream-data-objects)
+    - [Data Header Messages](#data-header-messages)
+        - [Data Common Header](#data-common-header)
+          - [Data Types](#data-types)
+      - [Datagram Data](#datagram-data)
+      - [Start of New Stream Data](#start-of-new-stream-data)
+      - [Existing Stream Data](#existing-stream-data)
+    - [Data Header Overhead](#data-header-overhead)
   - [Considerations](#considerations)
-    - [Optimizing Peering using MoQT GOAWAY](#optimizing-peering-using-moqt-goaway)
+    - [Optimizing Peering using MOQT GOAWAY](#optimizing-peering-using-moqt-goaway)
     - [Unsubscribe/Subscribe Misuse](#unsubscribesubscribe-misuse)
   - [Message Flows](#message-flows)
     - [Connection Establishment](#connection-establishment-1)
     - [Node Advertisement](#node-advertisement)
     - [Subscribe Advertisement](#subscribe-advertisement)
-    - [TODO Implementaton](#todo-implementaton)
+    - [Publish Advertisement](#publish-advertisement)
+    - [TODO Implementation](#todo-implementation)
 
 ## Relay Types
 
-The relay type is configured upon start of the relay process. A relay can change its type at runtime, but it must
-disconnect all peers and reconnect them to synchronize the type. The relay type is advertised in [node information](#node-information) upon connection establishment. 
+The relay type is configured upon startup of the relay process. A relay can change its type at runtime, but it must disconnect all peers and reconnect them to synchronize the type. The relay type is advertised in [node information](#node-information) upon connection establishment. 
 
-Not all relays need to perform the same functions. There are also specific use-cases for relays based on their
-position in the topology and how they are used. 
+Not all relays need to perform the same functions. There are also specific use cases for relays based on their position in the topology and how they are used. 
 
 
-Relays are *therefore* categorized into the following types:
+Relays are therefore categorized into the following types:
 
 ### Via
 
-A Via relay is used by Edge relays to forward data between other Edge relays. A Via relay is an intermediate relay that
-does not participate in all the [Information Base](#information-bases) exchanges. Specifically, it only needs to participate in node information base exchanges. 
+A Via relay is used by Edge relays to forward data between other Edge relays. A Via relay is an intermediate relay that does not participate in all the [Information Base](#information-bases) exchanges. Specifically, it only needs to participate in node information base exchanges. 
 
-These relays have high vertical scale due to the lower number of QUIC connections between other Edge/Via relays and because
-of [source routing](#source-routing) and no MoQT client connections. 
+These relays have high vertical scale due to the lower number of QUIC connections between other Edge/Via relays and because of [source routing](#source-routing) and no MOQT client connections. 
 
 > [!NOTE]
-> A Via is not intended to be burdened by the global state of subscriptions... but a Via can be configured
-> to reflect [subscribe information](#subscribe-information) when [control peering](#1-control-peering) servers are not used or available. The Via in this case merely stores and propagates subscriptions. 
+> A Via is not intended to be burdened by the global state of subscriptions, but a Via can be configured to reflect [Information Bases](#information-bases) when [control peering](#1-control-peering) servers are not used or available. The Via in this case merely stores and propagates subscriptions. 
 
 **Via relay operations:**
 
-- Does not need to be part of the `announce` and `subscribe` advertisements and withdrawals selection
-  for data-plane forwarding
-- It participates in the `node` advertisements and withdrawals to maintain reachability information to all nodes.
-- `announce` and `subscribe` advertisements/withdrawals are state maintained, but only to prevent looping and
-  duplication. The retention for this state is set to the maximum convergence time. In this sense, it is a cache
-  of seen announces and subscribes in the last several seconds.
-- Forwards data streams and datagram objects based on [source routing](#source-routing) using the node information base.
-- Traditionally has high vertical scale to support large number of tracks and bandwidth
-- Strategically placed geographically near Edge relays to provide an aggregation point for fan-out of many Edge relays.
+- Does not need to be part of the `publish` and `subscribe` advertisements and withdrawals selection for data plane forwarding
+- Participates in the `node` advertisements and withdrawals to maintain reachability information to all nodes
+- `publish` and `subscribe` advertisements/withdrawals are state-maintained, but only to prevent looping and duplication. The retention for this state is set to the maximum convergence time. In this sense, it is a cache of seen publishes and subscribes in the last several seconds
+- Forwards data streams and datagram objects based on [source routing](#source-routing) using the node information base
+- Traditionally has high vertical scale to support a large number of tracks and bandwidth
+- Strategically placed geographically near Edge relays to provide an aggregation point for fan-out of many Edge relays
 - Used by Edge relays to form a topology to a set of subscriber relays
 
 Peering can go directly to Via or other Edge relays, depending on the [selection algorithm](#selection-algorithm),
@@ -172,31 +157,25 @@ flowchart TD
 
 ### Edge
 
-Edge relays are core relays that facilitate connections from clients and all [relay types](#relay-types). The Edge
-relay is a "**can do it all relay.**"
+Edge relays are core relays that facilitate connections from clients and all [relay types](#relay-types). The Edge relay is a "**can do it all relay**."
 
-These relays often have a lower vertical scale due to them having to maintain MoQT client connections.  It 
-is expected that there will be many edge relays based on MoQT client connections and bandwidth. 
+These relays often have a lower vertical scale due to them having to maintain MOQT client connections. It is expected that there will be many Edge relays based on MOQT client connections and bandwidth. 
 
 **Edge relay operations:**
 
-- Performs everything a Via relay does.
-- Client connection server implementation of MoQT.
-- Handle several client connections, each of which have different QUIC transport encryption/decryption with varying
-  high volume of stream changes based on group and subgroups as defined in MoQT.
-- Establishes data forwarding-plane to all subscribers based on subscribes and publisher announcements/connections.
-- Perform authorization validation and enforcement
-- Enforces administrative policy.
-- Perform edge defense with client connections by implementing rate limiting and other DoS mitigations
-- On-demand peering based on [selection algorithm](#selection-algorithm) to bring in Via relays to establish
-  an optimized and efficient data forwarding-plane to subscribers. 
-- Receives and state maintains announcements from both MoQT client publishers and Stub relays.
+- Performs everything a Via relay does
+- Client connection server implementation of MOQT
+- Handles several client connections, each of which have different QUIC transport encryption/decryption with varying high volume of stream changes based on group and subgroups as defined in MOQT
+- Establishes data forwarding plane to all subscribers based on subscribes and publisher announcements/connections
+- Performs authorization validation and enforcement
+- Enforces administrative policy
+- Performs edge defense with client connections by implementing rate limiting and other DoS mitigations
+- On-demand peering based on [selection algorithm](#selection-algorithm) to bring in Via relays to establish an optimized and efficient data forwarding plane to subscribers 
+- Receives and state-maintains publishes from both MOQT client publishers and Stub relays
 
-Edge relays are expected to scale horizontally in a stateless fashion, supporting scale up and scale down based
-on demand in the region. Edge relays can be "right-sized" to fit the need of subscriber and publisher demand.
+Edge relays are expected to scale horizontally in a stateless fashion, supporting scale-up and scale-down based on demand in the region. Edge relays can be "right-sized" to fit the need of subscriber and publisher demand.
 
-Edges relays are often placed behind network load balancers, which can support **anycast** for both client
-and peering connections.
+Edge relays are often placed behind network load balancers, which can support **anycast** for both client and peering connections.
 
 ```mermaid
 ---
@@ -217,39 +196,27 @@ flowchart TB
 
 ### Stub
 
-Stub relays are intended to be super lightweight and simple relays. They connect to one or more Edge relays only
-and do not accept inbound connections. They implement MoQT server functionality to accept client connections and
-to establish a data forwarding-plane for them via the relay infrastructure. A Stub relay is a **child** of
-the **Edge** relay that it is connected to. 
+Stub relays are intended to be super lightweight and simple relays. They connect to one or more Edge relays only and do not accept inbound connections. They implement MOQT server functionality to accept client connections and to establish a data forwarding plane for them via the relay infrastructure. A Stub relay is a **child** of the **Edge** relay that it is connected to. 
 
-Primary use-case for a Stub relay is to fan-out subscribers in a local area network. Example placement for Stub
-relays are in residential access routers, branch offices, NAT routers, access points, floor switches, firewalls, etc. 
+Primary use case for a Stub relay is to fan-out subscribers in a local area network. Example placement for Stub relays are in residential access routers, branch offices, NAT routers, access points, floor switches, firewalls, etc. 
 
 > [!NOTE]
-> While this protocol fully supports [MoQT](https://github.com/moq-wg/moq-transport/) client connections and
-> features of MoQT, it does not require publisher and subscribing clients to use MoQT. Clients can implement this
-> protocol as a Stub relay. In this sense, the client is a stub relay of only one client (publisher, subscriber
-> or both). 
-> There are some interesting use-cases where this could be implemented on a client as a different process
-> Stub relay that could efficiently optimize and aggregate multiple applications running on the same host system.
-> For example, if many applications  use the Pub/Sub model and need to connect to the relay infrastructure,
-> they could use this protocol as a Stub relay to aggregate those applications. 
+> While this protocol fully supports [MOQT](https://github.com/moq-wg/moq-transport/) client connections and features of MOQT, it does not require publisher and subscribing clients to use MOQT. Clients can implement this protocol as a Stub relay. In this sense, the client is a stub relay of only one client (publisher, subscriber, or both). 
+> There are some interesting use cases where this could be implemented on a client as a different process Stub relay that could efficiently optimize and aggregate multiple applications running on the same host system. For example, if many applications use the Pub/Sub model and need to connect to the relay infrastructure, they could use this protocol as a Stub relay to aggregate those applications. 
 
 
 Stub relays have the following uses, feature capabilities and restrictions:
 
 - Must peer directly with Edge relays
-- Can peer to more than one edge relay
-- Will only receive subscribes based on the advertised announcements to the Edge relay
+- Can peer to more than one Edge relay
+- Will only receive subscribes based on the advertised publish information to the Edge relay
 - Uses very little memory and CPU for peering
-- Use-case for more than one peer is to optimize reachability to other edges
+- Use case for more than one peer is to optimize reachability to other edges
 - Fully supports NAT and return traffic over the established peer connection, can be placed behind a firewall/NAT router
-- Uses peer mode `Both`, control and data via the same peer connection.
-- It does not connect to a cloud provider control server (not needed)
+- Uses peer mode `Both`, control and data via the same peer connection
+- Does not connect to a cloud provider control server (not needed)
 - Will not accept inbound peer connections and will not implement the full peering protocol
-- The Edge relay that the Stub connects to will forward subscribes by marking itself as the source
-  node. Stubs are transparent and stateless. Only the Edge relay is aware of the Stub. Other Edge and Via relays
-  are unaware of Stub relays.
+- The Edge relay that the Stub connects to will forward subscribes by marking itself as the source node. Stubs are transparent and stateless. Only the Edge relay is aware of the Stub. Other Edge and Via relays are unaware of Stub relays
 
 ```mermaid
 ---
@@ -264,78 +231,51 @@ flowchart TD
     end
 ```
 
-In the above diagram, the Stub is the **child** relay and the Edge relay is the **parent**. All subscriptions
-sent by the Stub will be regenerated by the Edge relay with itself as the originator of that subscription.
-In this sense, the Edge relay appears to the rest of the Relay network as the relay that has the subscriber.
-**This is by design to ensure that the Stub relays, which may be in the millions, do not need to be known by
-any other relay in the relay network.**
+In the above diagram, the Stub is the **child** relay and the Edge relay is the **parent**. All subscriptions sent by the Stub will be regenerated by the Edge relay with itself as the originator of that subscription. In this sense, the Edge relay appears to the rest of the relay network as the relay that has the subscriber. **This is by design to ensure that the Stub relays, which may be in the millions, do not need to be known by any other relay in the relay network.**
 
 ### Relay Terms
 
-In addition to [relay types](#relay-types), relays are described using additional terms.  This section describes
-the terms commonly used to describe relays. 
+In addition to [relay types](#relay-types), relays are described using additional terms. This section describes the terms commonly used to describe relays. 
 
 #### o-relay = Origin Relay
 
-The origin relay node is always an [Edge Relay](#edge) **type**.  When a client session sends a publish
-announcement (aka intent to publish), the relay becomes an origin relay. Client connections are only
-accepted on Edge and Stub relay types. 
+The origin relay node is always an [Edge Relay](#edge) **type**. When a client session sends a publish announcement (aka intent to publish), the relay becomes an origin relay. Client connections are only accepted on Edge and Stub relay types. 
 
-A [Stub Relay](#stub) **type** can have one or more publishers, which technically means the stub is
-an origin relay, but the design of this protocol has Stub relays as a child of an Edge relay. The
-Edge relay that the stub is connected to becomes the o-relay for the publisher in the data
-forwarding-plane topology. 
+A [Stub Relay](#stub) **type** can have one or more publishers, which technically means the stub is an origin relay, but the design of this protocol has Stub relays as a child of an Edge relay. The Edge relay that the stub is connected to becomes the o-relay for the publisher in the data forwarding plane topology. 
  
 #### s-relay = Subscriber Relay
 
-The subscriber relay node is always an [Edge Relay](#edge) **type**.  When a client session subscribes,
-the relay becomes the subscriber relay. Client connections are only accepted on Edge and Stub relay types. 
+The subscriber relay node is always an [Edge Relay](#edge) **type**. When a client session subscribes, the relay becomes the subscriber relay. Client connections are only accepted on Edge and Stub relay types. 
 
-A [Stub Relay](#stub) **type** can have one or more subscribers, which technically means the stub is
-a subscriber relay, but the design of this protocol has Stub relays as a child of an Edge relay. The
-Edge relay that the stub is connected to becomes the s-relay for the subscriber in the data forwarding-plane topology. 
+A [Stub Relay](#stub) **type** can have one or more subscribers, which technically means the stub is a subscriber relay, but the design of this protocol has Stub relays as a child of an Edge relay. The Edge relay that the stub is connected to becomes the s-relay for the subscriber in the data forwarding plane topology. 
 
 #### e-relay = General edge relay
 
-An edge relay is of **type** [Edge](#edge). It implements MoQT and accepts inbound client connections as well as implement peering to act as a Via relay. Edge relays can peer with each other, with STUBs and Via relays.  An edge relay is
-a do all relay. The term e-relay is a general term for an edge relay that may be an o-relay, s-relay, or acting
-as a Via. 
+An edge relay is of **type** [Edge](#edge). It implements MOQT and accepts inbound client connections as well as implements peering to act as a Via relay. Edge relays can peer with each other, with STUBs and Via relays. An edge relay is a do-all relay. The term e-relay is a general term for an edge relay that may be an o-relay, s-relay, or acting as a Via. 
 
 #### v-relay = Via relay
 
-A via relay is a relay that of **type** [Via](#via). It implements peering but not client access. A Via relay is
-intended to be an aggregator (reduce bandwidth by optimized fan-out) and hairpin for traffic steering. It's lightweight
-and has higher vertical scale supporting very low latency. 
+A via relay is a relay of **type** [Via](#via). It implements peering but not client access. A Via relay is intended to be an aggregator (reduce bandwidth by optimized fan-out) and hairpin for traffic steering. It's lightweight and has higher vertical scale supporting very low latency. 
 
 #### Node
 
-Relay could be implemented in a client, such as a Stub relay in the client. In this case, the client relay would not be called a node.  Node term is used to clarify that the relay of any type is an infrastructure level relay that participates
-in peering. 
+Relay could be implemented in a client, such as a Stub relay in the client. In this case, the client relay would not be called a node. Node term is used to clarify that the relay of any type is an infrastructure-level relay that participates in peering. 
 
 
 ## Topologies
 
-There are numerous topology options to form the data forwarding-plane from publisher to one or more subscribers.
-The general rule of thumb is to optimize with hub-and-spoke (aka Star) peering if possible and inject Via 
-relays as and where needed to aggregate efficiently to reduce congestion/bandwidth.  Injecting Via relays are used
-to steer data forwarding via different IP forwarding paths to avoid and workaround problems (e.g.,
-congestion, loss, high cost path, ...). They are also injected to steer data forwarding based on
-administrative policy. By utilizing both Edge and Via relays, data forwarding paths can be granularly
-controlled to provide highly scalable efficient low latency-loss between publisher and subscriber(s). 
+There are numerous topology options to form the data forwarding plane from publisher to one or more subscribers. The general rule of thumb is to optimize with hub-and-spoke (aka Star) peering if possible and inject Via relays as and where needed to aggregate efficiently to reduce congestion/bandwidth. Injecting Via relays are used to steer data forwarding via different IP forwarding paths to avoid and work around problems (e.g., congestion, loss, high cost path, etc.). They are also injected to steer data forwarding based on administrative policy. By utilizing both Edge and Via relays, data forwarding paths can be granularly controlled to provide highly scalable, efficient, low latency-loss between publisher and subscriber(s). 
 
 ### Hub-and-Spoke Topology
 
-A hub-and-spoke (star) topology provides a simple data forwarding-plane that often results in the lowest
-latency between publisher and subscribers. The design is simple; the relay that has the directly attached
-publisher client session sending data (aka origin of the data) establishes peering to relays that directly have
-the subscribers connected. 
+A hub-and-spoke (star) topology provides a simple data forwarding plane that often results in the lowest latency between publisher and subscribers. The design is simple; the relay that has the directly attached publisher client session sending data (aka origin of the data) establishes peering to relays that directly have the subscribers connected. 
 
 The [selection algorithm](#selection-algorithm) attempts to use hub-and-spoke if all the below are true:
 
-* Administrative policy permits it
-* Network path has enough bandwidth and has little to no loss and acceptable latency
-* Publish origin relay is not overloaded with connections to other edges
-* Duplication fan-out is not more than configured maximum with a default of 2
+- Administrative policy permits it
+- Network path has enough bandwidth and has little to no loss and acceptable latency
+- Publish origin relay is not overloaded with connections to other edges
+- Duplication fan-out is not more than configured maximum with a default of 2
 
 ```mermaid
 ---
@@ -352,16 +292,11 @@ flowchart TD
     E3 --> S2([Subscriber 2])
 ```
 
-In the above diagram, there are two subscribers in different regions, so aggregation using a Via relay is not needed.
-The seattle origin relay establishes peering to the subscriber relay and forwards data. 
+In the above diagram, there are two subscribers in different regions, so aggregation using a Via relay is not needed. The Seattle origin relay establishes peering to the subscriber relay and forwards data. 
 
 ### Typical Topology
 
-The typical topology is used to support optimized data forwarding with bandwidth and network forwarding efficiency. It uses
-hub-and-spoke when it make sense and adds Via(s) when needed. Via relays are a resource that is engaged on-demand or via predefined peering to establish hairpin/aggregation points in an optimized fashion. The Via(s) that are used are ones that are not overloaded and have optimal forwarding to the target subscriber edge relays. 
-A Via is added upon [selection](#selection-algorithm) of peering to establish the data forwarding.  Vias can be
-added or removed with zero-loss in data forwarding. For example, the data forwarding-plane may start off as
-hub-and-spoke and then transition to use a Via to aggregate e-relays in a region. 
+The typical topology is used to support optimized data forwarding with bandwidth and network forwarding efficiency. It uses hub-and-spoke when it makes sense and adds Via(s) when needed. Via relays are a resource that is engaged on-demand or via predefined peering to establish hairpin/aggregation points in an optimized fashion. The Via(s) that are used are ones that are not overloaded and have optimal forwarding to the target subscriber edge relays. A Via is added upon [selection](#selection-algorithm) of peering to establish the data forwarding. Vias can be added or removed with zero-loss in data forwarding. For example, the data forwarding plane may start off as hub-and-spoke and then transition to use a Via to aggregate e-relays in a region. 
 
 ```mermaid
 ---
@@ -421,11 +356,7 @@ Peering connections operate in one of three modes.
 
 ### (1) Control Peering
 
-In this mode, only control messages are exchanged. Mostly [Information Base](#information-bases) messages are exchanged
-in this mode. This mode allows a single connection for control plane functions without requiring the control signaling
-to follow data forwarding paths. Control signaling does not often need more than a single connection
-(can include redundant connection for HA) while [data peering](#2-data-peering) messages can benefit
-from having more than one QUIC connection to scale data forwarding over network ECMP paths. 
+In this mode, only control messages are exchanged. Mostly [Information Base](#information-bases) messages are exchanged in this mode. This mode allows a single connection for control plane functions without requiring the control signaling to follow data forwarding paths. Control signaling does not often need more than a single connection (can include redundant connection for HA) while [data peering](#2-data-peering) messages can benefit from having more than one QUIC connection to scale data forwarding over network ECMP paths. 
 
 ```mermaid
 ---
@@ -453,32 +384,20 @@ flowchart TD
 
 #### Sending/Receiving Control Messages
 
-Control messages are exchanged over a QUIC bi-directional stream. The peer that makes the connection is required
-to create the bi-directional stream that will be used for control messaging. All control messages will
-go over this QUIC stream. [Connect](#connect-message) is required to be the first message exchanged on a new
-connection. To exchange this message, the client **MUST** create the control bi-directional QUIC stream. The
-server side will latch onto this stream to send back responses and subsequent control messages to the client. 
-The latching allows the client to recreate the control bi-directional stream if needed. The server will
-latch and move to the new stream based on received control messages from the client. At no point can
-two bi-directional controls streams be in use. To ensure this, the server will reset the previous control
-bidir stream if it wasn't already reset/fin closed. 
+Control messages are exchanged over a QUIC bi-directional stream. The peer that makes the connection is required to create the bi-directional stream that will be used for control messaging. All control messages will go over this QUIC stream. [Connect](#connect-message) is required to be the first message exchanged on a new connection. To exchange this message, the client **MUST** create the control bi-directional QUIC stream. The server side will latch onto this stream to send back responses and subsequent control messages to the client. The latching allows the client to recreate the control bi-directional stream if needed. The server will latch and move to the new stream based on received control messages from the client. At no point can two bi-directional control streams be in use. To ensure this, the server will reset the previous control bidir stream if it wasn't already reset/fin closed. 
 
 ### (2) Data Peering
 
-Data peering is used to forward data objects in a [pipeline fashion](#pipelining). Data peering can operate in
-**uni-directional** or **bi-directional** modes.
+Data peering is used to forward data objects in a [pipeline fashion](#pipeline-forwarding). Data peering can operate in **uni-directional** or **bi-directional** modes.
 
-In bi-directional mode, data peering will reuse the connection to send data back to the peer. This is to
-support NAT and/or firewall constraints.
+In bi-directional mode, data peering will reuse the connection to send data back to the peer. This is to support NAT and/or firewall constraints.
 
 In uni-directional mode, the peer is used only for receiving data.
 
 Data peering mode is indicated in the `connect` and `connect_response` messages.
 
 > [!IMPORTANT]
-> In data peering mode only, the Control bidirectional stream is used to convey [SNS](#data-forwarding)
-> advertisements. In this sense, the control stream is always established, even when control peering is
-> not used for the data peer. 
+> In data peering mode only, the control bidirectional stream is used to convey [SNS](#data-forwarding) advertisements. In this sense, the control stream is always established, even when control peering is not used for the data peer. 
 
 ```mermaid
 ---
@@ -491,13 +410,11 @@ flowchart LR
     E1 <-- "bidir" --> E3[Edge 3]
 ```
 
-[Stub](#peering-modes) peers always operate in bi-directional mode because it is assumed that they are behind NAT/FW.
-Stub relays also do not have the scale that requires multiple connections to support network ECMP. 
+[Stub](#stub) peers always operate in bi-directional mode because it is assumed that they are behind NAT/FW. Stub relays also do not have the scale that requires multiple connections to support network ECMP. 
 
 ### (3) Both control and data peering
 
-When multiple parallel connections are used, only a single peer **MUST** be used in this mode. The peer can opperate
-in uni-directional or bi-directional modes. 
+When multiple parallel connections are used, only a single peer **MUST** be used in this mode. The peer can operate in uni-directional or bi-directional modes. 
 
 ```mermaid
 ---
@@ -514,37 +431,41 @@ Control peering is always bi-directional and uses the same peering session.
 
 ## Information Bases
 
-Information bases (IB) hold the control plane information. Information is advertised and withdrawn to maintain the
-information bases.
+Information bases (IB) hold the control plane information. Information is advertised and withdrawn to maintain the information bases.
+
+```mermaid
+block-beta
+  ib["Information Base"]:3
+  columns 3
+    node["Node Info"]
+    pub["Publish Info"]
+    sub["Subscribe Info"]  
+
+style ib fill:#939,stroke:#8f8f8f,stroke-width:2px,color:#FFF
+style node fill:#949494,color:#3d3d3d,stroke:#8f8f8f,stroke-width:2px
+style pub fill:#949494,color:#3d3d3d,stroke:#8f8f8f,stroke-width:2px
+style sub fill:#949494,color:#3d3d3d,stroke:#8f8f8f,stroke-width:2px
+```
 
 ### Node Information
 
-Node information base (NIB) conveys information about a node itself. It is exchanged in [connect](#connect-message) 
-and [connect_response](#connect-response-message) messages to indicate the peer info of the nodes
-connecting. If the peer is a control peer, node information of other nodes are sent to the peer. 
-Upon transmission of the node information, the path is appended with self node ID. This forms a node path so
-that forwarding can stop when it sees remote or itself in the path list. Only best nodes selected are advertised. 
-Nodes information is not sent if it's the same as received before, duplicate. It will be advertised if there is
-a change. This is to support metric changes, such as load and reachability information changing in node information.
+Node information base (NIB) conveys information about a node itself. It is exchanged in [connect](#connect-message) and [connect_response](#connect-response-message) messages to indicate the peer info of the nodes connecting. If the peer is a control peer, node information of other nodes are sent to the peer. Upon transmission of the node information, the path is appended with self node ID. This forms a node path so that forwarding can stop when it sees remote or itself in the path list. Only best nodes selected are advertised. Node information is not sent if it's the same as received before (duplicate). It will be advertised if there is a change. This is to support metric changes, such as load and reachability information changing in node information.
 
 Currently a version of the node update is not required, but may be added in the future if race conditions arise. 
 
-Removal of `node_info` is performed when the direct peering session is terminated or upon receiving a withdraw of
-the node information.  The node withdraw will be sent to all peers except the one that sent it and if the peer
-is in the path. 
+Removal of `node_info` is performed when the direct peering session is terminated or upon receiving a withdraw of the node information. The node withdraw will be sent to all peers except the one that sent it and if the peer is in the path. 
 
-The best path selection will take place to find another path for active subscribes that are using the 
-node that is withdrawn. 
+The best path selection will take place to find another path for active subscribes that are using the node that is withdrawn. 
 
 The NIB contains the following:
 
 | Field/Attributes          | Description                                                                          |
 | ------------------------- | ------------------------------------------------------------------------------------ |
-| [NodeId](#node-id)        | Node ID of the node as a unsigned 64bit integer                                      |
+| [NodeId](#node-id)        | Node ID of the node as an unsigned 64-bit integer                                    |
 | [Node Type](#relay-types) | Node Relay Type                                                                      |
-| **Contact**               | FQDN or IP to reach the node. This maybe an FQDN of the load balancer or anycast IP  |
-| **Longitude**             | Longitude of the node location as a double 64bit value                               |
-| **latitude**              | Latitude of the node location as a double 64bit value                                |
+| **Contact**               | FQDN or IP to reach the node. This may be an FQDN of the load balancer or anycast IP  |
+| **Longitude**             | Longitude of the node location as a double 64-bit value                               |
+| **Latitude**              | Latitude of the node location as a double 64-bit value                                |
 | [Node Path](#node-path)   | Path of nodes the node information has traversed                                     |
 | SumSrtt                   | Sum of SRTT in microseconds for peering sessions in the path, zero if peer is direct |
 
@@ -557,13 +478,13 @@ The NIB contains the following:
 Node ID is the unique ID of the node. Nodes **MUST** be configured with different Node IDs. If more than one Node
 uses the same ID, only the first (oldest) will work. The others will be dropped.
 
-The Node ID is an unsigned 64bit integer that is configured using the below
+The Node ID is an unsigned 64-bit integer that is configured using the below
 textual scheme. The textual scheme aids in simplified assignment, automation,
 administrative configuration and troubleshooting.
 
 **Scheme**: `<high value>:<low value>` textual format. The colon is **REQUIRED**.
 
-The values can be represented as an unsigned 32bit integer or dotted notation of 16bit integers,
+The values can be represented as an unsigned 32-bit integer or dotted notation of 16-bit integers,
 such as `<uint16>.<uint16>`. The values can be mixed in how they are represented.
 
 **Examples**: All the below are valid configurations of the Node ID
@@ -573,7 +494,7 @@ such as `<uint16>.<uint16>`. The values can be mixed in how they are represented
 - `100.2:9001.2001`
 - `123456:789.100`
 
-> Simple deployments may automate the Node ID value using a 64bit hash of the node device or host ID or FQDN (if unique).
+> Simple deployments may automate the Node ID value using a 64-bit hash of the node device or host ID or FQDN (if unique).
 
 #### Node Path
 
@@ -620,38 +541,65 @@ Node `1:1`
 If a new connection were established between `1:4` and `1:6` with a sRTT of less than `75ms`, `1:4` would
 select the path via `1:6` with a path length of `2` and sum(sRTT) of less than `135ms`
 
-### Announcement Information
+### Publish Information
 
-MoQT announce of namespace tuple and name are advertised in `announce_info` messages. Only the hash of each namespace
-item and name are advertised. `announce_info` is advertised to all peers **from Stub relays only**. Announce information
-is not used by the other relays because they have all subscribe information. Stubs do not have all subscribes, so
-the o-relay needs the announce info so that it can send only the subscribes matching the announces to the stub.
+MOQT announce of namespace tuple and name are advertised in `publish_info` messages. 
+Only the hash of each namespace item and name are advertised.
 
-Loop prevention is performed by not forwarding `announce_info` messages that have already been seen. 
+MOQT publish messages provide full track name and addtional parameters that convey capablities
+and features of the publisher. Some of these paraemters are added to the `publish_info` so that they
+are available to the subscriber edge relays and STUBs. 
 
-Withdraw of `announce_info` is sent to all peers to remove an entry upon MoQT unannounce.
+In the case of multiple publishers to the same full track name on the same o-relay, the parameters
+are reconciled to merge. The duplicate parameter that enables the capability and/or has a better value
+based on the parameter definition in MOQT is chosen.  
 
-Announce Information (`announce_info`) contains the following:
+`publish_info` is advertised to all control peering peers. As described in
+[Control Peering](#1-control-peering), this may be forwarded in a highly scalable decentralized control plane
+for peering information bases.  The control plane is not the data forwarding plane.  
 
-| Field          | Description                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------- |
-| FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64bit hashes are encoded. |
-| source_node_id | The node ID that received the MoQT announce                                                             |
+A message that is the same in comparision to what is already in IB is supressed as a duplicate. 
+If received sequence number less than or equal to the current one in the IB, the
+received `publish_info` is discarded as old.
+ 
+Loop prevention is performed by not forwarding `publish_info` messages that have already been seen. 
+
+Publish information is designed to be scoped by administrative policy controls. This is similar to BGP
+route policies. The lack of publish info is a form of control and filtering that directly impacts 
+subscribers knowing about publishers and having insight into publisher parameters. To support
+MOQT, the s-relay/stub relay will use the `publish_info` IB to interwork with SUBSCRIBE_NAMESPACES.
+
+Withdraw of `publish_info` is sent to all peers to remove an entry upon MOQT unannounce and/or unpublish.
+
+Publish Information (`publish_info`) contains the following:
+
+| Field          | Description                                                                                              |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay                 |
+| FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64-bit hashes are encoded. |
+| source_node_id | The node ID that received the MOQT announce/publish                                                      |
+| parameters     | MOQT encoded set of parameters that should be made available to s-relays and stub relays                  |
+
+**parameters** is not decoded when stored in the IB or when transmitted. It is encoded in the original format as defined by
+MOQT. This allows the relay protocol to be agnostic on parameters and to support any number of parameters. It is up to the
+s-relay/stub relay to decide if the parameter should be added or removed when communicating with subscribers of the same
+track. 
+
 
 ### Subscribe Information
 
-MoQT subscribe namespace tuple and name are advertised in `subscribe_info` messages. The hashes of namespace tuple
+MOQT subscribe namespace tuple and name are advertised in `subscribe_info` messages. The hashes of namespace tuple
 and name are the primary information being used by the relays for peering.  The hashes combined establish a unique subscribe. 
 
-Subscribe information in MoQT includes more information, such as parameters, priority, etc. These
+Subscribe information in MOQT includes more information, such as parameters, priority, etc. These
 values, including the original opaque data of the subscribe namespace and name, are needed by o-relays to
-interact with the MoQT publisher. In order to ensure that nothing is left out, the original subscribe data (entire subscribe) message is encoded in the `subscribe_info`. This allows any relay or control server to inspect and process
+interact with the MOQT publisher. In order to ensure that nothing is left out, the original subscribe data (entire subscribe) message is encoded in the `subscribe_info`. This allows any relay or control server to inspect and process
 the original subscribe message. The original subscribe data is not used by other non o-relays and is instead
 transparently passed along. 
 
 `subscribe_info` is advertised to all control peering peers. As described in
-[Control Peering](#1-control-peering), this may be forwarded in a highly scalable decentralized control-plane
-for peering information bases.  The control-plane is not the data forwarding-plane.  It's only for control and
+[Control Peering](#1-control-peering), this may be forwarded in a highly scalable decentralized control plane
+for peering information bases.  The control plane is not the data forwarding plane.  It's only for control and
 information base messages, which will mostly be subscribe information.  
 
 Subscribe information is designed to be scoped by administrative policy controls. This is similar to BGP
@@ -666,7 +614,7 @@ Subscribe to publisher is a function of [matching announce](#matching-subscribes
 Loop prevention is performed by not forwarding `subscribe_info` messages that have already been seen and by
 not sending the subscribe back to the one that originated it. 
 
-Withdraw of `subscribe_info` is sent by the node that received the MoQT unsubscribe. Withdraws are sent
+Withdraw of `subscribe_info` is sent by the node that received the MOQT unsubscribe. Withdraws are sent
 in the same fashion as advertisements to control peers. 
 
 > [!NOTE]
@@ -684,20 +632,20 @@ Subscribe information (`subscribe_info`) contains the following:
 | Field          | Description                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------- |
 | sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay    |
-| source_node_id | The node ID that received the MoQT subscribe                                                |
-| TrackHash      | Array of the **namespace tuple** hashes and hash of **name**. Only 64bit hashes are encoded |
-| subscribe_data | Original MoQT subscribe message (wire format) that initiated the subscribe                  |
+| source_node_id | The node ID that received the MOQT subscribe                                                |
+| TrackHash      | Array of the **namespace tuple** hashes and hash of **name**. Only 64-bit hashes are encoded |
+| subscribe_data | Original MOQT subscribe message (wire format) that initiated the subscribe                  |
 
-## MoQT Track and Relay Peer Handling
+## MOQT Track and Relay Peer Handling
 
-Track as defined by MoQT is a data flow that is identified by track alias, which is a unique value that 
+Track as defined by MOQT is a data flow that is identified by track alias, which is a unique value that 
 represents the full track name (namespace tuple and name) in subscribes. Fan-out is made possible by relaying
 the data from a given track alias to all subscribes (e.g., s-relay, subscribers) that match the same
 track alias. 
 
 ```mermaid
 ---
-title: MoQT Fan-out
+title: MOQT Fan-out
 ---
 flowchart TD
     P(Publisher) --> TA@{ shape: bow-rect, label: "Track Alias = **ABC**" }
@@ -713,20 +661,20 @@ a set of subscribers using the same alias. Publisher **MUST** publish to the exa
 Data is then fanned-out to all the matching subscribers. 
 
 > [!IMPORTANT]
-> In MoQT the track alias can be different between subscribers and publishers.  The peering architecture normalizes track alias to be a consistent hash of the opaque namespace tuple and name.  Subscribers and publishers can still use their own track alias, but those will be mapped to the consistent hash upon forwarding via peering. For efficiency, it's recommended to use the `SUBSCRIBE_ERROR(retry track alias)` method to have both publisher and subscribers use the same consistent hash algorithm for track alias.
+> In MOQT the track alias can be different between subscribers and publishers.  The peering architecture normalizes track alias to be a consistent hash of the opaque namespace tuple and name.  Subscribers and publishers can still use their own track alias, but those will be mapped to the consistent hash upon forwarding via peering. For efficiency, it's recommended to use the `SUBSCRIBE_ERROR(retry track alias)` method to have both publisher and subscribers use the same consistent hash algorithm for track alias.
 
-In peering, the track is referred to as a **data context** using QUIC layer transmission. In MoQT,
+In peering, the track is referred to as a **data context** using QUIC layer transmission. In MOQT,
 the data context uniquely identifies a flow of same content data (e.g., track, file, ...) that can
-span over many streams. As with MoQT, there can only be one active QUIC stream at a time for the same
+span over many streams. As with MOQT, there can only be one active QUIC stream at a time for the same
 data context (e.g., track). Transitioning to a new QUIC stream primarily is to mitigate some problem with
 the stream of data, such as head of line blocking. It can also be used by an application to restart
 a content stream at a new point. For this reason, a new stream results in a replacement operation of the
 previously active QUIC stream. Data relating to the previous QUIC stream is cleared and upon new stream data flows
 afresh. This is required for [pipeline forwarding](#pipeline-forwarding) so that data does not become corrupted. 
 
-A **data context** has an `Id` that is provided by the transport, that is connection (peer and MoQT client) session
+A **data context** has an `Id` that is provided by the transport, that is connection (peer and MOQT client) session
 specific.  [Subscriber Node Set Id](#source-routing) is created for each data context, which is for each
-MoQT track.  An implementation may use the same `Id` for both SNS and data context ID.  
+MOQT track.  An implementation may use the same `Id` for both SNS and data context ID.  
 
 > [!NOTE]
 > The reason why data context Id is not directly using track alias value is because connections
@@ -736,8 +684,8 @@ MoQT track.  An implementation may use the same `Id` for both SNS and data conte
 > to support multiple publishers, where publishers are publihsing to the same track alias. Data is
 > [pipline forwarded](#pipeline-forwarding) and requires a single publisher for the pipe (aka data context).
 
-In MoQT, data objects contain a **group-id**, **subgroup-id**, and **object-id**.  When the 
-**group-id** or **subgroup-id** changes, the MoQT behavior is to transition to a new QUIC stream. MoQT
+In MOQT, data objects contain a **group-id**, **subgroup-id**, and **object-id**.  When the 
+**group-id** or **subgroup-id** changes, the MOQT behavior is to transition to a new QUIC stream. MOQT
 in this case adds more state and comparison tracking that isn't needed needed for relay forwarding,
 especially with peering. The publisher will be the one that detects group/subgroup id changes and will
 start a new QUIC stream. The receiving relay will efficiently see that a new stream is being
@@ -767,8 +715,8 @@ flowchart TD
 
 > [!IMPORTANT]
 > In the above diagram there is a single publisher, but there could be more than one publisher that is
-publishing to the same track alias. While MoQT doesn't yet handle multiple publishers to the same
-subscription, this protocol does by using data contexts in this fashion.  This protocol therefore
+publishing to the same track alias. While MOQT doesn't directly handle multiple publishers to the same
+track, this protocol does by using data contexts in this fashion.  This protocol therefore
 supports [pipeline forwarding](#pipeline-forwarding) with **one or more publishers to the same track**.
 
 ## Connection Establishment
@@ -804,7 +752,7 @@ AI and ML will be used in the very near future to optimize v-relay nodes to inje
 algorithm will be updated to establish the selection of nodes at start and ongoing. For example, 
 it is expected and fully supported to inject or change v-relays at any time to mitigate network issues,
 load issues, or to aggregate bandwidth based on changing of subscribers and other factors. The
-forwarding-plane change is ZERO loss. 
+forwarding plane change is ZERO loss. 
 
 In the near future; Reachability is checked and maintained by nodes to know if it can reach v-relays and other e-relays. 
 It is also likely that a pre-selection of v-relays by the s-relay will be added to Node information. Node advertisements convey this information via control peering. All nodes know which nodes can reach the s-relay and other relays.
@@ -863,10 +811,47 @@ Data is forwarded using a data header that is included in every datagram message
 QUIC streams enable pipeline support where data is forwarded bytes-in to \[fan-out\] bytes-out. Pipeline forwarding
 reduces the end-to-end latency and jitter on data between publisher edge relay to all subscriber edge/stub relays.
 
+### Edge to Edge
+
+Data can be relayed between zero or more intermediate hops. The intermediate hops do not participate in MOQT. They
+act more as an underlay for Edge to Edge forwarding. 
+
+```mermaid
+---
+title: Edge to Edge Forwarding via Intermediate hops
+---
+flowchart TD
+    OR(o-relay) --> V1[v-relay 1]
+    style OR fill:#AED6F1,stroke:#424949,stroke-width:2px,color:#1C2833
+
+    subgraph G1 [" "]
+        V1 --> V2[v-relay 2]
+    end 
+
+    V2 --> S1(s-relay 1)
+
+    style S1 fill:#A9DFBF,stroke:#424949,stroke-width:2px,color:#1C2833
+
+    V2 --> S2(s-relay 2)
+    style S2 fill:#A9DFBF,stroke:#424949,stroke-width:2px,color:#1C2833
+
+    OR -.->  C1@{ shape: braces, label: "MOQT E2E" }
+    C1 -.-> S1
+    C1 -.-> S2
+
+    linkStyle 0,1,2,3 stroke:#696969,stroke-width:4px;
+```
+
+The above diagram illustrates in **sold lines** the IP data path that is used from **o-relay** to
+both **s-relay-1** and **s-relay-2**.  The **dashed lines** show the MOQT end-to-end (E2E) path.
+It shows that only the edge relays are aware of MOQT. Only the edge relays perform serialization
+and deserialization of MOQT messages. The relay protocol between Edges and Vias are agnostic to
+MOQT. In this sense, it's an underlay for MOQT. 
+
 ### Source Routing
 
 Data forwarding is source routed in a similar fashion as described in [Segment Routing Architecture](https://www.rfc-editor.org/rfc/rfc8402.html).
-Data forwarding in MoQT is designed to support fan-out of one or more publishers to one or more subscribers. This
+Data forwarding in MOQT is designed to support fan-out of one or more publishers to one or more subscribers. This
 is different from IP forwarding (point to point) in terms of the label stack size. Building a stack of labels
 for all target nodes could grow into the thousands with a large number of subscribers spanning thousands
 of edge relays. It would not scale to send the set of node IDs in every datagram frame or even start of every QUIC
@@ -876,10 +861,10 @@ Unlike segment routing where it utilizes a stack of labels/sids, this protocol u
 a **subscriber node set (SNS)** that **describes the set of subscriber edge relay (s-relays) node IDs that
 need to receive the data**. It does **not describe** the path that the data will traverse. 
 
-The forwarding-plane will be established relay by relay based on node advertisements. Subscribe source node id
+The forwarding plane will be established relay by relay based on node advertisements. Subscribe source node id
 is lookup to find the best peer based the [selection](#selection-algorithm). Considering the nodes
 and some peering are provisioned before any publishers/subscribers connect, the computation of best
-peer is done well before any data is being forwarded. Establishing a forwarding-plane for a publisher to any set of subscribers happens in microseconds internally and upon first data object, hop-by-hop.  
+peer is done well before any data is being forwarded. Establishing a forwarding plane for a publisher to any set of subscribers happens in microseconds internally and upon first data object, hop-by-hop.  
 
 SNS is exchanged via the control bidirectional stream on the peering session that will be used to receive 
 the data. Utilizing the control bidir stream within the peer session ensures scope of the SNS to be within
@@ -887,7 +872,7 @@ the peer session to support parallel peer sessions and control information based
 the same data path. Each SNS will be assigned an SNS ID that is unique to the session.
 The sender generates the SNS ID.
 
-The SNS ID is an `unsigned 32bit` integer that is a monotonic series increasing.
+The SNS ID is an `unsigned 32-bit` integer that is a monotonic series increasing.
 The ID starts at ONE and can wrap to ONE as needed. Zero is reserved to indicate no ID. The ID can skip
 forward but cannot be less than the previous, unless wrap occurs. 
 
@@ -904,21 +889,21 @@ without invalidating a previous set id.
 title: Source Routing Data Forwarding
 ---
 flowchart TD
-    P([Publisher]) -- MoQT Data Object --> OE[Origin 101.2:10]
+    P([Publisher]) -- MOQT Data Object --> OE[Origin 101.2:10]
     OE -- " SNSid: 1=[100.2:1, 100.2:2, 103.2:1] " --> V1[Via 100.1:1]
 
     subgraph US-WEST
         V1 -- " SNSid: 18=[100.2:1] " --> w1[Edge 100.2:1]
-        w1 -- MoQT Data Object --> wS1([Subscriber 1])
-        w1 -- MoQT Data Object --> wS2([Subscriber 2])
+        w1 -- MOQT Data Object --> wS1([Subscriber 1])
+        w1 -- MOQT Data Object --> wS2([Subscriber 2])
         V1 -- " SNSid: 27=[100.2:2] " --> w2[Edge 100.2:2]
-        w2 -- MoQT Data Object --> wS3([Subscriber 3])
-        w2 -- MoQT Data Object --> wS4([Subscriber 4])
+        w2 -- MOQT Data Object --> wS3([Subscriber 3])
+        w2 -- MOQT Data Object --> wS4([Subscriber 4])
     end
     subgraph US-EAST
         V1 -- " SNSid: 99=[103.2:1] " --> e1[Edge 103.2:1]
-        e1 -- MoQT Data Object --> eS3([Subscriber 1])
-        e1 -- MoQT Data Object --> eS4([Subscriber 2])
+        e1 -- MOQT Data Object --> eS3([Subscriber 1])
+        e1 -- MOQT Data Object --> eS4([Subscriber 2])
 
     end
 ```
@@ -957,9 +942,9 @@ this set.
 ##### FIB
 
 Nodes are computed ahead of time when node advertisements are received. A map is updated to maintain 
-which peers are best to reach the advertised s-relay node. Recall that all nodes are advertised, 
-which includes all s-relay nodes. The FIB is maintained real-time upon subscribe advertisement to find the best
-peer session (future will establish on-demand peering, including v-relays).
+which peers are best to reach the advertised s-relay node. This is possible since all nodes are advertised, 
+which includes all s-relay nodes, when started. The FIB is maintained real-time upon subscribe advertisement
+to find the best peer session (future will establish on-demand peering, including v-relays).
 
 > [!NOTE]
 > Subscribes are only conveyed for an s-relay. A s-relay may have many subscribers, but only one peering
@@ -1002,10 +987,10 @@ Withdraw SNS information message has the following fields:
 Datagram objects are inherently pipelined and no special handling is needed. 
 
 Data forwarded by relays are pipeline forwarded at the stream level. Every byte received is immediately 
-sent out to other peers and clients. MoQT publishers encode all needed headers for the subscribing clients
+sent out to other peers and clients. MOQT publishers encode all needed headers for the subscribing clients
 to reassemble. This includes the cache implementation within the relay that acts as a client receiving the data.
-Relay nodes do not need to mutate any received data. MoQT data object headers are unchanged from received to
-all peers and MoQT sessions. The relay in this sense is forwarding every byte received on a stream to peer
+Relay nodes do not need to mutate any received data. MOQT data object headers are unchanged from received to
+all peers and MOQT sessions. The relay in this sense is forwarding every byte received on a stream to peer
 and client sessions on a stream. 
 
 ```mermaid
@@ -1013,7 +998,7 @@ and client sessions on a stream.
 title: Pipeline Forwarding
 ---
 flowchart LR
-    P(MoQT Publisher) --> DO@{ shape: doc, label: "MoQT Large\nData Object 4000B" }
+    P(MOQT Publisher) --> DO@{ shape: doc, label: "MOQT Large\nData Object 4000B" }
     style DO fill:#AED6F1,stroke:#424949,stroke-width:1px,color:#1C2833
 
     DO -- "slice" --> OR[o-relay]
@@ -1051,47 +1036,48 @@ flowchart LR
     SR --> Dd3
     SR --> Dd4
 
-    Dd1 --> S(MoQT Subscriber)
+    Dd1 --> S(MOQT Subscriber)
     Dd2 --> S
     Dd3 --> S
     Dd4 --> S
 
-    S -- Reassemble --> DdO@{ shape: doc, label: "MoQT Large\nData Object 4000B" }
+    S -- Reassemble --> DdO@{ shape: doc, label: "MOQT Large\nData Object 4000B" }
     style DdO fill:#AED6F1,stroke:#424949,stroke-width:1px,color:#1C2833
 ```
 
 > The above illustration shows that the orignal slice of data by MTU QUIC SFRAME/DATAGRAM frame segments are forwarded
-as is all the way to each subscriber. It is the subscriber that reassembles. This dramatically reduces per hop
+as-is all the way to each subscriber. It is the subscriber that reassembles. This dramatically reduces per hop
 delay. End to end latency is close, if not better, than a point to point connection between publisher
 and subscriber. 
 
-MoQT Track QUIC stream transitions (e.g, group/subgroup change) received are mirrored to all peer and client sessions. 
+MOQT Track QUIC stream transitions (e.g, group/subgroup change) received are mirrored to all peer and client sessions. 
 
 Reassembly of data objects is only performed by subscribing clients and relays that implement caching. A relay that
-implements caching is acting like a MoQT client that subscribes and publishes. 
+implements caching is acting like a MOQT client that subscribes and publishes. 
 
 In order to support pipeline forwarding there is a need to convey some extra information about how to forward and
 start a new stream for egress peers and client sessions.  The [start of stream header](#start-of-stream-data-header) defines
 the fields that are added for peering. SNS Id is used to lookup outgoing peer sessions and SNS Ids for each. When
-the the SNS Id contains the node itself, then the node lookups up MoQT client sessions that should receive
-the data. Looking up MoQT client sessions do not use SNS Id, so the track alias is used instead. 
+the the SNS Id contains the node itself, then the node lookups up MOQT client sessions that should receive
+the data. Looking up MOQT client sessions do not use SNS Id, so the track alias is used instead. 
 
-Client MoQT sessions do not need this header and are sent data minus this header.  
+The relay protocol [start of stream header](#start-of-stream-data-header) is stripped when sending to MOQT clients.
 
 The reason why this extra information is encoded in data start of QUIC stream header instead of SNS advertisement
 is to allow SNS to be reused for different track aliases and priorities later.  We will revisit
 if some of the start of stream data header info should be moved to SNS advertisement. 
 
 
-### Matching Subscribes to Announcements
+### Matching Subscribes to Announcements and Publishes
 
 Subscribes are delivered via the control information base forwarding. The publisher edge relay (o-relay) receives
-the subscribe via the control peering. Upon subscribe, all announces are checked to see if there is a match.
-Matching the announce to subscribe is performed by matching the namespace tuple of hashes and name in the order defined.
-Each tuple is matched using an exact match. The order must match. If the announce has less tuples, but matches
-all the subscribe tuples up to the announce set, a match is considered found and the publisher will receive
+the subscribe via the control peering. Upon subscribe, all announces and publishes are checked to see if there is a match.
+Matching is performed by matching the namespace tuple of hashes and name in the order defined.
+Each tuple is matched using an exact tuple match. The order must match. If the announce has less tuples, but matches
+all the subscribe tuples up to the announce set (aka prefix), a match is considered found and the publisher will receive
 the subscribe. This will trigger SNS and forwarding plane to be built. This is performed based on the subscribe
-and publisher accepting that subscribe by sending a subscribe OK back to the s-relay. 
+and publisher accepting that subscribe by sending a subscribe OK back to the o-relay. In the case of MOQT publish,
+if the subscribe matches exactly to the publish, then SNS and forwarding plane will be built to establish forwarding.
 
 ## Messages
 
@@ -1111,17 +1097,17 @@ a fixed value, then that is indicated with an equals value.
 A connection will be closed using [QUIC Application Error Code](https://datatracker.ietf.org/doc/html/rfc9000#section-20.2). The following will be set in the [CONNECTION_CLOSE](https://datatracker.ietf.org/doc/html/rfc9000#name-connection_close-frames) error code or in [RESET_STREAM](https://datatracker.ietf.org/doc/html/rfc9000#name-reset_stream-frames) application error code. 
 
 
-| Error Code | Description                          |
-| ---------- | ------------------------------------ |
-| 1          | Graceful close by either side        |
-| 2          | Move to alternate relay, GOAWAY      |
-| 8          | Not authorized                       |
-| 32         | ERROR: Connect message not received  |
-| 33         | ERROR: Connect response not received |
-| 34         | ERROR: Invalid control message type  |
-| 35         | ERROR: Invalid encoding of message   |
-| 36         | ERROR: Invalid start of new stream   |
-| 128        | Switching to new control stream      |
+| Error Code | Error Code Name         | Description                          |
+| ---------- | ----------------------- | ------------------------------------ |
+| 1          | CLOSE                   | Graceful close by either side        |
+| 2          | REDIRECT                | Move to alternate relay, GOAWAY      |
+| 8          | NOT_AUTHORIZED          | Not authorized                       |
+| 32         | CONNECT_MISSING         | ERROR: Connect message not received  |
+| 33         | CONNECT_RESP_MISSING    | ERROR: Connect response not received |
+| 34         | INVALID_CTRL_MSG_TYPE   | ERROR: Invalid control message type  |
+| 35         | INVALID_ENCODING        | ERROR: Invalid encoding of message   |
+| 36         | INVALID_START_OF_STREAM | ERROR: Invalid start of new stream   |
+| 128        | SWITCH_NEW_STREAM       | Switching to new control stream      |
 
 
 > [!NOTE]
@@ -1139,15 +1125,14 @@ Some control messages may have responses. The response contains a response code 
 | 3             | Peering mode not allowed |
 
 ### Control Messages
-Control messages are transmitted over bidirectional streams.  Control messages are never transmitted
-over a unidirectional stream. Data objects are only transmitted over unidirectional streams and never
-over a bidirectional stream. 
+Control messages are transmitted over bidirectional streams. Data objects are only transmitted over unidirectional
+streams and never over a bidirectional stream. 
 
 #### Common Control Headers
 
 Common control headers are added to every control message as the first set of headers in the message. 
 
-Data always flows in one direction (uni). **Data objects do not use this common header.**
+Data always flows in one direction (uni). **Data objects DO NOT use this common header.**
 
 > [!IMPORTANT]
 > Common headers **MUST** be the first added to every message sent via a bidirectional stream.
@@ -1174,8 +1159,8 @@ The below table specifies the control message types:
 | 5    | NODE_INFO_WD           | Node information withdrawn                                                                        |
 | 6    | SUBSCRIBE_INFO_ADV     | Subscribe information advertisement                                                               |
 | 7    | SUBSCRIBE_INFO_WD      | Subscribe information withdrawn                                                                   |
-| 8    | ANNOUNCE_INFO_ADV      | Announce information advertisement                                                                |
-| 9    | ANNOUNCE_INFO_WD       | Announce information withdrawn                                                                    |
+| 8    | PUBLISH_INFO_ADV       | Publish information advertisement                                                                 |
+| 9    | PUBLISH_INFO_WD        | Publish information withdrawn                                                                     |
 | 10   | SUBSCRIBE_NODE_SET_ADV | Subscriber node set advertisement                                                                 |
 | 11   | SUBSCRIBE_NODE_SET_WD  | SUbscriber node set withdrawn                                                                     |
 
@@ -1183,7 +1168,7 @@ The below table specifies the control message types:
 
 Connect message is the very first message sent by the client side making the connection. The receiving
 server side does not send any messages until the client sends a connect message. If the client sends
-anything else, the connection is in violation and should be closed with the ERROR code 32.
+anything else, the connection is in violation and should be closed with the ERROR code CONNECT_MISSING.
 
 The client creates a bidirectional stream to be used for control messages. The server will
 latch onto this bidirectional stream to send control messages back to the client. The client
@@ -1201,7 +1186,6 @@ CONNECT_MESSAGE {
     self_node_info {                // This node information
         id(8),                      // ID for this node
         type(1),                    // Node type, such as Via=0, Edge=1, Stub=2
-        mode(1),                    // Peering Mode        
 
         contact_len(var-int),       // Length in bytes for contact array of bytes
                                     //   to follow this
@@ -1317,7 +1301,7 @@ Node information is sent to all control peers that do not contain the node ID in
 
 #### Node Information Withdraw Message
 
-A node information withdraw message removes the state of the node information. The forwarding-plane
+A node information withdraw message removes the state of the node information. The forwarding plane
 is recomputed to remove the node and select another node for active subscribes. 
 
 The full node information is provided instead of just the ID to support removal of an inferior node
@@ -1358,8 +1342,8 @@ or from a Stub relay. The source node Id is set to self. Sequence number is incr
 for each advertisement and withdraw. Only the s-relay increments the sequence number. 
 
 The relays mainly use the `track_hash` information. The `subscribe_data` is provided
-for MoQT compliance as some of the MoQT subscribe data is needed when sending
-MoQT subscribe toward the publisher. Other parameters could be used by control
+for MOQT compliance as some of the MOQT subscribe data is needed when sending
+MOQT subscribe toward the publisher. Other parameters could be used by control
 servers to further authorize the subscribe. 
 
 ```
@@ -1375,12 +1359,18 @@ SUBSCRIBE_INFO_ADV {
         full_name_hash(8),      // Combined hash of both namespace and name hashes
     }
 
-    subscribe_data(variable),   // Raw MoQT received subscribe message
+    subscribe_data(variable),   // Raw MOQT received subscribe message
 }
 ```
 
 Subscribe information is sent to all control peers that do not contain the source node ID
 in it's path or back to itself. 
+
+> [!NOTE]
+> Subscribe information contains the full hash of namespace instead of an array of tuple hashes. 
+> That is the case right now considering the matching of tuples is a function of an edge
+> relay supporting MOQT, which can decode the subscribe data that is encapsulate in
+> the message. 
 
 #### Subscribe Information Withdraw Message
 
@@ -1388,7 +1378,7 @@ Subscribe information withdraw is to remove the subscribe from the control plane
 which will trigger a recompute of the data plane. Due to the churn that is seen
 with subscribes, sequence number is used to ensure correct state convergence. 
 
-All information is needed in the withdraw to support MoQT compliance on o-relays. 
+All information is needed in the withdraw to support MOQT compliance on o-relays. 
 
 Withdraw is the same subscribe message as subscribe with the exception of the type
 being withdraw. 
@@ -1406,7 +1396,7 @@ SUBSCRIBE_INFO_WD {
         full_name_hash(8),      // Combined hash of both namespace and name hashes
     }
 
-    subscribe_data(variable),   // Raw MoQT received subscribe message
+    subscribe_data(variable),   // Raw MOQT received subscribe message
 }
 ```
 
@@ -1414,25 +1404,26 @@ Subscribe information is sent to all control peers that do not contain the sourc
 in it's path or back to itself. 
 
 
-#### Announce Information Advertisement Message
+#### Publish Information Advertisement Message
 
-Announce information is advertised by Stub relays to o-relays only. o-relays state maintain
-this information for MoQT compliance.  Announce information is not sent to
-other control peers. In the future, we may want to send it, but at this time
-it is not needed by the LAPS peering protocol. 
+Publish information is advertised by Stub and edge relays. o-relays state maintain
+this information for MOQT compliance. 
 
-Announce information is needed by the o-relay to know which client session should receive
-the MoQT subscribe to start the flow of publish track data. When a Stub relay is used, 
+Publish information is needed by the o-relay to know which client session should receive
+the MOQT subscribe to start the flow of publish track data. Publish information is also
+needed by subscribe relay to provide the subscriber the publisher parameters. When a Stub relay is used, 
 the Stub appears as a client to the o-relay and the subscribe will be sent to the Stub.
-The stub will then send the MoQT subscribe to the publisher. 
+The stub will then send the MOQT subscribe to the publisher. 
 
-Subscribes are [matched to announce](#matching-subscribes-to-announcements) based on the
+Subscribes are [matched to announce and publishes](#matching-subscribes-to-announcements-and-publishes) based on the
 the `track_full_name_hash` data.  
 
 ```
-ANNOUNCE_INFO_ADV {
+PUBLISH_INFO_ADV {
     COMMON_HEADER,
 
+    sequence(2),                // Advertisement sequence number, supporting wrapping
+                                //   Only the source node increments this.
     source_node_id(8),          // Source node that originated this
     track_full_name_hash {
         namespace_tuple_hashes [
@@ -1441,17 +1432,22 @@ ANNOUNCE_INFO_ADV {
 
         name_hash(8),           // Hash of name
     }
+
+    parameters(variable)        // Raw MOQT encoded parameters bytes
 }
 ```
 
-#### Announce Information Withdraw Message
+#### Publish Information Withdraw Message
 
-Announce withdraw happens with MoQT client unannounces.  This will trigger a withdraw
-of the announce information. 
+Publish withdraw happens with MOQT client unannounces and unpublish.  This will trigger a withdraw
+of the publish information. 
 
 ```
-ANNOUNCE_INFO_WD {
+PUBLISH_INFO_WD {
     COMMON_HEADER,
+
+    sequence(2),                // Advertisement sequence number, supporting wrapping
+                                //   Only the source node increments this.
 
     source_node_id(8),          // Source node that originated this
     track_full_name_hash {
@@ -1471,7 +1467,7 @@ consumed by the receiving peer and not propagated to any other peer. It is sessi
 
 Upon receiving the SNS advertisement, the receiving peer will look at the `nodes` set
 and create egress SNS advertisements to other peers based on [selection](#selection-algorithm)
-for best node to reach s-relay node id.  If self is in the `nodes` set, then MoQT
+for best node to reach s-relay node id.  If self is in the `nodes` set, then MOQT
  forwarding will take place to forward to a directly attached client or Stub relay. 
 
 > [!IMPORTANT]
@@ -1482,17 +1478,19 @@ for best node to reach s-relay node id.  If self is in the `nodes` set, then MoQ
 SUBSCRIBE_NODE_SET_ADV {
     COMMON_HEADER,
 
-    id(4),              // Subscribe Node Set (SNS) Id
-
-    nodes [             // Set of s-relay nodes to receive data
-        node_id(8),     // Node Id of the s-relay to receive data
+    id(4),                      // Subscribe Node Set (SNS) Id
+    track_fullname_hash(8),     // Track full name hash
+    nodes [                     // Set of s-relay nodes to receive data
+        node_id(8),             // Node Id of the s-relay to receive data
     ]
 }
 ```
 
 > [!NOTE]
 > `nodes` are a set of s-relay nodes that should receive the data. It is not a set
-> of nodes to traverse to reach a destination. 
+> of nodes to traverse to reach a destination.
+
+`track_fullname_hash` is used upon receiving data messages to match it to MOQT subscribes.
 
 #### Subscribe Node Set Withdraw Message
 
@@ -1511,41 +1509,48 @@ SUBSCRIBE_NODE_SET_WD {
 
 Withdraw only needs to withdraw the SNS Id, the node list is moot. 
 
-### Data Object Messages
+### Data Header Messages
 
-As stated previously, data objects are sent via unidirectional QUIC streams or datagrams, never
-via bidirectional stream. This allows for the protocol to correctly assume that a bidirectional
+Data is sent via unidirectional QUIC streams or datagrams, never
+via bidirectional stream. This allows for the protocol to rely on that a bidirectional
 stream is control messaging, while anything else is data object forwarding. 
 
-##### Data Object Common Header
+##### Data Common Header
 
-Data objects share a common header for the start of every data object.  
+A data common header is present on the start of stream and for every datagram message. Data header
+has the following structure.
+
 
 ```
-DATA_OBJECT_COMMON_HEADER {
-    header_length(1),               // Length in bytes for all data object headers
-    type(1),                        // Data object type
+DATA_COMMON_HEADER {
+    header_length(1),           // Length in bytes of data header
+    type(1),                    // Data object type
 }
 ```
 
-###### Data Object Types 
+> [!IMPORTANT]
+> Data headers will always be less than 256 bytes to avoid bloat. This is one reason why hashes are used
+> instead of the original bytes that made up the hash. 
 
-Below defines the data object types. These types are used to determine which headers
-are included. 
+###### Data Types 
+
+Below defines the data header types. 
+
 
 | Type | Name            | Description                                           |
 | ---- | --------------- | ----------------------------------------------------- |
-| 0    | DATAGRAM        | Datagram object                                       |
-| 1    | EXISTING_STREAM | Data object within an existing stream                 |
-| 2    | NEW_STREAM      | Data object that is the first object via a new stream |
+| 0    | DATAGRAM        | Datagram data.                                        |
+| 1    | EXISTING_STREAM | Data within an existing stream                        |
+| 2    | NEW_STREAM      | Data that is the first object via a new stream        |
 
+The type is used internally and on fan-out to indicate how the data should be sent. 
 
-#### Datagram Objects
+#### Datagram Data
 
-Datagram objects are limited to MTU, which may be up to 64K or as little as 1280 bytes.  Datagram
+Datagram data is limited to MTU, which may be up to 64K or as little as 1280 bytes.  Datagram
 suffers from the problem of MTU not being equal hop-by-hop. If the publisher supports 64K and the subscriber supports only 1280, then the datagram object will be dropped on initial
-transmission because it is too large.  This is an issue with MoQT not supporting datagram fragmentation.
-The limitation is not with this peering protocol. 
+transmission because it is too large.  This is an issue with MOQT not supporting datagram fragmentation.
+The limitation is not with the relay protocol. 
 
 ```mermaid
 ---
@@ -1580,39 +1585,38 @@ which is greater than the received MTU. This works because the original datagram
 message is not to large to be transmitted egress all the way to the subscriber. 
 
 > [!NOTE]
-> For now, there is no fragmentation support for datagram. A datagram message must be complete
-(headers and data) on transmit so the receiving side can receive the complete object. 
+> For now, there is no fragmentation support for datagram. A datagram message must be
+> complete (headers and data) on transmit so the receiving side can receive the complete object. 
 
 ```
-DATAGRAM_DATA_OBJECT {
-    DATA_OBJECT_COMMON_HEADER,
+DATA_DATAGRAM {
+    DATA_COMMON_HEADER type = DATAGRAM,
 
-    sns_id(8),                  // SNS ID that defines target s-relays
-    track_full_name_hash(8),    // Track full name hash
+    sns_id(4),                  // SNS ID used by the receiver to lookup fan-out forwarding
     data_length(var-int),       // Var-int data length in bytes
     data(...)                   // Data that follows, will be size of data_length   
 }
 ```
 
 `data_length` is not needed for datagram as the full message must be complete, no fragments. It
-is here to support fragments in the future and to keep it consistent with stream objects.
+is here to support fragments in the future and to keep it consistent with stream data processing.
 
-#### Start of New Stream Data Object
 
-New unidirectional QUIC streams must start with a `NEW_STREAM_DATA_OBJECT`. This will include
+#### Start of New Stream Data
+
+New unidirectional QUIC streams must start with `DATA_NEW_STREAM`. This will include
 additional headers that are required on start of the new stream and are shared
-by all subsequent stream data objects. 
+by all subsequent stream data. 
 
 > [!IMPORTANT]
 > It is a stream error if the stream does not start with a new stream data object. The stream will
-be reset with error code 36 to indicate this issue.
+be reset with error code INVALID_START_OF_STREAM to indicate this issue.
 
 ```
-NEW_STREAM_DATA_OBJECT {
-    DATA_OBJECT_COMMON_HEADER,
+DATA_NEW_STREAM {
+    DATA_COMMON_HEADER type = NEW_STREAM,
 
-    sns_id(8),                  // SNS ID that defines target s-relays
-    track_full_name_hash(8),    // Track full name hash
+    sns_id(4),                  // SNS ID that defines target s-relays
     priority(1),                // Priority of the stream
     ttl(4),                     // TTL in microseconds to be applied for
                                 //   received data objects on stream
@@ -1622,37 +1626,58 @@ NEW_STREAM_DATA_OBJECT {
 }
 ```
 
-Priority is used when creating egress streams to peering sessions as well as to MoQT clients. 
+`priority` is used when creating egress streams to peering sessions as well as to MOQT clients. 
 
-TTL is applied to all objects received via the stream. The TTL time starts upon receiving
+`ttl` is applied to all objects received via the stream. The TTL time starts upon receiving
 each object. In this sense, each object received will not expire till TTL time has elapsed
 after receiving the data object. 
 
-#### Subsequent Stream Data Objects
+#### Existing Stream Data
 
 Subsequent stream data objects have a shortened header considering the start of stream
 object conveyed information that pertains to all data objects in the stream. 
 
 
 ```
-EXISTING_STREAM_DATA_OBJECT {
-    DATA_OBJECT_COMMON_HEADER,
+DATA_EXISTING_STREAM {
+    DATA_COMMON_HEADER type = EXISTING_STREAM,
 
     data_length(var-int),       // Var-int data length in bytes
     data(...)                   // Data that follows, will be size of data_length   
 }
 ```
 
+### Data Header Overhead
+The relay protocol encapsulates the original MOQT data as it was received. The encapsulation is the data header followed
+by the original MOQT payload. 
+
+The relay protocol is designed to reduce the encapsulation overhead.  Below table details the minimum and maximum
+overhead in bytes by the data type. 
+
+| Data Type       | Minimum | Maximum | Notes                                                                |
+| --------------- | ------- | ------- | -------------------------------------------------------------------- |
+| DATAGRAM        | 7       | 10      | The difference is in the var-int, which won't be larger than 4 bytes |
+| NEW_STREAM      | 12      | 19      | Only on new stream                                                   |
+| EXISTING_STREAM | 3       | 10      | The difference is in the var-int, which can be large up to 8 bytes   |
+
+> [!IMPORTANT]
+> With streams the EXISTING_STREAM header is **not** added to each data write (e.g., QUIC STERAM_FRAME). It depends on the
+> MOQT client application data writes. If the MOQT client application writes a MOQT object of great size, such as 100K, then
+> only the initial start of the 100K contains the EXISTING_STREAM header, the remaining bytes will be transmitted without 
+> overhead of encapsulation header. If the MOQT client application writes small MOQT objects, such as 100 bytes each time,
+> then each will have a EXISTING_STREAM header added. 
+
+
 ## Considerations
 
-### Optimizing Peering using MoQT GOAWAY
+### Optimizing Peering using MOQT GOAWAY
 
 In large scale deployments, the usage of [source routing data forwarding](#source-routing) can result in large sets
 of target edge nodes that have subscribers to receive data. This can be suboptimal if every subscriber was on
 a different edge relay, especially when in the same region. This could happen due to network load balances,
 including anycast, where subscriber clients are distributed to one of hundreds of relays within the same region.
 It is desirable to align subscribers of the same content to use the same relays, providing load/capacity is available.
-MoQT provides a mechanism to redirect a client connection to another relay. This method is to use a GOWAY with
+MOQT provides a mechanism to redirect a client connection to another relay. This method is to use a GOWAY with
 a new connect URL. This protocol uses the GOAWAY (aka redirect) to redirect client connections to a nearby relay that
 has the same subscriptions.
 
@@ -1662,12 +1687,12 @@ other relays that have the same subscribes.
 
 ### Unsubscribe/Subscribe Misuse
 
-The last MoQT subscriber unsubscribe can result in many relays having to change states. If the subscriber is
+The last MOQT subscriber unsubscribe can result in many relays having to change states. If the subscriber is
 repeatedly unsubscribing and subscribing, it will result in a ripple effect over many relays, which
 causes unnessary churn in the relay network. To mitigate this churn, unsubscribes in peering could be
-scheduled in the future based on some configurable time, such as 5 seconds. If a MoQT subscriber
+scheduled in the future based on some configurable time, such as 5 seconds. If a MOQT subscriber
 subscribes again before the scheduled unsubscribe being sent, it would simply be canceled and
-data would continue as if there was no unsubscribe. Only the MoQT client would be the one that
+data would continue as if there was no unsubscribe. Only the MOQT client would be the one that
 would stop and start repeatedly. The churn of misuse with unsubscribe and subscribe would
 be contained to the s-relay instead of spreading the churn to many other relays.
 
@@ -1712,8 +1737,8 @@ sequenceDiagram
     R1 -->> R2: SUBSCRIBE(1)
     R1 -->> R2: SUBSCRIBE(2)
 
-    R2 -->> R1: SUBSCRIBE(3)
-    R2 -->> R1: SUBSCRIBE(4)
+    R2 -->> R1: PUBLISH(1)
+    R2 -->> R1: PUBLISH(2)
 ```
 
 The sync forwarding is asymmetric and does not have any specific order of who sends
@@ -1796,25 +1821,84 @@ flowchart LR
 title: Subscriber Information Advertisement
 ---
 sequenceDiagram
-    actor S as MoQT Subscriber
+    actor S as MOQT Subscriber
     participant SR as s-relay
     participant OR as o-relay
-    actor P as MoQT Publisher
+    actor P as MOQT Publisher
 
     S ->> SR: SUBSCRIBE(abc)
     SR ->> SR: Process
     SR ->> OR: SUBSCRIBE_INFO_ADV(abc)
     OR ->> OR: Process
-    note right of OR: Upon receiving, do announce matching
+    note right of OR: Upon receiving, do announce/publish matching
     OR ->> P: SUBSCRIBE(abc)
-    note right of OR: MoQT exchanges
-    P -->> OR: MoQT Data Object(...)
-    OR --> SR: DATA_OBJECT(...)
-    SR --> S: MoQT Data Object(...)
+    note right of OR: MOQT exchanges
+    P -->> OR: MOQT Data (...)
+    OR -->> SR: Data(...)
+    SR -->> S: Data(...)
+```
+
+### Publish Advertisement
+
+Publish information is sent to all control peers. The following process is followed upon receiving the publish
+and sending it out to other peers. 
+
+```mermaid
+---
+title: Publish Information Receive Processing
+---
+flowchart LR
+    NI@{ shape: manual-input, label: "Publish Info Received"} --> SC@{ shape: notch-pent, label: "SEQ gt previous" }
+    SC -- "YES" --> ISN@{ shape: diamond, label: "Info New or Better" }
+    SC -- "NO" --> END@{ shape: dbl-circ, label: "End" }
+    ISN -- "NO" --> END
+    ISN -- "YES" --> C[["Compute Best Peer"]]
+    C --> L@{ shape: notch-pent, label: "For Each Peer" }
+
+    L --> SK1@{ shape: diamond, label: "SRC ID in Path" }
+    SK1 -- "YES" --> END
+
+    SK1 -- "NO" --> SK2@{ shape: diamond, label: "SRC ID matches\npeer" }
+    SK2 -- "NO" --> A[["Advertise"]]
+    SK2 -- "YES" --> END
+    A -- Next Peer --> L
+```
+
+```mermaid
+---
+title: Publish Information Advertisement
+---
+sequenceDiagram
+    actor P as MOQT Publisher
+    participant OR as o-relay
+    participant SR as s-relay
+    actor S as MOQT Subscriber
+
+    P ->> OR: PUBLISH (abc)
+    note right of OR: Store and advertise publish info<br>to peers
+    OR ->> SR: publish_info (abc)
+    note right of SR: Store and forward<br>to other peers
+    note left of SR: Some time later MOQT subscribe
+
+
+    S ->> SR: SUBSCRIBE(abc)
+    SR ->> SR: Lookup publish_info
+    SR ->> S: SUBSCRIBE_OK (publish params)
+    note right of SR: Include publish_info params if found,<br>otherwise only default params
+
+    SR ->> OR: SUBSCRIBE_INFO_ADV(abc)
+    OR ->> OR: Process
+    note right of OR: Upon receiving, do announce/publish matching
+    OR ->> P: SUBSCRIBE(abc)
+    note right of OR: MOQT exchanges
+    P -->> OR: MOQT Data (...)
+    OR -->> SR: Data(...)
+    SR -->> S: Data(...)
 
 ```
 
-### TODO Implementaton
+
+### TODO Implementation
 
 Items to be implemented still
 
@@ -1825,4 +1909,5 @@ Items to be implemented still
 * Add reachability probing and detection of location
 * Update selection algorithm to include dynamic peering as well as load and reachability
 * Add administrative policy support
+* Traffic engineering
 
