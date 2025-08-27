@@ -1649,13 +1649,6 @@ overhead in bytes by the data type.
 | NEW_STREAM      | 12      | 19      | Only on new stream                                                   |
 | EXISTING_STREAM | 0       | 0       | No header for existing bytes                                         |
 
-> [!IMPORTANT]
-> With streams the EXISTING_STREAM header is **not** added to each data write (e.g., QUIC STERAM_FRAME). It depends on the
-> MOQT client application data writes. If the MOQT client application writes a MOQT object of great size, such as 100K, then
-> only the initial start of the 100K contains the EXISTING_STREAM header, the remaining bytes will be transmitted without 
-> overhead of encapsulation header. If the MOQT client application writes small MOQT objects, such as 100 bytes each time,
-> then each will have a EXISTING_STREAM header added. 
-
 
 ## Considerations
 
