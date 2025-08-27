@@ -1634,18 +1634,7 @@ after receiving the data object.
 
 #### Existing Stream Data
 
-Subsequent stream data objects have a shortened header considering the start of stream
-object conveyed information that pertains to all data objects in the stream. 
-
-
-```
-DATA_EXISTING_STREAM {
-    DATA_COMMON_HEADER type = EXISTING_STREAM,
-
-    data_length(var-int),       // Var-int data length in bytes
-    data(...)                   // Data that follows, will be size of data_length   
-}
-```
+Subsequent stream data objects have no additional header. Data is sent as bytes. 
 
 ### Data Header Overhead
 The relay protocol encapsulates the original MOQT data as it was received. The encapsulation is the data header followed
@@ -1658,7 +1647,7 @@ overhead in bytes by the data type.
 | --------------- | ------- | ------- | -------------------------------------------------------------------- |
 | DATAGRAM        | 7       | 10      | The difference is in the var-int, which won't be larger than 4 bytes |
 | NEW_STREAM      | 12      | 19      | Only on new stream                                                   |
-| EXISTING_STREAM | 3       | 10      | The difference is in the var-int, which can be large up to 8 bytes   |
+| EXISTING_STREAM | 0       | 0       | No header for existing bytes                                         |
 
 > [!IMPORTANT]
 > With streams the EXISTING_STREAM header is **not** added to each data write (e.g., QUIC STERAM_FRAME). It depends on the
