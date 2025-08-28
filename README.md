@@ -43,6 +43,11 @@ To build an image, make sure to have docker running.
 
 ```make image-arm64```
 
+### Build debian using clang only
+
+Laps can be built using clang/llvm only.  Review [debian.clang.Dockerfile](debian.clang.Dockerfile) for
+details on how to build using debian bookworm with clang/llvm only.
+
 ### Notes on docker build
 #### **MUST** run ```git submodule ...``` **BEFORE BUILD**
 
@@ -51,12 +56,6 @@ Before running the docker build, you **MUST** first run the below to update the 
 
 ```
 git submodule update --init --recursive
-```
-
-
-```
-docker build --no-cache --platform linux/amd64 --tag laps-amd64:latest .
-docker build --no-cache --platform linux/arm64/v8 --tag laps-arm64:latest . 
 ```
 
 
