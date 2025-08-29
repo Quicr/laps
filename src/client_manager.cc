@@ -399,7 +399,7 @@ namespace laps {
         SPDLOG_LOGGER_INFO(
           LOGGER, "Subscribe Done connection handle: {0} request_id: {1}", connection_handle, request_id);
 
-        const auto s_it = state_.pub_subscribes_by_req_id.find({ connection_handle, request_id });
+        const auto s_it = state_.pub_subscribes_by_req_id.find({ request_id, connection_handle });
         if (s_it == state_.pub_subscribes_by_req_id.end()) {
             SPDLOG_WARN("Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
                         connection_handle,
