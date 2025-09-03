@@ -28,33 +28,32 @@ SVG_FILE=~/laps.$START_TIME
 PERF_DURATION=30
 
 lapsPID=$(pidof lapsRelay)
-tids=$(ps -T -p $lapsPID -o spid --no-headers)
+tids=$(ps -T -p $lapsPID -o tid --no-headers)
 
-### run_perf <tid>
-function run_perf() {
+echo "Running perf on LAPS for $PERF_DURATION seconds, output file $PERF_FILE"
+sudo perf record -g -p $lapsPID -o $PERF_FILE sleep $PERF_DURATION
+
+
+### create_perf_script <tid>
+function create_perf_script() {
     tid=$1
-
-    echo "Running perf on LAPS for $PERF_DURATION seconds, output file $PERF_FILE.${tid}"
-    sudo perf record -g -p $lapsPID -t $tid -o $PERF_FILE.${tid} sleep $PERF_DURATION
-
     echo "Running perf script $PERF_FILE.${tid} to $SCRIPT_FILE.${tid}"
-    sudo perf script -i $PERF_FILE.${tid} > $SCRIPT_FILE.${tid}
+    sudo perf script -i $PERF_FILE --tid=${tid} > $SCRIPT_FILE.${tid}
 
     echo "Creating flame graph, output to $SVG_FILE.${tid}.svg"
 
     ~/FlameGraph/stackcollapse-perf.pl $SCRIPT_FILE.${tid} | ~/FlameGraph/flamegraph.pl \
-            --title "LAPS (pid=$lapsPID) Thread=${tid} $START_TIME"
+            --title "LAPS (pid=$lapsPID) Thread=${tid} $START_TIME" \
             --subtitle "${1}" > $SVG_FILE.${tid}.svg
 
-    sudo rm -f $PERF_FILE.${tid} $SCRIPT_FILE.${tid}
+    sudo rm -f $PERF_FILE $SCRIPT_FILE.${tid}
     echo "Done with tid ${tid}"
 }
 
 #### Main
 
 for tid in $tids; do
-    run_perf $tid &
+    create_perf_script $tid &
 done
 
-# wait for the perf processes to end
-sleep $((PERF_DURATION + 2))
+echo "Done"
