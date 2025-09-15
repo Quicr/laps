@@ -148,7 +148,7 @@ namespace laps::peering {
                     quicr::messages::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
-                    for (const auto& param : sub.subscribe_parameters) {
+                    for (const auto& param : sub.parameters) {
                         if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
                             s_attrs.new_group_request = true;
                             break;
@@ -559,13 +559,13 @@ namespace laps::peering {
                 si->subscribe_data >> sub;
 
                 bool has_new_group_request = false;
-                for (auto it = sub.subscribe_parameters.begin(); it != sub.subscribe_parameters.end(); ++it) {
+                for (auto it = sub.parameters.begin(); it != sub.parameters.end(); ++it) {
                     if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
                         has_new_group_request = true;
 
                         if (not attrs.new_group_request) {
                             // Remove new group request since it's not requested but was found
-                            sub.subscribe_parameters.erase(it);
+                            sub.parameters.erase(it);
                             quicr::Bytes sub_data;
                             sub_data << sub;
 
@@ -579,7 +579,7 @@ namespace laps::peering {
 
                 if (attrs.new_group_request && not has_new_group_request) {
                     uint64_t val = 1;
-                    sub.subscribe_parameters.push_back(
+                    sub.parameters.push_back(
                       { .type = quicr::messages::ParameterType::kNewGroupRequest, .value = { 1 } });
 
                     quicr::Bytes sub_data;
@@ -753,7 +753,7 @@ namespace laps::peering {
                             quicr::messages::SubscribeAttributes s_attrs;
                             s_attrs.priority = 10;
 
-                            for (const auto& param : sub.subscribe_parameters) {
+                            for (const auto& param : sub.parameters) {
                                 if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
                                     s_attrs.new_group_request = true;
                                     break;

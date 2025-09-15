@@ -22,7 +22,7 @@ namespace laps {
     void PublishTrackHandler::StatusChanged(Status status)
     {
         if (status == Status::kOk) {
-            SPDLOG_INFO("Publish track alias {0} has subscribers", GetTrackAlias().value());
+            SPDLOG_TRACE("Publish track alias {0} has subscribers", GetTrackAlias().value());
         } else {
             std::string reason = "";
             switch (status) {
