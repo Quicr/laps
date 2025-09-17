@@ -511,6 +511,54 @@ namespace laps {
         }
     }
 
+    void ClientManager::TrackStatusReceived(quicr::ConnectionHandle connection_handle,
+                                            uint64_t request_id,
+                                            const quicr::FullTrackName& track_full_name,
+                                            const quicr::messages::SubscribeAttributes& subscribe_attributes)
+    {
+        auto th = quicr::TrackHash(track_full_name);
+
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "Track status request connection handle: {} request_id: {} track alias: {}",
+                           connection_handle,
+                           request_id,
+                           th.track_fullname_hash);
+
+        const auto largest = GetLargestAvailable(track_full_name);
+
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+
+            if (it->first.first != th.track_fullname_hash) {
+                break;
+            }
+
+            if (it->first.second != connection_handle) {
+                ResolveTrackStatus(connection_handle,
+                                   request_id,
+                                   th.track_fullname_hash,
+                                   {
+                                     quicr::SubscribeResponse::ReasonCode::kOk,
+                                     std::nullopt,
+                                     largest,
+                                   });
+                return;
+            }
+        }
+
+        ResolveTrackStatus(connection_handle,
+                           request_id,
+                           th.track_fullname_hash,
+                           {
+                             quicr::SubscribeResponse::ReasonCode::kTrackDoesNotExist,
+                             "Track does not exist",
+                             std::nullopt,
+                           });
+
+    }
+
+
     void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                           uint64_t request_id,
                                           quicr::messages::FilterType filter_type,

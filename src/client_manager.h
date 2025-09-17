@@ -87,6 +87,11 @@ namespace laps {
                                const quicr::FullTrackName& track_full_name,
                                const quicr::messages::SubscribeAttributes&) override;
 
+        void TrackStatusReceived(quicr::ConnectionHandle connection_handle,
+                                 uint64_t request_id,
+                                 const quicr::FullTrackName& track_full_name,
+                                 const quicr::messages::SubscribeAttributes& subscribe_attributes) override;
+
         std::optional<quicr::messages::Location> GetLargestAvailable(const quicr::FullTrackName& track_name) override;
         bool OnFetchOk(quicr::ConnectionHandle connection_handle,
                        uint64_t request_id,
