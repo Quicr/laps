@@ -38,7 +38,7 @@ namespace laps {
 
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
-        prev_group_id_ = object_headers.group_id;
+        current_group_id_ = object_headers.group_id;
         prev_subgroup_id_ = object_headers.subgroup_id;
 
         if (auto group = cache_entry.Get(object_headers.group_id)) {
@@ -123,17 +123,26 @@ namespace laps {
             if (stream_buffer_ >> obj) {
                 subscribe_track_metrics_.objects_received++;
 
+                if (sent_first_object_ && current_group_id_ != s_hdr.group_id) {
+                    next_object_id_ = 0;
+                } else {
+                    next_object_id_ += obj.object_delta;
+                }
+
+                current_group_id_ = s_hdr.group_id;
+                sent_first_object_ = true;
+
                 if (!s_hdr.subgroup_id.has_value()) {
                     if (subgroup_properties.subgroup_id_type != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
                         SPDLOG_ERROR("Bad stream header type when no subgroup ID: {0}",
                                      static_cast<std::uint8_t>(s_hdr.type));
                         return;
                     }
-                    s_hdr.subgroup_id = obj.object_id;
+                    s_hdr.subgroup_id = next_object_id_;
                 }
 
                 ObjectReceived({ s_hdr.group_id,
-                                 obj.object_id,
+                                 next_object_id_,
                                  s_hdr.subgroup_id.value(),
                                  obj.payload.size(),
                                  obj.object_status,
@@ -143,6 +152,7 @@ namespace laps {
                                  obj.extensions },
                                obj.payload);
 
+                ++next_object_id_;
                 stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
             }
 
@@ -243,9 +253,10 @@ namespace laps {
                 sub_info.publish_handlers[self_connection_handle] = pub_track_h;
             }
 
-            if (is_new_stream) {
+            /*if (is_new_stream) {
                 sub_info.publish_handlers[self_connection_handle]->pipeline = true;
-            } else if (not sub_info.publish_handlers[self_connection_handle]->pipeline) {
+            } else */
+            if (not sub_info.publish_handlers[self_connection_handle]->pipeline) {
                 continue;
             }
 
