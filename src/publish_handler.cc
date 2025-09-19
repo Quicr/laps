@@ -46,6 +46,7 @@ namespace laps {
                     break;
                 case Status::kPaused:
                     reason = "paused";
+                    pipeline = false;
                     break;
                 case Status::kSubscriptionUpdated:
                     reason = "subscription updated";

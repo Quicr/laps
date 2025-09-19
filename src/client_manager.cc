@@ -555,9 +555,7 @@ namespace laps {
                              "Track does not exist",
                              std::nullopt,
                            });
-
     }
-
 
     void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                           uint64_t request_id,
