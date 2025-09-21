@@ -43,7 +43,6 @@ namespace laps {
 
         ClientManager& server_;
 
-        uint64_t prev_subgroup_id_{ 0 };
         uint64_t current_stream_id_{ 0 };
 
         bool is_datagram_{ false };

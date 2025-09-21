@@ -39,7 +39,7 @@ namespace laps {
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
         current_group_id_ = object_headers.group_id;
-        prev_subgroup_id_ = object_headers.subgroup_id;
+        current_subgroup_id_ = object_headers.subgroup_id;
 
         if (auto group = cache_entry.Get(object_headers.group_id)) {
             group->insert(std::move(object));
@@ -258,9 +258,10 @@ namespace laps {
                 continue;
             }
 
-            if (is_new_stream) {
-                sub_info.publish_handlers[self_connection_handle]->pipeline_ = true;
-            } else if (not sub_info.publish_handlers[self_connection_handle]->pipeline_) {
+            const auto pub_track_h = sub_info.publish_handlers[self_connection_handle];
+            if (is_new_stream && pub_track_h->SentFirstObject()) {
+                pub_track_h->pipeline_ = true;
+            } else if (not pub_track_h->pipeline_) {
                 continue;
             }
 

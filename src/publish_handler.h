@@ -24,6 +24,13 @@ namespace laps {
 
         bool pipeline_{ false }; // True indicates using pipeline forwarding, false is object forwarding
 
+        /**
+         * @brief Check if the first object has been sent or not
+         *
+         * @return True if one objet has been sent, False if no objects yet
+         */
+        constexpr bool SentFirstObject() const noexcept { return latest_object_id_.has_value(); }
+
       private:
         ClientManager& server_;
     };
