@@ -62,12 +62,12 @@ namespace laps {
                     continue;
                 }
 
-                if (sub_info.publish_handlers[self_connection_handle]->pipeline) {
+                if (sub_info.publish_handlers[self_connection_handle]->pipeline_) {
                     continue;
                 }
 
                 sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
-                sub_info.publish_handlers[self_connection_handle]->pipeline = true;
+                sub_info.publish_handlers[self_connection_handle]->pipeline_ = true;
             }
         } catch (const std::exception& e) {
             SPDLOG_ERROR("Caught exception trying to publish. (error={})", e.what());
@@ -123,14 +123,18 @@ namespace laps {
             if (stream_buffer_ >> obj) {
                 subscribe_track_metrics_.objects_received++;
 
-                if (sent_first_object_ && current_group_id_ != s_hdr.group_id) {
-                    next_object_id_ = 0;
+                if (next_object_id_.has_value()) {
+                    if (current_group_id_ != s_hdr.group_id || current_subgroup_id_ != s_hdr.subgroup_id) {
+                        next_object_id_ = obj.object_delta;
+                    } else {
+                        *next_object_id_ += obj.object_delta;
+                    }
                 } else {
-                    next_object_id_ += obj.object_delta;
+                    next_object_id_ = obj.object_delta;
                 }
 
                 current_group_id_ = s_hdr.group_id;
-                sent_first_object_ = true;
+                current_subgroup_id_ = s_hdr.subgroup_id.value();
 
                 if (!s_hdr.subgroup_id.has_value()) {
                     if (subgroup_properties.subgroup_id_type != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
@@ -142,7 +146,7 @@ namespace laps {
                 }
 
                 ObjectReceived({ s_hdr.group_id,
-                                 next_object_id_,
+                                 next_object_id_.value(),
                                  s_hdr.subgroup_id.value(),
                                  obj.payload.size(),
                                  obj.object_status,
@@ -152,7 +156,7 @@ namespace laps {
                                  obj.extensions },
                                obj.payload);
 
-                ++next_object_id_;
+                *next_object_id_ += 1;
                 stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
             }
 
@@ -238,7 +242,7 @@ namespace laps {
             if (sub_track_alias != track_alias.value())
                 break;
 
-            if (sub_info.publish_handlers[self_connection_handle] == nullptr) {
+            if (!sub_info.publish_handlers.contains(self_connection_handle)) {
                 // Create the publish track handler and bind it on first object received
                 auto pub_track_h = std::make_shared<PublishTrackHandler>(
                   sub_info.track_full_name,
@@ -251,12 +255,12 @@ namespace laps {
                 server_.BindPublisherTrack(
                   connection_handle, self_connection_handle, sub_info.request_id, pub_track_h, false);
                 sub_info.publish_handlers[self_connection_handle] = pub_track_h;
+                continue;
             }
 
-            /*if (is_new_stream) {
-                sub_info.publish_handlers[self_connection_handle]->pipeline = true;
-            } else */
-            if (not sub_info.publish_handlers[self_connection_handle]->pipeline) {
+            if (is_new_stream) {
+                sub_info.publish_handlers[self_connection_handle]->pipeline_ = true;
+            } else if (not sub_info.publish_handlers[self_connection_handle]->pipeline_) {
                 continue;
             }
 
