@@ -42,6 +42,7 @@ struct std::less<laps::CacheObject>
 };
 
 namespace laps {
+    constexpr uint8_t kMaxPublishPriority = 32;
 
     /**
      * @brief MoQ Server
