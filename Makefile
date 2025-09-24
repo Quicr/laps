@@ -126,6 +126,7 @@ publish-image: ecr-login
 	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-amd64 to ECR"
 	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-amd64
 
+## publish-image-arm64: Publish arm64 image to ECR
 publish-image-arm64: ecr-login
 	@echo "==> Tagging docker image to 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-arm64"
 	@docker tag quicr/${ECR_NAME}:${DOCKER_TAG}-arm64 \
