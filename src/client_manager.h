@@ -91,18 +91,19 @@ namespace laps {
                                  const quicr::FullTrackName& track_full_name,
                                  const quicr::messages::SubscribeAttributes& subscribe_attributes) override;
 
-        std::optional<quicr::messages::Location> GetLargestAvailable(const quicr::FullTrackName& track_name) override;
-        bool OnFetchOk(quicr::ConnectionHandle connection_handle,
-                       uint64_t request_id,
-                       const quicr::FullTrackName& track_full_name,
-                       const quicr::messages::FetchAttributes& attrs) override;
+        std::optional<quicr::messages::Location> GetLargestAvailable(const quicr::FullTrackName& track_name);
 
         void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
 
-        bool FetchReceived(quicr::ConnectionHandle connection_handle,
-                           uint64_t request_id,
-                           const quicr::FullTrackName& track_full_name,
-                           const quicr::messages::FetchAttributes& attributes) override;
+        void StandaloneFetchReceived(quicr::ConnectionHandle connection_handle,
+                                     uint64_t request_id,
+                                     const quicr::FullTrackName& track_full_name,
+                                     const quicr::messages::StandaloneFetchAttributes& attributes) override;
+
+        void JoiningFetchReceived(quicr::ConnectionHandle connection_handle,
+                                  uint64_t request_id,
+                                  const quicr::FullTrackName& track_full_name,
+                                  const quicr::messages::JoiningFetchAttributes& attributes) override;
 
         void PublishReceived(quicr::ConnectionHandle connection_handle,
                              uint64_t request_id,
