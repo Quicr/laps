@@ -740,15 +740,12 @@ namespace laps {
               State::SubscribeInfo{ connection_handle, request_id, th.track_fullname_hash });
             state_.subscribe_alias_req_id[{ connection_handle, request_id }] = th.track_fullname_hash;
 
-            uint8_t priority = attrs.priority > kMaxPublishPriority
-                                 ? attrs.priority % (kMaxPublishPriority / 2) + (kMaxPublishPriority / 2)
-                                 : attrs.priority;
             auto [sub_it, _] = state_.subscribes.try_emplace(
               { th.track_fullname_hash, connection_handle },
               State::SubscribePublishHandlerInfo{ track_full_name,
                                                   th.track_fullname_hash,
                                                   request_id,
-                                                  priority,
+                                                  attrs.priority,
                                                   static_cast<uint32_t>(attrs.delivery_timeout.count()),
                                                   attrs.group_order,
                                                   {} });
