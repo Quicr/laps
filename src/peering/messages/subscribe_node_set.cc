@@ -11,7 +11,7 @@ namespace laps::peering {
             return sizeof(SubscribeNodeSetId);
         }
 
-        return sizeof(SubscribeNodeSetId) + 2 /* num of subscriber nodes */
+        return sizeof(SubscribeNodeSetId) + 2 /* num of subscriber nodes */ + 1 /* prioirty */
                + nodes.size() * sizeof(NodeIdValueType);
     }
 
@@ -23,6 +23,8 @@ namespace laps::peering {
         it += 4;
 
         if (not withdraw) {
+            prioirty = *it++;
+
             uint16_t num_nodes = ValueOf<uint16_t>({ it, it + 2 });
             it += 2;
 
@@ -37,6 +39,8 @@ namespace laps::peering {
     {
         auto id_bytes = BytesOf(sns.id);
         data.insert(data.end(), id_bytes.rbegin(), id_bytes.rend());
+
+        data.push_back(sns.prioirty);
 
         uint16_t num_nodes = sns.nodes.size();
         auto num_nodes_bytes = BytesOf(num_nodes);

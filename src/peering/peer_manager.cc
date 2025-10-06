@@ -178,8 +178,10 @@ namespace laps::peering {
                       subscribe_info.source_node_id,
                       peer_session->GetSessionId());
 
-                    if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                          subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id);
+                    if (auto [sns_id, is_new] =
+                          peer_session->AddSubscribeSourceNode(subscribe_info.track_hash.track_fullname_hash,
+                                                               subscribe_info.source_node_id,
+                                                               sub.subscriber_priority);
                         is_new) {
                         SPDLOG_LOGGER_INFO(
                           LOGGER,
@@ -782,8 +784,10 @@ namespace laps::peering {
                               sub_info.source_node_id,
                               peer_session->GetSessionId());
 
-                            if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                                  sub_info.track_hash.track_fullname_hash, sub_info.source_node_id);
+                            if (auto [sns_id, is_new] =
+                                  peer_session->AddSubscribeSourceNode(sub_info.track_hash.track_fullname_hash,
+                                                                       sub_info.source_node_id,
+                                                                       sub.subscriber_priority);
                                 is_new) {
                                 SPDLOG_LOGGER_INFO(
                                   LOGGER,
@@ -911,7 +915,7 @@ namespace laps::peering {
                 if (auto peer_sess = peer_sess_weak.lock()) {
 
                     const auto [out_sns_id, out_new] =
-                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.prioirty);
 
                     // Update or create fib record
                     fib_it->second[peer_sess->GetSessionId()] =
@@ -938,7 +942,7 @@ namespace laps::peering {
                     if (it == fib_it->second.end()) {
                         // New entry
                         const auto [o_sns_id, __] =
-                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.prioirty);
 
                         fib_it->second[peer_sess->GetSessionId()] =
                           InfoBase::FibEntry{ update_ref, 0, o_sns_id, peer_sess_weak };
@@ -952,7 +956,7 @@ namespace laps::peering {
                     } else {
                         // Existing entry
                         const auto [o_sns_id, is_new] =
-                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.prioirty);
                         if (is_new) {
                             SPDLOG_LOGGER_DEBUG(LOGGER,
                                                 "SNS update peer session: {} sns id: {} added source node_id: {}",
