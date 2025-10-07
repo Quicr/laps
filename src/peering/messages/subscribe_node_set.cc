@@ -11,8 +11,7 @@ namespace laps::peering {
             return sizeof(SubscribeNodeSetId);
         }
 
-        return sizeof(SubscribeNodeSetId) + 2 /* num of subscriber nodes */ + 1 /* prioirty */
-               + nodes.size() * sizeof(NodeIdValueType);
+        return kSnsAdvHeaderSize + nodes.size() * sizeof(NodeIdValueType);
     }
 
     SubscribeNodeSet::SubscribeNodeSet(std::span<const uint8_t> serialized_data, bool withdraw)
