@@ -22,7 +22,7 @@ namespace laps::peering {
         it += 4;
 
         if (not withdraw) {
-            prioirty = *it++;
+            priority = *it++;
 
             uint16_t num_nodes = ValueOf<uint16_t>({ it, it + 2 });
             it += 2;
@@ -39,7 +39,7 @@ namespace laps::peering {
         auto id_bytes = BytesOf(sns.id);
         data.insert(data.end(), id_bytes.rbegin(), id_bytes.rend());
 
-        data.push_back(sns.prioirty);
+        data.push_back(sns.priority);
 
         uint16_t num_nodes = sns.nodes.size();
         auto num_nodes_bytes = BytesOf(num_nodes);

@@ -24,7 +24,7 @@ namespace laps::peering {
     {
       public:
         SubscribeNodeSetId id{ 0 };      ///< SNS ID that references this object
-        uint8_t prioirty{ 2 };           ///< Priority to use for data context
+        uint8_t priority{ 2 };           ///< Priority to use for data context
         std::set<NodeIdValueType> nodes; ///< Set of source nodes for each subscriber
 
         /**

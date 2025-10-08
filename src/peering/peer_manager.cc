@@ -915,7 +915,7 @@ namespace laps::peering {
                 if (auto peer_sess = peer_sess_weak.lock()) {
 
                     const auto [out_sns_id, out_new] =
-                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.prioirty);
+                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.priority);
 
                     // Update or create fib record
                     fib_it->second[peer_sess->GetSessionId()] =
@@ -942,7 +942,7 @@ namespace laps::peering {
                     if (it == fib_it->second.end()) {
                         // New entry
                         const auto [o_sns_id, __] =
-                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.prioirty);
+                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.priority);
 
                         fib_it->second[peer_sess->GetSessionId()] =
                           InfoBase::FibEntry{ update_ref, 0, o_sns_id, peer_sess_weak };
@@ -956,7 +956,7 @@ namespace laps::peering {
                     } else {
                         // Existing entry
                         const auto [o_sns_id, is_new] =
-                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.prioirty);
+                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.priority);
                         if (is_new) {
                             SPDLOG_LOGGER_DEBUG(LOGGER,
                                                 "SNS update peer session: {} sns id: {} added source node_id: {}",
