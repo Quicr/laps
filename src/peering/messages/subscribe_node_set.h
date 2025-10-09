@@ -10,7 +10,9 @@
 
 namespace laps::peering {
 
-    const uint32_t kMaxSnsId = 0xFFFFFFFE;
+    constexpr uint32_t kMaxSnsId = 0xFFFFFFFE;
+    constexpr uint16_t kSnsAdvHeaderSize =
+      sizeof(SubscribeNodeSetId) + sizeof(uint8_t /* priority */) + sizeof(uint16_t /* num nodes */);
 
     /**
      * @brief SubscriberInfo describes a publisher
@@ -21,7 +23,8 @@ namespace laps::peering {
     class SubscribeNodeSet
     {
       public:
-        SubscribeNodeSetId id{ 0 };      /// SNS ID that references this object
+        SubscribeNodeSetId id{ 0 };      ///< SNS ID that references this object
+        uint8_t priority{ 2 };           ///< Priority to use for data context
         std::set<NodeIdValueType> nodes; ///< Set of source nodes for each subscriber
 
         /**

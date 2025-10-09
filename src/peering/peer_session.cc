@@ -77,7 +77,8 @@ namespace laps::peering {
 
     std::pair<SubscribeNodeSetId, bool> PeerSession::AddPeerSnsSourceNode(PeerSessionId in_peer_session_id,
                                                                           SubscribeNodeSetId in_sns_id,
-                                                                          NodeIdValueType sub_node_id)
+                                                                          NodeIdValueType sub_node_id,
+                                                                          uint8_t priority)
     {
         auto [it, new_ingress] = peer_sns_.try_emplace({ in_peer_session_id, in_sns_id });
         auto& sns = it->second;
@@ -85,7 +86,7 @@ namespace laps::peering {
         if (it->second.id == 0) { // If not set, create the data context
             // TODO(tievens): Add datagram support - update transport to allow changing reliable state
             // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
-            it->second.id = transport_->CreateDataContext(t_conn_id_, true, 2, false);
+            it->second.id = transport_->CreateDataContext(t_conn_id_, true, priority, false);
         }
 
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
@@ -98,14 +99,15 @@ namespace laps::peering {
     }
 
     std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
-                                                                            NodeIdValueType sub_node_id)
+                                                                            NodeIdValueType sub_node_id,
+                                                                            uint8_t priority)
     {
         auto [it, _] = sub_sns_.try_emplace(full_name_hash);
         auto& sns = it->second;
 
         if (it->second.id == 0) { // If not set, create the data context
             // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
-            it->second.id = transport_->CreateDataContext(t_conn_id_, true, 2, false);
+            it->second.id = transport_->CreateDataContext(t_conn_id_, true, priority, false);
         }
 
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
