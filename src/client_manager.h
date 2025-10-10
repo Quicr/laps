@@ -86,6 +86,8 @@ namespace laps {
                                const quicr::FullTrackName& track_full_name,
                                const quicr::messages::SubscribeAttributes&) override;
 
+        void NewGroupRequested(const quicr::FullTrackName& track_full_name, quicr::messages::GroupId group_id) override;
+
         void TrackStatusReceived(quicr::ConnectionHandle connection_handle,
                                  uint64_t request_id,
                                  const quicr::FullTrackName& track_full_name,
@@ -117,7 +119,7 @@ namespace laps {
                               const quicr::messages::SubscribeAttributes&);
 
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
-                                             bool new_group_request);
+                                             std::optional<uint64_t> new_group_request_id);
 
         void RemoveOrPausePublisherSubscribe(const quicr::TrackHash& track_hash);
 
