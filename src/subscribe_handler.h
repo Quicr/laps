@@ -32,10 +32,11 @@ namespace laps {
 
         void SetFromPeer();
 
+        std::optional<uint64_t> GetPendingNewRquestId() { return pending_new_group_request_id_; };
+
         struct PublisherLastUpdateInfo
         {
             std::optional<std::chrono::time_point<std::chrono::steady_clock>> time;
-            bool new_group_request{ false };
         } pub_last_update_info_;
 
       private:

@@ -119,7 +119,7 @@ namespace laps {
                               const quicr::messages::SubscribeAttributes&);
 
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
-                                             std::optional<uint64_t> new_group_request_id);
+                                             bool new_group_request);
 
         void RemoveOrPausePublisherSubscribe(const quicr::TrackHash& track_hash);
 
