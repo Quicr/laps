@@ -33,6 +33,7 @@ namespace laps {
         void SetFromPeer();
 
         std::optional<uint64_t> GetPendingNewRquestId() { return pending_new_group_request_id_; };
+        uint64_t GetLatestGroupId() { return current_group_id_; }
 
         struct PublisherLastUpdateInfo
         {
