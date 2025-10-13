@@ -246,6 +246,10 @@ namespace laps {
         sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
         sub_track_handler->SetPriority(publish_attributes.priority);
 
+        if (publish_attributes.new_group_request_id.has_value()) {
+            sub_track_handler->SupportNewGroupRequest(true);
+        }
+
         SubscribeTrack(connection_handle, sub_track_handler);
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
         state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
@@ -737,8 +741,12 @@ namespace laps {
                                  : 0);
 
             sub_to_pub_track_handler->pub_last_update_info_.time = now;
-            UpdateTrackSubscription(
-              sub_to_pub_track_handler->GetConnectionId(), sub_to_pub_track_handler, new_group_request);
+
+            if (new_group_request) {
+                sub_to_pub_track_handler->RequestNewGroup();
+            } else {
+                UpdateTrackSubscription(sub_to_pub_track_handler->GetConnectionId(), sub_to_pub_track_handler);
+            }
         }
 
         return false;
