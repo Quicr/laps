@@ -4,7 +4,7 @@
 #include <quicr/server.h>
 #include <quicr/subscribe_track_handler.h>
 
-#include <quicr/detail/defer.h>
+#include <quicr/defer.h>
 
 #include "client_manager.h"
 #include "config.h"
@@ -644,11 +644,16 @@ namespace laps {
                         object.headers.group_id == attrs.end_group && object.headers.object_id > *attrs.end_object)
                         break; // Done, reached end object within end group
 
-                    SPDLOG_DEBUG("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
+                    SPDLOG_TRACE("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
 
                     pub_fetch_h->PublishObject(object.headers, object.data);
                 }
             }
+
+            /* TODO: Wait for queue to be emptied before close. Otherwise the stream will be closed before all data is
+             *      sent
+             */
+            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         });
 
         retrieve_cache_thread.detach();

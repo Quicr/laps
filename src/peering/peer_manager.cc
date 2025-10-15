@@ -578,7 +578,6 @@ namespace laps::peering {
                 }
 
                 if (attrs.new_group_request && not has_new_group_request) {
-                    uint64_t val = 1;
                     sub.parameters.push_back(
                       { .type = quicr::messages::ParameterType::kNewGroupRequest, .value = { 1 } });
 
@@ -1255,6 +1254,15 @@ namespace laps::peering {
         if (peer_iter != server_peer_sessions_.end()) {
             peer_iter->second->OnRecvDgram(conn_id, data_ctx_id);
         }
+    }
+
+    void PeerManager::OnStreamClosed(const quicr::TransportConnId& connection_handle,
+                                     std::uint64_t stream_id,
+                                     bool is_fin,
+                                     bool is_reset)
+    {
+        SPDLOG_LOGGER_DEBUG(
+          LOGGER, "Peer conn_id {} stream id: {} fin: {} reset: {}", connection_handle, stream_id, is_fin, is_reset);
     }
 
 } // namespace laps
