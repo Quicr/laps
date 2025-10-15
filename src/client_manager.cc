@@ -126,9 +126,9 @@ namespace laps {
         }
     }
 
-    void ClientManager::AnnounceReceived(quicr::ConnectionHandle connection_handle,
-                                         const quicr::TrackNamespace& track_namespace,
-                                         const quicr::PublishAnnounceAttributes& attrs)
+    void ClientManager::PublishNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                                 const quicr::TrackNamespace& track_namespace,
+                                                 const quicr::PublishNamespaceAttributes& attrs)
     {
 
         auto subscribe_to_publisher = [&] {
@@ -191,8 +191,8 @@ namespace laps {
             return;
         }
 
-        AnnounceResponse announce_response;
-        announce_response.reason_code = quicr::Server::AnnounceResponse::ReasonCode::kOk;
+        PublishNamespaceResponse announce_response;
+        announce_response.reason_code = quicr::Server::PublishNamespaceResponse::ReasonCode::kOk;
 
         std::vector<quicr::ConnectionHandle> sub_annos_connections;
 
@@ -212,7 +212,8 @@ namespace laps {
             }
         }
 
-        ResolveAnnounce(connection_handle, attrs.request_id, track_namespace, sub_annos_connections, announce_response);
+        ResolvePublishNamespace(
+          connection_handle, attrs.request_id, track_namespace, sub_annos_connections, announce_response);
 
         subscribe_to_publisher();
 
@@ -286,14 +287,14 @@ namespace laps {
         peer_manager_.ClientAnnounce(track_full_name, {}, false);
     }
 
-    ClientManager::SubscribeAnnouncesResponse ClientManager::SubscribeAnnouncesReceived(
+    ClientManager::SubscribeNamespaceResponse ClientManager::SubscribeNamespaceReceived(
       quicr::ConnectionHandle connection_handle,
       const quicr::TrackNamespace& prefix_namespace,
-      const quicr::PublishAnnounceAttributes&)
+      const quicr::PublishNamespaceAttributes&)
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
-        std::cout << "size of subscribe announces " << state_.subscribes_announces.size() << std::endl;
+        std::cout << "size of subscribe namespace " << state_.subscribes_announces.size() << std::endl;
         auto [it, is_new] = state_.subscribes_announces.try_emplace(prefix_namespace);
         it->second.insert(connection_handle);
 
@@ -316,7 +317,7 @@ namespace laps {
         return { std::nullopt, std::move(matched_ns) };
     }
 
-    void ClientManager::UnsubscribeAnnouncesReceived(quicr::ConnectionHandle connection_handle,
+    void ClientManager::UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                                      const quicr::TrackNamespace& prefix_namespace)
     {
         auto it = state_.subscribes_announces.find(prefix_namespace);
@@ -397,10 +398,10 @@ namespace laps {
         return client_setup_response;
     }
 
-    void ClientManager::SubscribeDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)
+    void ClientManager::PublishDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)
     {
         SPDLOG_LOGGER_INFO(
-          LOGGER, "Subscribe Done connection handle: {0} request_id: {1}", connection_handle, request_id);
+          LOGGER, "Publish Done connection handle: {0} request_id: {1}", connection_handle, request_id);
 
         const auto s_it = state_.pub_subscribes_by_req_id.find({ request_id, connection_handle });
         if (s_it == state_.pub_subscribes_by_req_id.end()) {
