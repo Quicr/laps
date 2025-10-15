@@ -86,6 +86,8 @@ namespace laps {
                                const quicr::FullTrackName& track_full_name,
                                const quicr::messages::SubscribeAttributes&) override;
 
+        void NewGroupRequested(const quicr::FullTrackName& track_full_name, quicr::messages::GroupId group_id) override;
+
         void TrackStatusReceived(quicr::ConnectionHandle connection_handle,
                                  uint64_t request_id,
                                  const quicr::FullTrackName& track_full_name,

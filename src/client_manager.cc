@@ -10,7 +10,6 @@
 #include "config.h"
 #include "fetch_handler.h"
 #include "publish_handler.h"
-#include "spdlog/fmt/bundled/chrono.h"
 #include "subscribe_handler.h"
 
 namespace laps {
@@ -246,6 +245,10 @@ namespace laps {
         sub_track_handler->SetRequestId(request_id);
         sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
         sub_track_handler->SetPriority(publish_attributes.priority);
+
+        if (publish_attributes.new_group_request_id.has_value()) {
+            sub_track_handler->SupportNewGroupRequest(true);
+        }
 
         SubscribeTrack(connection_handle, sub_track_handler);
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
@@ -676,6 +679,43 @@ namespace laps {
             stop_fetch_[{ connection_handle, request_id }] = true;
     }
 
+    void ClientManager::NewGroupRequested(const quicr::FullTrackName& track_full_name,
+                                          quicr::messages::GroupId group_id)
+    {
+        auto th = quicr::TrackHash(track_full_name);
+        SPDLOG_INFO("New group requested received track_alais: {} group_id: {} ", th.track_fullname_hash, group_id);
+
+        // Update peering subscribe info - This will update existing instead of creating new
+        peer_manager_.ClientSubscribeUpdate(track_full_name,
+                                            {
+                                              kDefaultPriority,
+                                              quicr::messages::GroupOrder::kAscending,
+                                              std::chrono::milliseconds(kDefaultObjectTtl),
+                                              1,
+                                              true,
+                                            });
+
+        // Notify all publishers that there is a new group request
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+            auto& track_alias = it->first.first;
+            auto& pub_conn_id = it->first.second;
+
+            if (track_alias != th.track_fullname_hash) {
+                break;
+            }
+
+            if (!(it->second->GetPendingNewRquestId().has_value() && *it->second->GetPendingNewRquestId() == 0 &&
+                  group_id == 0) &&
+                (group_id == 0 || it->second->GetLatestGroupId() < group_id)) {
+
+                it->second->SetNewGroupRequestId(group_id);
+                DampenOrUpdateTrackSubscription(it->second, true);
+            }
+        }
+    }
+
     bool ClientManager::DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                                         bool new_group_request)
     {
@@ -689,21 +729,25 @@ namespace laps {
                         .count();
         }
 
-        if (elapsed > config_.sub_dampen_ms_ ||
-            sub_to_pub_track_handler->pub_last_update_info_.new_group_request != new_group_request) {
+        if (new_group_request || elapsed > config_.sub_dampen_ms_) {
             SPDLOG_LOGGER_INFO(LOGGER,
-                               "Sending subscribe-update to publisher connection handler: {0} subscribe "
-                               "track_alias: {1} new_group: {2}",
+                               "Sending subscribe-update to publisher connection handler: {} subscribe "
+                               "track_alias: {} new_group: {} pending_new_group_id: {}",
                                sub_to_pub_track_handler->GetConnectionId(),
                                sub_to_pub_track_handler->GetTrackAlias().value(),
-                               new_group_request);
+                               new_group_request,
+                               sub_to_pub_track_handler->GetPendingNewRquestId().has_value()
+                                 ? *sub_to_pub_track_handler->GetPendingNewRquestId()
+                                 : 0);
 
             sub_to_pub_track_handler->pub_last_update_info_.time = now;
-            UpdateTrackSubscription(
-              sub_to_pub_track_handler->GetConnectionId(), sub_to_pub_track_handler, new_group_request);
-        }
 
-        sub_to_pub_track_handler->pub_last_update_info_.new_group_request = new_group_request;
+            if (new_group_request) {
+                sub_to_pub_track_handler->RequestNewGroup();
+            } else {
+                UpdateTrackSubscription(sub_to_pub_track_handler->GetConnectionId(), sub_to_pub_track_handler);
+            }
+        }
 
         return false;
     }
@@ -720,7 +764,7 @@ namespace laps {
                                 "Processing peer subscribe track alias: {} priority: {} new_group_request: {}",
                                 th.track_fullname_hash,
                                 attrs.priority,
-                                attrs.new_group_request);
+                                attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
         }
 
         else {
@@ -733,7 +777,7 @@ namespace laps {
                                attrs.priority,
                                th.track_namespace_hash,
                                th.track_name_hash,
-                               attrs.new_group_request);
+                               attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
 
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
@@ -785,7 +829,7 @@ namespace laps {
                 it->second->Resume();
             }
 
-            DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request);
+            DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request_id.has_value());
         }
 
         // Subscribe to announcer if announcer is active
@@ -813,14 +857,14 @@ namespace laps {
 
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
 
-                if (attrs.new_group_request) {
+                if (attrs.new_group_request_id) {
                     sub_track_h->RequestNewGroup();
                 }
 
             } else {
                 auto pub_handler_it = state_.pub_subscribes.find({ th.track_fullname_hash, key.second });
                 if (pub_handler_it != state_.pub_subscribes.end()) {
-                    DampenOrUpdateTrackSubscription(pub_handler_it->second, attrs.new_group_request);
+                    DampenOrUpdateTrackSubscription(pub_handler_it->second, attrs.new_group_request_id.has_value());
                 }
             }
         }

@@ -150,7 +150,7 @@ namespace laps::peering {
 
                     for (const auto& param : sub.parameters) {
                         if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
-                            s_attrs.new_group_request = true;
+                            s_attrs.new_group_request_id = true;
                             break;
                         }
                     }
@@ -158,7 +158,8 @@ namespace laps::peering {
                     SPDLOG_LOGGER_INFO(LOGGER,
                                        "Subscribe to client manager track alias: {} new_group_request: {}",
                                        subscribe_info.track_hash.track_fullname_hash,
-                                       s_attrs.new_group_request);
+                                       s_attrs.new_group_request_id.has_value() ? s_attrs.new_group_request_id.value()
+                                                                                : -1);
 
                     client_manager_->ProcessSubscribe(0,
                                                       0,
@@ -565,7 +566,7 @@ namespace laps::peering {
                     if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
                         has_new_group_request = true;
 
-                        if (not attrs.new_group_request) {
+                        if (!attrs.new_group_request_id.has_value()) {
                             // Remove new group request since it's not requested but was found
                             sub.parameters.erase(it);
                             quicr::Bytes sub_data;
@@ -579,10 +580,10 @@ namespace laps::peering {
                     }
                 }
 
-                if (attrs.new_group_request && not has_new_group_request) {
-                    uint64_t val = 1;
-                    sub.parameters.push_back(
-                      { .type = quicr::messages::ParameterType::kNewGroupRequest, .value = { 1 } });
+                if (attrs.new_group_request_id.has_value() && not has_new_group_request) {
+                    const auto val = BytesOf(attrs.new_group_request_id.value());
+                    sub.parameters.push_back({ .type = quicr::messages::ParameterType::kNewGroupRequest,
+                                               .value = { val.begin(), val.end() } });
 
                     quicr::Bytes sub_data;
                     sub_data << sub;
@@ -603,7 +604,7 @@ namespace laps::peering {
                                     "Sending subscribe update fullname: {} peer_session_id: {} new_group: {}",
                                     th.track_fullname_hash,
                                     sess.first,
-                                    attrs.new_group_request);
+                                    attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
                 sess.second->SendSubscribeInfo(*si, false);
             }
 
@@ -612,7 +613,7 @@ namespace laps::peering {
                                     "Sending subscribe update fullname: {} peer_session_id: {} new_group: {}",
                                     th.track_fullname_hash,
                                     sess.first,
-                                    attrs.new_group_request);
+                                    attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
                 sess.second->SendSubscribeInfo(*si, false);
             }
         }
@@ -757,7 +758,7 @@ namespace laps::peering {
 
                             for (const auto& param : sub.parameters) {
                                 if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
-                                    s_attrs.new_group_request = true;
+                                    s_attrs.new_group_request_id = true;
                                     break;
                                 }
                             }

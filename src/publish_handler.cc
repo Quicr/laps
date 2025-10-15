@@ -53,31 +53,6 @@ namespace laps {
                     break;
                 case Status::kNewGroupRequested:
                     reason = "new group requested";
-
-                    // Update peering subscribe info - This will update existing instead of creating new
-                    server_.peer_manager_.ClientSubscribeUpdate(full_track_name_,
-                                                                {
-                                                                  default_priority_,
-                                                                  quicr::messages::GroupOrder::kAscending,
-                                                                  std::chrono::milliseconds(default_ttl_),
-                                                                  1,
-                                                                  true,
-                                                                });
-
-                    // Notify all publishers that there is a new group request
-                    for (auto it = server_.state_.pub_subscribes.lower_bound({ GetTrackAlias().value(), 0 });
-                         it != server_.state_.pub_subscribes.end();
-                         ++it) {
-                        auto& track_alias = it->first.first;
-                        auto& pub_conn_id = it->first.second;
-
-                        if (track_alias != GetTrackAlias().value()) {
-                            break;
-                        }
-
-                        server_.DampenOrUpdateTrackSubscription(it->second, true);
-                    }
-
                     break;
                 default:
                     break;
