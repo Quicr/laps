@@ -150,7 +150,7 @@ namespace laps::peering {
 
                     for (const auto& param : sub.parameters) {
                         if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
-                            s_attrs.new_group_request = true;
+                            s_attrs.new_group_request_id = true;
                             break;
                         }
                     }
@@ -158,7 +158,8 @@ namespace laps::peering {
                     SPDLOG_LOGGER_INFO(LOGGER,
                                        "Subscribe to client manager track alias: {} new_group_request: {}",
                                        subscribe_info.track_hash.track_fullname_hash,
-                                       s_attrs.new_group_request);
+                                       s_attrs.new_group_request_id.has_value() ? s_attrs.new_group_request_id.value()
+                                                                                : -1);
 
                     client_manager_->ProcessSubscribe(0,
                                                       0,
@@ -178,8 +179,10 @@ namespace laps::peering {
                       subscribe_info.source_node_id,
                       peer_session->GetSessionId());
 
-                    if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                          subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id);
+                    if (auto [sns_id, is_new] =
+                          peer_session->AddSubscribeSourceNode(subscribe_info.track_hash.track_fullname_hash,
+                                                               subscribe_info.source_node_id,
+                                                               sub.subscriber_priority);
                         is_new) {
                         SPDLOG_LOGGER_INFO(
                           LOGGER,
@@ -563,7 +566,7 @@ namespace laps::peering {
                     if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
                         has_new_group_request = true;
 
-                        if (not attrs.new_group_request) {
+                        if (!attrs.new_group_request_id.has_value()) {
                             // Remove new group request since it's not requested but was found
                             sub.parameters.erase(it);
                             quicr::Bytes sub_data;
@@ -577,9 +580,10 @@ namespace laps::peering {
                     }
                 }
 
-                if (attrs.new_group_request && not has_new_group_request) {
-                    sub.parameters.push_back(
-                      { .type = quicr::messages::ParameterType::kNewGroupRequest, .value = { 1 } });
+                if (attrs.new_group_request_id.has_value() && not has_new_group_request) {
+                    const auto val = BytesOf(attrs.new_group_request_id.value());
+                    sub.parameters.push_back({ .type = quicr::messages::ParameterType::kNewGroupRequest,
+                                               .value = { val.begin(), val.end() } });
 
                     quicr::Bytes sub_data;
                     sub_data << sub;
@@ -600,7 +604,7 @@ namespace laps::peering {
                                     "Sending subscribe update fullname: {} peer_session_id: {} new_group: {}",
                                     th.track_fullname_hash,
                                     sess.first,
-                                    attrs.new_group_request);
+                                    attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
                 sess.second->SendSubscribeInfo(*si, false);
             }
 
@@ -609,7 +613,7 @@ namespace laps::peering {
                                     "Sending subscribe update fullname: {} peer_session_id: {} new_group: {}",
                                     th.track_fullname_hash,
                                     sess.first,
-                                    attrs.new_group_request);
+                                    attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
                 sess.second->SendSubscribeInfo(*si, false);
             }
         }
@@ -674,7 +678,7 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientAnnounce(const quicr::FullTrackName& track_full_name,
-                                     const quicr::PublishAnnounceAttributes&,
+                                     const quicr::PublishNamespaceAttributes&,
                                      bool withdraw)
     {
         AnnounceInfo ai;
@@ -754,7 +758,7 @@ namespace laps::peering {
 
                             for (const auto& param : sub.parameters) {
                                 if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
-                                    s_attrs.new_group_request = true;
+                                    s_attrs.new_group_request_id = true;
                                     break;
                                 }
                             }
@@ -781,8 +785,10 @@ namespace laps::peering {
                               sub_info.source_node_id,
                               peer_session->GetSessionId());
 
-                            if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                                  sub_info.track_hash.track_fullname_hash, sub_info.source_node_id);
+                            if (auto [sns_id, is_new] =
+                                  peer_session->AddSubscribeSourceNode(sub_info.track_hash.track_fullname_hash,
+                                                                       sub_info.source_node_id,
+                                                                       sub.subscriber_priority);
                                 is_new) {
                                 SPDLOG_LOGGER_INFO(
                                   LOGGER,
@@ -910,7 +916,7 @@ namespace laps::peering {
                 if (auto peer_sess = peer_sess_weak.lock()) {
 
                     const auto [out_sns_id, out_new] =
-                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+                      peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.priority);
 
                     // Update or create fib record
                     fib_it->second[peer_sess->GetSessionId()] =
@@ -937,7 +943,7 @@ namespace laps::peering {
                     if (it == fib_it->second.end()) {
                         // New entry
                         const auto [o_sns_id, __] =
-                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.priority);
 
                         fib_it->second[peer_sess->GetSessionId()] =
                           InfoBase::FibEntry{ update_ref, 0, o_sns_id, peer_sess_weak };
@@ -951,7 +957,7 @@ namespace laps::peering {
                     } else {
                         // Existing entry
                         const auto [o_sns_id, is_new] =
-                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id);
+                          peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.priority);
                         if (is_new) {
                             SPDLOG_LOGGER_DEBUG(LOGGER,
                                                 "SNS update peer session: {} sns id: {} added source node_id: {}",

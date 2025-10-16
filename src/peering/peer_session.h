@@ -97,22 +97,26 @@ namespace laps::peering {
          * @param in_peer_session_id Ingress peer session ID
          * @param in_sns_id          Ingress peer session SNS ID
          * @param sub_node_id        Source NodeId of the node that has the subscriber
+         * @param priority           Priority to use for the data context
          *
          * @returns pair Subscribe Node Set Id and True if subscriber node is new or False if existing
          */
         std::pair<SubscribeNodeSetId, bool> AddPeerSnsSourceNode(PeerSessionId in_peer_session_id,
                                                                  SubscribeNodeSetId in_sns_id,
-                                                                 NodeIdValueType sub_node_id);
+                                                                 NodeIdValueType sub_node_id,
+                                                                 uint8_t priority);
 
         /**
          * @brief Add subscriber source node to subscriber id state
          *
          * @param full_name_hash     Subscribe ID (aka track alias)
-         * @param sub_node_id      Source NodeId of the node that has the subscriber
+         * @param sub_node_id        Source NodeId of the node that has the subscriber
+         * @param priority           Priority to use for the data context
          * @returns pair Subscribe Node Set Id and True if subscriber node is new or False if existing
          */
         std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
-                                                                   NodeIdValueType sub_node_id);
+                                                                   NodeIdValueType sub_node_id,
+                                                                   uint8_t priority);
 
         /**
          * @brief Remove subscriber source node from the subscribe id state

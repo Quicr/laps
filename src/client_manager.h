@@ -58,19 +58,19 @@ namespace laps {
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;
 
-        SubscribeAnnouncesResponse SubscribeAnnouncesReceived(quicr::ConnectionHandle connection_handle,
+        SubscribeNamespaceResponse SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                                               const quicr::TrackNamespace& prefix_namespace,
-                                                              const quicr::PublishAnnounceAttributes&) override;
+                                                              const quicr::PublishNamespaceAttributes&) override;
 
-        void UnsubscribeAnnouncesReceived(quicr::ConnectionHandle connection_handle,
+        void UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                           const quicr::TrackNamespace& prefix_namespace) override;
 
         std::vector<quicr::ConnectionHandle> UnannounceReceived(quicr::ConnectionHandle connection_handle,
                                                                 const quicr::TrackNamespace& track_namespace) override;
 
-        void AnnounceReceived(quicr::ConnectionHandle connection_handle,
-                              const quicr::TrackNamespace& track_namespace,
-                              const quicr::PublishAnnounceAttributes&) override;
+        void PublishNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                      const quicr::TrackNamespace& track_namespace,
+                                      const quicr::PublishNamespaceAttributes&) override;
 
         void ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status) override;
 
@@ -78,13 +78,15 @@ namespace laps {
                                                 const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
         void UnsubscribeReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
-        void SubscribeDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
+        void PublishDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
 
         void SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                uint64_t request_id,
                                quicr::messages::FilterType filter_type,
                                const quicr::FullTrackName& track_full_name,
                                const quicr::messages::SubscribeAttributes&) override;
+
+        void NewGroupRequested(const quicr::FullTrackName& track_full_name, quicr::messages::GroupId group_id) override;
 
         void TrackStatusReceived(quicr::ConnectionHandle connection_handle,
                                  uint64_t request_id,

@@ -16,6 +16,7 @@ namespace laps {
     constexpr uint64_t kDefaultPeerCheckIntervalMs = 5'000;
     constexpr uint32_t kDefaultPeerInitQueueSize = 5'000;
     constexpr uint32_t kDefaultObjectTtl = 5'000;
+    constexpr uint8_t kDefaultPriority = 10;
     constexpr uint32_t kDefaultCacheTimeQueueMaxDuration = 10'000;
     constexpr uint32_t kDefaultCacheTimeQueueObjectTtl = 6'000;
     constexpr uint32_t kDefaultSubscriptionRefreshIntervalMs = 500;

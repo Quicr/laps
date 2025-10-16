@@ -38,6 +38,10 @@ namespace laps {
 
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
+        if (pending_new_group_request_id_.has_value() && current_group_id_ != object_headers.group_id) {
+            pending_new_group_request_id_.reset();
+        }
+
         current_group_id_ = object_headers.group_id;
         current_subgroup_id_ = object_headers.subgroup_id;
 
@@ -131,6 +135,10 @@ namespace laps {
                     }
                 } else {
                     next_object_id_ = obj.object_delta;
+                }
+
+                if (pending_new_group_request_id_.has_value() && current_group_id_ != s_hdr.group_id) {
+                    pending_new_group_request_id_.reset();
                 }
 
                 current_group_id_ = s_hdr.group_id;
