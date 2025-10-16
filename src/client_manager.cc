@@ -653,11 +653,6 @@ namespace laps {
                     pub_fetch_h->PublishObject(object.headers, object.data);
                 }
             }
-
-            /* TODO: Wait for queue to be emptied before close. Otherwise the stream will be closed before all data is
-             *      sent
-             */
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         });
 
         retrieve_cache_thread.detach();
