@@ -56,7 +56,7 @@ namespace laps::peering {
                             std::shared_ptr<const std::vector<uint8_t>> data);
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,
-                            const quicr::PublishAnnounceAttributes&,
+                            const quicr::PublishNamespaceAttributes&,
                             bool withdraw = false);
 
         void ClientUnannounce(const quicr::FullTrackName& full_track_name)

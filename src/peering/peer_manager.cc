@@ -678,7 +678,7 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientAnnounce(const quicr::FullTrackName& track_full_name,
-                                     const quicr::PublishAnnounceAttributes&,
+                                     const quicr::PublishNamespaceAttributes&,
                                      bool withdraw)
     {
         AnnounceInfo ai;
