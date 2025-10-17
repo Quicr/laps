@@ -601,8 +601,8 @@ namespace laps {
             auto& [_, cache] = *cache_entry_it;
             if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
                 const auto& latest_object = *std::prev(latest_group->end());
-                largest_group_id = latest_object->headers.group_id;
-                largest_object_id = latest_object->headers.object_id;
+                largest_group_id = latest_object.headers.group_id;
+                largest_object_id = latest_object.headers.object_id;
             }
         }
         if (!largest_group_id.has_value() || !largest_object_id.has_value()) {
@@ -628,7 +628,7 @@ namespace laps {
             auto& [_, cache] = *cache_entry_it;
             if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
                 const auto& latest_object = *std::prev(latest_group->end());
-                largest_location = { latest_object->headers.group_id, latest_object->headers.object_id };
+                largest_location = { latest_object.headers.group_id, latest_object.headers.object_id };
             }
         }
 
@@ -659,6 +659,7 @@ namespace laps {
             return;
         }
 
+        // TODO: Adjust the TTL
         auto pub_fetch_h =
           quicr::PublishFetchHandler::Create(track_full_name, priority, request_id, group_order, config_.object_ttl_);
         BindFetchTrack(connection_handle, pub_fetch_h);
@@ -676,7 +677,7 @@ namespace laps {
                     }
 
                     SPDLOG_TRACE("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
-                    pub_fetch_h->PublishObject(object->headers, object->data);
+                    pub_fetch_h->PublishObject(object.headers, object.data);
                 }
             }
         });

@@ -148,9 +148,7 @@ namespace laps {
         std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
-        std::map<quicr::TrackFullNameHash,
-                 quicr::Cache<quicr::messages::GroupId, std::set<std::shared_ptr<CacheObject>>>>
-          cache_;
+        std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

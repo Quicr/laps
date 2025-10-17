@@ -73,7 +73,7 @@ docker-prep:
 	@echo "Prep normally requires submodule update, but skipping considering possible custom changes"
 #	@git submodule update --init --recursive
 
-## image-amd64: Create AMD64 docker image
+## image-amd64: Create AMD64 docker image∂
 image-amd64: docker-prep
 	@docker buildx build --progress=plain \
 			--output type=docker --platform linux/amd64 \
