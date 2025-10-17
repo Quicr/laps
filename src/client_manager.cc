@@ -600,7 +600,7 @@ namespace laps {
         if (cache_entry_it != cache_.end()) {
             auto& [_, cache] = *cache_entry_it;
             if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
-                const auto& latest_object = std::prev(latest_group->end());
+                const auto& latest_object = *std::prev(latest_group->end());
                 largest_group_id = latest_object->headers.group_id;
                 largest_object_id = latest_object->headers.object_id;
             }
@@ -611,10 +611,13 @@ namespace laps {
         return quicr::messages::Location{ .group = largest_group_id.value(), .object = largest_object_id.value() };
     }
 
-    void ClientManager::StandaloneFetchReceived(quicr::ConnectionHandle connection_handle,
-                                                uint64_t request_id,
-                                                const quicr::FullTrackName& track_full_name,
-                                                const quicr::messages::StandaloneFetchAttributes& attrs)
+    void ClientManager::FetchReceived(quicr::ConnectionHandle connection_handle,
+                                      uint64_t request_id,
+                                      const quicr::FullTrackName& track_full_name,
+                                      quicr::messages::SubscriberPriority priority,
+                                      quicr::messages::GroupOrder group_order,
+                                      quicr::messages::GroupId start,
+                                      quicr::messages::GroupId end)
     {
         std::optional<quicr::messages::Location> largest_location = std::nullopt;
         auto th = quicr::TrackHash(track_full_name);
@@ -624,7 +627,7 @@ namespace laps {
         if (cache_entry_it != cache_.end()) {
             auto& [_, cache] = *cache_entry_it;
             if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
-                const auto& latest_object = std::prev(latest_group->end());
+                const auto& latest_object = *std::prev(latest_group->end());
                 largest_location = { latest_object->headers.group_id, latest_object->headers.object_id };
             }
         }
@@ -633,8 +636,8 @@ namespace laps {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
         }
 
-        const auto& cache_entries = cache_entry_it->second.Get(
-          attrs.start_location.group, attrs.end_group != 0 ? attrs.end_group : cache_entry_it->second.Size() - 1);
+        const auto& cache_entries =
+          cache_entry_it->second.Get(start, end != 0 ? end : cache_entry_it->second.Size() - 1);
 
         if (cache_entries.empty()) {
             reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
@@ -642,8 +645,8 @@ namespace laps {
 
         ResolveFetch(connection_handle,
                      request_id,
-                     attrs.priority,
-                     attrs.group_order,
+                     priority,
+                     group_order,
                      {
                        reason_code,
                        reason_code == quicr::FetchResponse::ReasonCode::kOk
@@ -656,8 +659,8 @@ namespace laps {
             return;
         }
 
-        auto pub_fetch_h = quicr::PublishFetchHandler::Create(
-          track_full_name, attrs.priority, request_id, attrs.group_order, config_.object_ttl_);
+        auto pub_fetch_h =
+          quicr::PublishFetchHandler::Create(track_full_name, priority, request_id, group_order, config_.object_ttl_);
         BindFetchTrack(connection_handle, pub_fetch_h);
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
@@ -673,7 +676,7 @@ namespace laps {
                     }
 
                     SPDLOG_TRACE("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
-                    pub_fetch_h->PublishObject(object.headers, object.data);
+                    pub_fetch_h->PublishObject(object->headers, object->data);
                 }
             }
         });
@@ -681,64 +684,32 @@ namespace laps {
         retrieve_cache_thread.detach();
     }
 
+    void ClientManager::StandaloneFetchReceived(quicr::ConnectionHandle connection_handle,
+                                                uint64_t request_id,
+                                                const quicr::FullTrackName& track_full_name,
+                                                const quicr::messages::StandaloneFetchAttributes& attributes)
+    {
+        FetchReceived(connection_handle,
+                      request_id,
+                      track_full_name,
+                      attributes.priority,
+                      attributes.group_order,
+                      attributes.start_location.group,
+                      attributes.end_group);
+    }
+
     void ClientManager::JoiningFetchReceived(quicr::ConnectionHandle connection_handle,
                                              uint64_t request_id,
                                              const quicr::FullTrackName& track_full_name,
-                                             const quicr::messages::JoiningFetchAttributes& attrs)
+                                             const quicr::messages::JoiningFetchAttributes& attributes)
     {
-        const auto th = quicr::TrackHash(track_full_name);
-        auto& cache = cache_.at(th.track_fullname_hash);
-        std::optional<quicr::messages::Location> largest_location = std::nullopt;
-
-        if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
-            const auto& latest_object = std::prev(latest_group->end());
-            largest_location = { latest_object->headers.group_id, latest_object->headers.object_id };
-        }
-
-        ResolveFetch(connection_handle,
-                     request_id,
-                     attrs.priority,
-                     attrs.group_order,
-                     {
-                       largest_location.has_value() ? quicr::FetchResponse::ReasonCode::kOk
-                                                    : quicr::FetchResponse::ReasonCode::kInvalidRange,
-                       largest_location.has_value() ? std::nullopt : std::make_optional("No locations available"),
-                       largest_location,
-                     });
-
-        if (!largest_location.has_value()) {
-            return;
-        }
-
-        auto pub_fetch_h = quicr::PublishFetchHandler::Create(
-          track_full_name, attrs.priority, request_id, attrs.group_order, config_.object_ttl_);
-        BindFetchTrack(connection_handle, pub_fetch_h);
-
-        stop_fetch_.try_emplace({ connection_handle, request_id }, false);
-
-        const auto cache_entries = cache.Get(attrs.joining_start, cache.Size() - 1);
-
-        if (cache_entries.empty())
-            return;
-
-        std::thread retrieve_cache_thread([=, cache_entries = cache_entries, this] {
-            defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
-
-            for (const auto& cache_entry : cache_entries) {
-                for (const auto& object : *cache_entry) {
-                    if (stop_fetch_[{ connection_handle, request_id }]) {
-                        stop_fetch_.erase({ connection_handle, request_id });
-                        return;
-                    }
-
-                    SPDLOG_DEBUG("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
-
-                    pub_fetch_h->PublishObject(object.headers, object.data);
-                }
-            }
-        });
-
-        retrieve_cache_thread.detach();
+        FetchReceived(connection_handle,
+                      request_id,
+                      track_full_name,
+                      attributes.priority,
+                      attributes.group_order,
+                      attributes.joining_start,
+                      0);
     }
 
     void ClientManager::FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)

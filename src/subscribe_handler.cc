@@ -29,14 +29,15 @@ namespace laps {
 
         // Cache Object
         if (server_.cache_.count(GetTrackAlias().value()) == 0) {
-            server_.cache_.insert(std::make_pair(GetTrackAlias().value(),
-                                                 quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                                                   server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
+            server_.cache_.insert(
+              std::make_pair(GetTrackAlias().value(),
+                             quicr::Cache<quicr::messages::GroupId, std::set<std::shared_ptr<CacheObject>>>{
+                               server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
         }
 
         auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
 
-        CacheObject object{ object_headers, { data.begin(), data.end() } };
+        auto object = std::make_shared<CacheObject>(object_headers, quicr::Bytes{ data.begin(), data.end() });
 
         if (pending_new_group_request_id_.has_value() && current_group_id_ != object_headers.group_id) {
             pending_new_group_request_id_.reset();

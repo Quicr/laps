@@ -130,6 +130,14 @@ namespace laps {
       private:
         void PurgePublishState(quicr::ConnectionHandle connection_handle);
 
+        void FetchReceived(quicr::ConnectionHandle connection_handle,
+                           uint64_t request_id,
+                           const quicr::FullTrackName& track_full_name,
+                           quicr::messages::SubscriberPriority priority,
+                           quicr::messages::GroupOrder group_order,
+                           quicr::messages::GroupId start,
+                           quicr::messages::GroupId end);
+
         State& state_;
         const Config& config_;
         peering::PeerManager& peer_manager_;
@@ -140,7 +148,9 @@ namespace laps {
         std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
-        std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
+        std::map<quicr::TrackFullNameHash,
+                 quicr::Cache<quicr::messages::GroupId, std::set<std::shared_ptr<CacheObject>>>>
+          cache_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;
