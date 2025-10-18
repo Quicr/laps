@@ -616,12 +616,12 @@ namespace laps {
                                       const quicr::FullTrackName& track_full_name,
                                       quicr::messages::SubscriberPriority priority,
                                       quicr::messages::GroupOrder group_order,
-                                      quicr::messages::GroupId start,
-                                      quicr::messages::GroupId end)
+                                      quicr::messages::Location start,
+                                      std::optional<quicr::messages::Location> end)
     {
+        auto reason_code = quicr::FetchResponse::ReasonCode::kOk;
         std::optional<quicr::messages::Location> largest_location = std::nullopt;
         auto th = quicr::TrackHash(track_full_name);
-        auto reason_code = quicr::FetchResponse::ReasonCode::kOk;
 
         auto cache_entry_it = cache_.find(th.track_fullname_hash);
         if (cache_entry_it != cache_.end()) {
@@ -633,13 +633,11 @@ namespace laps {
         }
 
         if (!largest_location.has_value()) {
+            // TODO: This changes to send an empty object instead of REQUEST_ERROR
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
         }
 
-        const auto& cache_entries =
-          cache_entry_it->second.Get(start, end != 0 ? end : cache_entry_it->second.Size() - 1);
-
-        if (cache_entries.empty()) {
+        if (start.group > end->group || largest_location.value().group < start.group) {
             reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
         }
 
@@ -659,6 +657,13 @@ namespace laps {
             return;
         }
 
+        const auto& cache_entries =
+          cache_entry_it->second.Get(start.group, end->group != 0 ? end->group : cache_entry_it->second.Size());
+
+        if (cache_entries.empty()) {
+            reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
+        }
+
         // TODO: Adjust the TTL
         auto pub_fetch_h =
           quicr::PublishFetchHandler::Create(track_full_name, priority, request_id, group_order, config_.object_ttl_);
@@ -673,6 +678,11 @@ namespace laps {
                 for (const auto& object : *entry) {
                     if (stop_fetch_[{ connection_handle, request_id }]) {
                         stop_fetch_.erase({ connection_handle, request_id });
+                        return;
+                    }
+
+                    if (end->object && object.headers.group_id == end->group &&
+                        object.headers.object_id == end->object) {
                         return;
                     }
 
@@ -695,8 +705,8 @@ namespace laps {
                       track_full_name,
                       attributes.priority,
                       attributes.group_order,
-                      attributes.start_location.group,
-                      attributes.end_group);
+                      attributes.start_location,
+                      attributes.end_location);
     }
 
     void ClientManager::JoiningFetchReceived(quicr::ConnectionHandle connection_handle,
@@ -709,8 +719,8 @@ namespace laps {
                       track_full_name,
                       attributes.priority,
                       attributes.group_order,
-                      attributes.joining_start,
-                      0);
+                      { attributes.joining_start, 0 },
+                      std::nullopt);
     }
 
     void ClientManager::FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)

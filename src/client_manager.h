@@ -135,8 +135,8 @@ namespace laps {
                            const quicr::FullTrackName& track_full_name,
                            quicr::messages::SubscriberPriority priority,
                            quicr::messages::GroupOrder group_order,
-                           quicr::messages::GroupId start,
-                           quicr::messages::GroupId end);
+                           quicr::messages::Location start,
+                           std::optional<quicr::messages::Location> end);
 
         State& state_;
         const Config& config_;
