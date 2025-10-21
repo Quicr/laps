@@ -682,7 +682,7 @@ namespace laps {
                     }
 
                     if (end->object && object.headers.group_id == end->group &&
-                        object.headers.object_id == end->object) {
+                        object.headers.object_id >= end->object) {
                         return;
                     }
 
@@ -714,12 +714,23 @@ namespace laps {
                                              const quicr::FullTrackName& track_full_name,
                                              const quicr::messages::JoiningFetchAttributes& attributes)
     {
+        uint64_t joining_start = 0;
+
+        if (attributes.relative) {
+            if (const auto largest = GetLargestAvailable(track_full_name)) {
+                if (largest->group > attributes.joining_start)
+                    joining_start = largest->group - attributes.joining_start;
+            }
+        } else {
+            joining_start = attributes.joining_start;
+        }
+
         FetchReceived(connection_handle,
                       request_id,
                       track_full_name,
                       attributes.priority,
                       attributes.group_order,
-                      { attributes.joining_start, 0 },
+                      { joining_start, 0 },
                       std::nullopt);
     }
 
