@@ -14,8 +14,7 @@ namespace laps {
                                          quicr::messages::GroupId start_group,
                                          quicr::messages::GroupId end_group,
                                          quicr::messages::GroupId start_object,
-                                         quicr::messages::GroupId end_object,
-                                         ClientManager& server)
+                                         quicr::messages::GroupId end_object)
       : quicr::FetchTrackHandler(full_track_name,
                                  priority,
                                  group_order,
@@ -23,18 +22,23 @@ namespace laps {
                                  end_group,
                                  start_object,
                                  end_object)
-      , server_(server)
       , publish_fetch_handler_(std::move(publish_fetch_handler))
     {
     }
 
-    void FetchTrackHandler::ObjectReceived(const quicr::ObjectHeaders& headers, quicr::BytesSpan data)
+    void FetchTrackHandler::StreamDataRecv(bool is_start,
+                                           uint64_t stream_id,
+                                           std::shared_ptr<const std::vector<uint8_t>> data)
     {
-        std::lock_guard<std::mutex> _(server_.state_.state_mutex);
-        // Simple - forward what we get to the fetch handler
-        if (publish_fetch_handler_) {
-            publish_fetch_handler_->PublishObject(headers, data);
+        auto track_alias = GetTrackAlias();
+        if (!track_alias.has_value()) {
+            SPDLOG_DEBUG("Data without valid track alias");
+            return;
         }
+
+        // Send to fetch requestor
+        publish_fetch_handler_->ForwardPublishedData(!first_data_received_, data);
+        first_data_received_ = true;
     }
 
     void FetchTrackHandler::StatusChanged(Status status)
@@ -58,6 +62,12 @@ namespace laps {
                     break;
                 case Status::kPendingResponse:
                     reason = "pending fetch response";
+                    break;
+                case Status::kDoneByFin:
+                    reason = "fetch done by FIN";
+                    break;
+                case Status::kDoneByReset:
+                    reason = "fetch done by RESET";
                     break;
                 default:
                     break;

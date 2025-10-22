@@ -20,6 +20,7 @@ namespace laps {
     constexpr uint32_t kDefaultCacheTimeQueueMaxDuration = 10'000;
     constexpr uint32_t kDefaultCacheTimeQueueObjectTtl = 6'000;
     constexpr uint32_t kDefaultSubscriptionRefreshIntervalMs = 500;
+    constexpr uint32_t kFetchUpstreamMaxWaitMs = 2000;
 
     class Config
     {

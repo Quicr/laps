@@ -641,38 +641,118 @@ namespace laps {
             reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
         }
 
-        ResolveFetch(connection_handle,
-                     request_id,
-                     priority,
-                     group_order,
-                     {
-                       reason_code,
-                       reason_code == quicr::FetchResponse::ReasonCode::kOk
-                         ? std::nullopt
-                         : std::make_optional("Cannot process fetch"),
-                       largest_location,
-                     });
-
-        if (reason_code != quicr::FetchResponse::ReasonCode::kOk) {
-            return;
-        }
-
         const auto& cache_entries =
           cache_entry_it->second.Get(start.group, end->group != 0 ? end->group : cache_entry_it->second.Size());
 
         if (cache_entries.empty()) {
-            reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
+            reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
         }
 
-        // TODO: Adjust the TTL
+        // TODO: Adjust the TTL to allow more time for transmission
         auto pub_fetch_h =
           quicr::PublishFetchHandler::Create(track_full_name, priority, request_id, group_order, config_.object_ttl_);
         BindFetchTrack(connection_handle, pub_fetch_h);
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
 
+        if (!end.has_value()) {
+            end = { 0, 0 };
+        }
+
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
             defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
+
+            auto rc = reason_code;
+
+            if (rc != quicr::FetchResponse::ReasonCode::kOk) {
+                // Try to see if original publisher can provide the data
+                auto track_handler = FetchTrackHandler::Create(pub_fetch_h,
+                                                               track_full_name,
+                                                               priority,
+                                                               group_order,
+                                                               start.group,
+                                                               end->group,
+                                                               start.object,
+                                                               end->object);
+
+                quicr::ConnectionHandle pub_connection_handle = 0;
+
+                // Find the publisher connection handle to send the fetch request
+                // TODO: Add peering support
+                {
+                    std::lock_guard _(state_.state_mutex);
+                    for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+                         it != state_.pub_subscribes.end();
+                         ++it) {
+                        auto& track_alias = it->first.first;
+                        auto& pub_conn_id = it->first.second;
+
+                        if (track_alias != th.track_fullname_hash) {
+                            rc = quicr::FetchResponse::ReasonCode::kNoObjects;
+                            break;
+                        }
+
+                        pub_connection_handle = pub_conn_id;
+                        break; // TODO: Support multiple publishers
+                    }
+                }
+
+                if (pub_connection_handle) {
+                    SPDLOG_LOGGER_DEBUG(LOGGER, "Sending fetch to publisher conn_id: {}", pub_connection_handle);
+                    FetchTrack(pub_connection_handle, track_handler);
+
+                    for (int to = 0; to < kFetchUpstreamMaxWaitMs; to += 5) {
+                        if (track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kPendingResponse &&
+                            track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kNotSubscribed) {
+                            break;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    }
+
+                    switch (track_handler->GetStatus()) {
+                        case quicr::FetchTrackHandler::Status::kDoneByFin:
+                            [[fallthrough]];
+                        case quicr::FetchTrackHandler::Status::kOk:
+                            rc = quicr::FetchResponse::ReasonCode::kOk;
+                            break;
+                        case quicr::FetchTrackHandler::Status::kError:
+                            rc = quicr::FetchResponse::ReasonCode::kNoObjects;
+                            break;
+                        default:
+                            rc = quicr::FetchResponse::ReasonCode::kInternalError;
+                            break;
+                    }
+                }
+
+                ResolveFetch(connection_handle,
+                             request_id,
+                             priority,
+                             group_order,
+                             {
+                               rc,
+                               rc == quicr::FetchResponse::ReasonCode::kOk ? std::nullopt
+                                                                           : std::make_optional("Cannot process fetch"),
+                               track_handler->GetLatestLocation(),
+                             });
+
+                while (track_handler->GetStatus() == quicr::FetchTrackHandler::Status::kOk) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
+
+                CancelFetchTrack(pub_connection_handle, track_handler);
+                return;
+            }
+
+            ResolveFetch(
+              connection_handle,
+              request_id,
+              priority,
+              group_order,
+              {
+                rc,
+                rc == quicr::FetchResponse::ReasonCode::kOk ? std::nullopt : std::make_optional("Cannot process fetch"),
+                largest_location,
+              });
 
             for (const auto& entry : cache_entries) {
                 for (const auto& object : *entry) {

@@ -20,8 +20,7 @@ namespace laps {
                           quicr::messages::GroupId start_group,
                           quicr::messages::GroupId end_group,
                           quicr::messages::GroupId start_object,
-                          quicr::messages::GroupId end_object,
-                          ClientManager& server);
+                          quicr::messages::GroupId end_object);
 
       public:
         static std::shared_ptr<FetchTrackHandler> Create(
@@ -32,8 +31,7 @@ namespace laps {
           quicr::messages::GroupId start_group,
           quicr::messages::GroupId end_group,
           quicr::messages::GroupId start_object,
-          quicr::messages::GroupId end_object,
-          ClientManager& server)
+          quicr::messages::GroupId end_object)
         {
             return std::shared_ptr<FetchTrackHandler>(new FetchTrackHandler(publish_fetch_handler,
                                                                             full_track_name,
@@ -42,15 +40,16 @@ namespace laps {
                                                                             start_group,
                                                                             end_group,
                                                                             start_object,
-                                                                            end_object,
-                                                                            server));
+                                                                            end_object));
         }
 
-        void ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data) override;
         void StatusChanged(Status status) override;
+        void StreamDataRecv(bool is_start,
+                            uint64_t stream_id,
+                            std::shared_ptr<const std::vector<uint8_t>> data) override;
 
       private:
+        bool first_data_received_{ false };
         std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler_;
-        ClientManager& server_;
     };
 } // namespace laps
