@@ -659,6 +659,7 @@ namespace laps {
             end = { 0, 0 };
         }
 
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Fetch received conn_id: {} request_id: {}", connection_handle, request_id);
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
             defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
 
@@ -698,7 +699,11 @@ namespace laps {
                 }
 
                 if (pub_connection_handle) {
-                    SPDLOG_LOGGER_DEBUG(LOGGER, "Sending fetch to publisher conn_id: {}", pub_connection_handle);
+                    SPDLOG_LOGGER_DEBUG(LOGGER,
+                                        "Fetch received conn_id: {} request_id: {}, sending to publisher conn_id: {}",
+                                        connection_handle,
+                                        request_id,
+                                        pub_connection_handle);
                     FetchTrack(pub_connection_handle, track_handler);
 
                     for (int to = 0; to < kFetchUpstreamMaxWaitMs; to += 5) {
@@ -739,10 +744,13 @@ namespace laps {
                     std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 }
 
+                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
                 CancelFetchTrack(pub_connection_handle, track_handler);
                 return;
             }
 
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "Fetch received conn_id: {} request_id: {}, using cache", connection_handle, request_id);
             ResolveFetch(
               connection_handle,
               request_id,
