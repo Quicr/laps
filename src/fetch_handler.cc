@@ -30,7 +30,10 @@ namespace laps {
                                            uint64_t stream_id,
                                            std::shared_ptr<const std::vector<uint8_t>> data)
     {
+        subscribe_track_metrics_.bytes_received += data->size();
+
         if (is_start) {
+            // Process the fetch header and update it so that it works for the requestor
             stream_buffer_.Clear();
 
             stream_buffer_.InitAny<quicr::messages::FetchHeader>();
@@ -38,7 +41,7 @@ namespace laps {
 
             // Expect that on initial start of stream, there is enough data to process the stream headers
 
-            auto& f_hdr = stream_buffer_.GetAny<quicr::messages::FetchHeader>();
+            auto f_hdr = stream_buffer_.GetAny<quicr::messages::FetchHeader>();
             if (not(stream_buffer_ >> f_hdr)) {
                 SPDLOG_ERROR("Not enough data to process new stream headers, stream is invalid len: {} / {}",
                              stream_buffer_.Size(),
@@ -46,46 +49,28 @@ namespace laps {
                 // TODO: Add metrics to track this
                 return;
             }
-        } else {
-            stream_buffer_.Push(*data);
-        }
 
-        if (not stream_buffer_.AnyHasValueB()) {
-            stream_buffer_.InitAnyB<quicr::messages::FetchObject>();
-        }
+            size_t header_size = data->size() - stream_buffer_.Size();
 
-        auto& obj = stream_buffer_.GetAnyB<quicr::messages::FetchObject>();
+            SPDLOG_DEBUG("Fetch header added in rid: {} out rid: {} data sz: {} sbuf_size: {} header size: {}",
+                         f_hdr.request_id,
+                         *publish_fetch_handler_->GetRequestId(),
+                         data->size(),
+                         stream_buffer_.Size(),
+                         header_size);
 
-        if (stream_buffer_ >> obj) {
-            SPDLOG_TRACE("Received fetch_object subscribe_id: {} priority: {} "
-                         "group_id: {} subgroup_id: {} object_id: {} data size: {}",
-                         *GetSubscribeId(),
-                         obj.publisher_priority,
-                         obj.group_id,
-                         obj.subgroup_id,
-                         obj.object_id,
-                         obj.payload.size());
+            f_hdr.request_id = *publish_fetch_handler_->GetRequestId();
+            auto bytes = std::make_shared<quicr::Bytes>();
+            *bytes << f_hdr;
 
-            subscribe_track_metrics_.objects_received++;
-            subscribe_track_metrics_.bytes_received += obj.payload.size();
-
-            try {
-                publish_fetch_handler_->PublishObject({ obj.group_id,
-                                                        obj.object_id,
-                                                        obj.subgroup_id,
-                                                        obj.payload.size(),
-                                                        obj.object_status,
-                                                        obj.publisher_priority,
-                                                        std::nullopt,
-                                                        quicr::TrackMode::kStream,
-                                                        obj.extensions,
-                                                        obj.immutable_extensions },
-                                                      obj.payload);
-            } catch (const std::exception& e) {
-                SPDLOG_ERROR("Caught exception trying to receive Fetch object. (error={})", e.what());
+            if (header_size < data->size()) {
+                bytes->insert(bytes->end(), data->begin() + header_size, data->end());
+                stream_buffer_.Pop(stream_buffer_.Size());
             }
 
-            stream_buffer_.ResetAnyB<quicr::messages::FetchObject>();
+            publish_fetch_handler_->ForwardPublishedData(true, std::move(bytes));
+        } else {
+            publish_fetch_handler_->ForwardPublishedData(false, std::move(data));
         }
     }
 

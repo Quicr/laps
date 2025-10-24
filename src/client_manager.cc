@@ -659,6 +659,8 @@ namespace laps {
             end = { 0, 0 };
         }
 
+        reason_code = quicr::FetchResponse::ReasonCode::kInternalError;
+
         SPDLOG_LOGGER_DEBUG(LOGGER, "Fetch received conn_id: {} request_id: {}", connection_handle, request_id);
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
             defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
