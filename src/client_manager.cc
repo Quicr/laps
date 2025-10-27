@@ -287,10 +287,9 @@ namespace laps {
         peer_manager_.ClientAnnounce(track_full_name, {}, false);
     }
 
-    ClientManager::SubscribeNamespaceResponse ClientManager::SubscribeNamespaceReceived(
-      quicr::ConnectionHandle connection_handle,
-      const quicr::TrackNamespace& prefix_namespace,
-      const quicr::PublishNamespaceAttributes&)
+    void ClientManager::SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                                   const quicr::TrackNamespace& prefix_namespace,
+                                                   const quicr::SubscribeNamespaceAttributes& attributes)
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
@@ -314,7 +313,11 @@ namespace laps {
             }
         }
 
-        return { std::nullopt, std::move(matched_ns) };
+        const quicr::SubscribeNamespaceResponse response = { .reason_code =
+                                                               quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
+                                                             .tracks = {},
+                                                             .namespaces = std::move(matched_ns) };
+        ResolveSubscribeNamespace(connection_handle, attributes.request_id, prefix_namespace, response);
     }
 
     void ClientManager::UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,

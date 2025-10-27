@@ -58,9 +58,9 @@ namespace laps {
         void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
                                    const ConnectionRemoteInfo& remote) override;
 
-        SubscribeNamespaceResponse SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
-                                                              const quicr::TrackNamespace& prefix_namespace,
-                                                              const quicr::PublishNamespaceAttributes&) override;
+        void SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                        const quicr::TrackNamespace& prefix_namespace,
+                                        const quicr::SubscribeNamespaceAttributes& attributes) override;
 
         void UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                           const quicr::TrackNamespace& prefix_namespace) override;
