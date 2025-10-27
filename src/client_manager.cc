@@ -4,7 +4,7 @@
 #include <quicr/server.h>
 #include <quicr/subscribe_track_handler.h>
 
-#include <quicr/detail/defer.h>
+#include <quicr/defer.h>
 
 #include "client_manager.h"
 #include "config.h"
@@ -600,9 +600,9 @@ namespace laps {
         if (cache_entry_it != cache_.end()) {
             auto& [_, cache] = *cache_entry_it;
             if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
-                const auto& latest_object = std::prev(latest_group->end());
-                largest_group_id = latest_object->headers.group_id;
-                largest_object_id = latest_object->headers.object_id;
+                const auto& latest_object = *std::prev(latest_group->end());
+                largest_group_id = latest_object.headers.group_id;
+                largest_object_id = latest_object.headers.object_id;
             }
         }
         if (!largest_group_id.has_value() || !largest_object_id.has_value()) {
@@ -611,65 +611,217 @@ namespace laps {
         return quicr::messages::Location{ .group = largest_group_id.value(), .object = largest_object_id.value() };
     }
 
-    bool ClientManager::FetchReceived([[maybe_unused]] quicr::ConnectionHandle connection_handle,
-                                      [[maybe_unused]] uint64_t request_id,
-                                      [[maybe_unused]] const quicr::FullTrackName& track_full_name,
-                                      [[maybe_unused]] const quicr::messages::FetchAttributes& attributes)
+    void ClientManager::FetchReceived(quicr::ConnectionHandle connection_handle,
+                                      uint64_t request_id,
+                                      const quicr::FullTrackName& track_full_name,
+                                      quicr::messages::SubscriberPriority priority,
+                                      quicr::messages::GroupOrder group_order,
+                                      quicr::messages::Location start,
+                                      std::optional<quicr::messages::Location> end)
     {
-        /*
-         * @TODO: Need to refactor fetch flow handling before we forward fetch to publisher
-         *    Returning false results in only pulling fetch from cache and if not available,
-         *    error is returned.
-         */
-        return false;
-    }
+        auto reason_code = quicr::FetchResponse::ReasonCode::kOk;
+        std::optional<quicr::messages::Location> largest_location = std::nullopt;
+        auto th = quicr::TrackHash(track_full_name);
 
-    bool ClientManager::OnFetchOk(quicr::ConnectionHandle connection_handle,
-                                  uint64_t request_id,
-                                  const quicr::FullTrackName& track_full_name,
-                                  const quicr::messages::FetchAttributes& attrs)
-    {
-        auto pub_fetch_h = quicr::PublishFetchHandler::Create(
-          track_full_name, attrs.priority, request_id, attrs.group_order, config_.object_ttl_);
+        auto cache_entry_it = cache_.find(th.track_fullname_hash);
+        if (cache_entry_it != cache_.end()) {
+            auto& [_, cache] = *cache_entry_it;
+            if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
+                const auto& latest_object = *std::prev(latest_group->end());
+                largest_location = { latest_object.headers.group_id, latest_object.headers.object_id };
+            }
+        }
+
+        if (!largest_location.has_value()) {
+            // TODO: This changes to send an empty object instead of REQUEST_ERROR
+            reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
+        }
+
+        if (start.group > end->group || largest_location.value().group < start.group) {
+            reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
+        }
+
+        const auto& cache_entries =
+          cache_entry_it->second.Get(start.group, end->group != 0 ? end->group : cache_entry_it->second.Size());
+
+        if (cache_entries.empty()) {
+            reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
+        }
+
+        // TODO: Adjust the TTL to allow more time for transmission
+        auto pub_fetch_h =
+          quicr::PublishFetchHandler::Create(track_full_name, priority, request_id, group_order, config_.object_ttl_);
         BindFetchTrack(connection_handle, pub_fetch_h);
-
-        const auto th = quicr::TrackHash(track_full_name);
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
 
-        const auto cache_entries =
-          cache_.at(th.track_fullname_hash).Get(attrs.start_location.group, attrs.end_group + 1);
+        if (!end.has_value()) {
+            end = { 0, 0 };
+        }
 
-        if (cache_entries.empty())
-            return false;
+        reason_code = quicr::FetchResponse::ReasonCode::kInternalError;
 
-        std::thread retrieve_cache_thread([=, cache_entries = cache_entries, this] {
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Fetch received conn_id: {} request_id: {}", connection_handle, request_id);
+        std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
             defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
 
-            for (const auto& cache_entry : cache_entries) {
-                for (const auto& object : *cache_entry) {
+            auto rc = reason_code;
+
+            if (rc != quicr::FetchResponse::ReasonCode::kOk) {
+                // Try to see if original publisher can provide the data
+                auto track_handler = FetchTrackHandler::Create(pub_fetch_h,
+                                                               track_full_name,
+                                                               priority,
+                                                               group_order,
+                                                               start.group,
+                                                               end->group,
+                                                               start.object,
+                                                               end->object);
+
+                quicr::ConnectionHandle pub_connection_handle = 0;
+
+                // Find the publisher connection handle to send the fetch request
+                // TODO: Add peering support
+                {
+                    std::lock_guard _(state_.state_mutex);
+                    for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+                         it != state_.pub_subscribes.end();
+                         ++it) {
+                        auto& track_alias = it->first.first;
+                        auto& pub_conn_id = it->first.second;
+
+                        if (track_alias != th.track_fullname_hash) {
+                            rc = quicr::FetchResponse::ReasonCode::kNoObjects;
+                            break;
+                        }
+
+                        pub_connection_handle = pub_conn_id;
+                        break; // TODO: Support multiple publishers
+                    }
+                }
+
+                if (pub_connection_handle) {
+                    SPDLOG_LOGGER_DEBUG(LOGGER,
+                                        "Fetch received conn_id: {} request_id: {}, sending to publisher conn_id: {}",
+                                        connection_handle,
+                                        request_id,
+                                        pub_connection_handle);
+                    FetchTrack(pub_connection_handle, track_handler);
+
+                    for (int to = 0; to < kFetchUpstreamMaxWaitMs; to += 5) {
+                        if (track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kPendingResponse &&
+                            track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kNotSubscribed) {
+                            break;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    }
+
+                    switch (track_handler->GetStatus()) {
+                        case quicr::FetchTrackHandler::Status::kDoneByFin:
+                            [[fallthrough]];
+                        case quicr::FetchTrackHandler::Status::kOk:
+                            rc = quicr::FetchResponse::ReasonCode::kOk;
+                            break;
+                        case quicr::FetchTrackHandler::Status::kError:
+                            rc = quicr::FetchResponse::ReasonCode::kNoObjects;
+                            break;
+                        default:
+                            rc = quicr::FetchResponse::ReasonCode::kInternalError;
+                            break;
+                    }
+                }
+
+                ResolveFetch(connection_handle,
+                             request_id,
+                             priority,
+                             group_order,
+                             {
+                               rc,
+                               rc == quicr::FetchResponse::ReasonCode::kOk ? std::nullopt
+                                                                           : std::make_optional("Cannot process fetch"),
+                               track_handler->GetLatestLocation(),
+                             });
+
+                while (track_handler->GetStatus() == quicr::FetchTrackHandler::Status::kOk) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                CancelFetchTrack(pub_connection_handle, track_handler);
+                return;
+            }
+
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER, "Fetch received conn_id: {} request_id: {}, using cache", connection_handle, request_id);
+            ResolveFetch(
+              connection_handle,
+              request_id,
+              priority,
+              group_order,
+              {
+                rc,
+                rc == quicr::FetchResponse::ReasonCode::kOk ? std::nullopt : std::make_optional("Cannot process fetch"),
+                largest_location,
+              });
+
+            for (const auto& entry : cache_entries) {
+                for (const auto& object : *entry) {
                     if (stop_fetch_[{ connection_handle, request_id }]) {
                         stop_fetch_.erase({ connection_handle, request_id });
                         return;
                     }
 
-                    /*
-                     * Stop when reached end group and end object, unless end object is zero. End object of
-                     * zero indicates all objects within end group
-                     */
-                    if (attrs.end_object.has_value() && *attrs.end_object != 0 &&
-                        object.headers.group_id == attrs.end_group && object.headers.object_id > *attrs.end_object)
-                        break; // Done, reached end object within end group
+                    if (end->object && object.headers.group_id == end->group &&
+                        object.headers.object_id >= end->object) {
+                        return;
+                    }
 
-                    SPDLOG_DEBUG("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
-
+                    SPDLOG_TRACE("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
                     pub_fetch_h->PublishObject(object.headers, object.data);
                 }
             }
         });
 
         retrieve_cache_thread.detach();
-        return true;
+    }
+
+    void ClientManager::StandaloneFetchReceived(quicr::ConnectionHandle connection_handle,
+                                                uint64_t request_id,
+                                                const quicr::FullTrackName& track_full_name,
+                                                const quicr::messages::StandaloneFetchAttributes& attributes)
+    {
+        FetchReceived(connection_handle,
+                      request_id,
+                      track_full_name,
+                      attributes.priority,
+                      attributes.group_order,
+                      attributes.start_location,
+                      attributes.end_location);
+    }
+
+    void ClientManager::JoiningFetchReceived(quicr::ConnectionHandle connection_handle,
+                                             uint64_t request_id,
+                                             const quicr::FullTrackName& track_full_name,
+                                             const quicr::messages::JoiningFetchAttributes& attributes)
+    {
+        uint64_t joining_start = 0;
+
+        if (attributes.relative) {
+            if (const auto largest = GetLargestAvailable(track_full_name)) {
+                if (largest->group > attributes.joining_start)
+                    joining_start = largest->group - attributes.joining_start;
+            }
+        } else {
+            joining_start = attributes.joining_start;
+        }
+
+        FetchReceived(connection_handle,
+                      request_id,
+                      track_full_name,
+                      attributes.priority,
+                      attributes.group_order,
+                      { joining_start, 0 },
+                      std::nullopt);
     }
 
     void ClientManager::FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)

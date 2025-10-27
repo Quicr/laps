@@ -98,6 +98,11 @@ namespace laps::peering {
         void OnRecvDgram(const quicr::TransportConnId& conn_id,
                          std::optional<quicr::DataContextId> data_ctx_id) override;
 
+        void OnStreamClosed(const quicr::TransportConnId& connection_handle,
+                            std::uint64_t stream_id,
+                            std::shared_ptr<quicr::StreamRxContext> rx_context,
+                            quicr::StreamClosedFlag flag) override;
+
         // -------------------------------------------------------------------------------
 
       private:

@@ -73,6 +73,7 @@ Peering scales to a global network of relays supporting hundreds of millions of 
   - [Message Flows](#message-flows)
     - [Connection Establishment](#connection-establishment-1)
     - [Node Advertisement](#node-advertisement)
+    - [Publisher Flow](#publisher-flow)
     - [Subscribe Advertisement](#subscribe-advertisement)
     - [Publish Advertisement](#publish-advertisement)
     - [TODO Implementation](#todo-implementation)
@@ -463,9 +464,9 @@ The NIB contains the following:
 | ------------------------- | ------------------------------------------------------------------------------------ |
 | [NodeId](#node-id)        | Node ID of the node as an unsigned 64-bit integer                                    |
 | [Node Type](#relay-types) | Node Relay Type                                                                      |
-| **Contact**               | FQDN or IP to reach the node. This may be an FQDN of the load balancer or anycast IP  |
-| **Longitude**             | Longitude of the node location as a double 64-bit value                               |
-| **Latitude**              | Latitude of the node location as a double 64-bit value                                |
+| **Contact**               | FQDN or IP to reach the node. This may be an FQDN of the load balancer or anycast IP |
+| **Longitude**             | Longitude of the node location as a double 64-bit value                              |
+| **Latitude**              | Latitude of the node location as a double 64-bit value                               |
 | [Node Path](#node-path)   | Path of nodes the node information has traversed                                     |
 | SumSrtt                   | Sum of SRTT in microseconds for peering sessions in the path, zero if peer is direct |
 
@@ -578,7 +579,7 @@ Publish Information (`publish_info`) contains the following:
 | sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay                 |
 | FullNameHashes | Array of the **namespace tuple** hashes and optionally hash of **name**. Only 64-bit hashes are encoded. |
 | source_node_id | The node ID that received the MOQT announce/publish                                                      |
-| parameters     | MOQT encoded set of parameters that should be made available to s-relays and stub relays                  |
+| parameters     | MOQT encoded set of parameters that should be made available to s-relays and stub relays                 |
 
 **parameters** is not decoded when stored in the IB or when transmitted. It is encoded in the original format as defined by
 MOQT. This allows the relay protocol to be agnostic on parameters and to support any number of parameters. It is up to the
@@ -629,12 +630,12 @@ so the final state will correctly be established.
 
 Subscribe information (`subscribe_info`) contains the following:
 
-| Field          | Description                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay    |
-| source_node_id | The node ID that received the MOQT subscribe                                                |
+| Field          | Description                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------- |
+| sequence       | Sequence number to indicate the subscribe advertisement/withdraw message, set by s-relay     |
+| source_node_id | The node ID that received the MOQT subscribe                                                 |
 | TrackHash      | Array of the **namespace tuple** hashes and hash of **name**. Only 64-bit hashes are encoded |
-| subscribe_data | Original MOQT subscribe message (wire format) that initiated the subscribe                  |
+| subscribe_data | Original MOQT subscribe message (wire format) that initiated the subscribe                   |
 
 ## MOQT Track and Relay Peer Handling
 
@@ -858,7 +859,7 @@ of edge relays. It would not scale to send the set of node IDs in every datagram
 stream, considering QUIC streams may change often due to group/subgroup changes.
 
 Unlike segment routing where it utilizes a stack of labels/sids, this protocol utilizes
-a **subscriber node set (SNS)** that **describes the set of subscriber edge relay (s-relays) node IDs that
+a **subscriber node set (SNS)** (also referred to as map-and-set) that **describes the set of subscriber edge relay (s-relays) node IDs that
 need to receive the data**. It does **not describe** the path that the data will traverse. 
 
 The forwarding plane will be established relay by relay based on node advertisements. Subscribe source node id
@@ -884,29 +885,66 @@ will result in the SNS being updated. Using a new ID to replace the previous int
 could be lost. Instead of replacing the ID, the **same ID is updated** with a new set to allow a smooth transition
 without invalidating a previous set id.
 
+
 ```mermaid
 ---
 title: Source Routing Data Forwarding
 ---
 flowchart TD
-    P([Publisher]) -- MOQT Data Object --> OE[Origin 101.2:10]
+    P([Publisher]) -- MOQT Data Object </br>name = Bob-HD-Video --> OE[Origin 101.2:10]
     OE -- " SNSid: 1=[100.2:1, 100.2:2, 103.2:1] " --> V1[Via 100.1:1]
 
     subgraph US-WEST
         V1 -- " SNSid: 18=[100.2:1] " --> w1[Edge 100.2:1]
-        w1 -- MOQT Data Object --> wS1([Subscriber 1])
-        w1 -- MOQT Data Object --> wS2([Subscriber 2])
+        w1 -- MOQT Data Object --> wS1([Subscriber 1 of</br>name = Bob-HD-Video])
+        w1 -- MOQT Data Object --> wS2([Subscriber 2 of</br>name = Bob-HD-Video])
         V1 -- " SNSid: 27=[100.2:2] " --> w2[Edge 100.2:2]
-        w2 -- MOQT Data Object --> wS3([Subscriber 3])
-        w2 -- MOQT Data Object --> wS4([Subscriber 4])
+        w2 -- MOQT Data Object --> wS3([Subscriber 3 of</br>name = Bob-HD-Video])
+        w2 -- MOQT Data Object --> wS4([Subscriber 4 of</br>name = Bob-HD-Video])
     end
     subgraph US-EAST
         V1 -- " SNSid: 99=[103.2:1] " --> e1[Edge 103.2:1]
-        e1 -- MOQT Data Object --> eS3([Subscriber 1])
-        e1 -- MOQT Data Object --> eS4([Subscriber 2])
+        e1 -- MOQT Data Object --> eS3([Subscriber 1 of</br>name = Bob-HD-Video])
+        e1 -- MOQT Data Object --> eS4([Subscriber 2 of</br>name = Bob-HD-Video])
 
     end
 ```
+
+Via control peering, node information for nodes are available.  Below table shows the global node information base/table. 
+
+| NodeId   | Node Type | Reachable Info     |
+| -------- | --------- | ------------------ |
+| 101.2:10 | Edge      | CA-WEST, IP-a, ... |
+| 100.1:1  | Via       | US-WEST, IP-b, ... |
+| 100.2:1  | Edge      | US-WEST, IP-c, ... |
+| 100.2:2  | Edge      | US-WEST, IP-d, ... |
+| 103:2:1  | Edge      | US-EAST, IP-e, ... |
+
+Via control peeirng, subscripiton information is available. Only Edge relays use this information. The edge relay,
+computes which node should be used to reach the target subscriber edge relay. This computation is often done 
+before any data has been received. 
+
+Below shows what is known by edge relays for subscribes. 
+
+| Subscriber Edge Relay Node Id | Name         | Other subscribe info                |
+| ----------------------------- | ------------ | ----------------------------------- |
+| 100.2:1                       | Bob-HD-Video | Other info, such as MoQT parameters |
+| 100.2:2                       | Bob-HD-Video | Other info, such as MoQT parameters |
+| 103.2:1                       | Bob-HD-Video | Other info, such as MoQT parameters |
+
+
+Below table is what the origin relay `101.2:10` has computed for the
+publication name `Bob-HD-Video`. 
+
+
+| Subscriber NodeId | forwarding NodeId | Peer Session SNS Id   |
+| ----------------- | ----------------- | --------------------- |
+| 100.2:1           | 100.1:1           | peer to IP-b SNS Id 1 |
+| 100.2:2           | 100.1:1           | peer to IP-b SNS Id 1 |
+| 103.2:1           | 100.1:1           | peer to IP-b SNS Id 1 |
+
+The origin node establishes the initial SNS mapping. Below table shows what the origin node has for a subscribe. 
+
 
 #### SNS Advertisement
 
@@ -1537,11 +1575,11 @@ DATA_COMMON_HEADER {
 Below defines the data header types. 
 
 
-| Type | Name            | Description                                           |
-| ---- | --------------- | ----------------------------------------------------- |
-| 0    | DATAGRAM        | Datagram data.                                        |
-| 1    | EXISTING_STREAM | Data within an existing stream                        |
-| 2    | NEW_STREAM      | Data that is the first object via a new stream        |
+| Type | Name            | Description                                    |
+| ---- | --------------- | ---------------------------------------------- |
+| 0    | DATAGRAM        | Datagram data.                                 |
+| 1    | EXISTING_STREAM | Data within an existing stream                 |
+| 2    | NEW_STREAM      | Data that is the first object via a new stream |
 
 The type is used internally and on fan-out to indicate how the data should be sent. 
 
@@ -1769,6 +1807,41 @@ sequenceDiagram
     R2 ->> R3: NODE_INFO_ADV(R1) NP=[{R2, 50}] srtt=20ms
     R3 ->> R3: Process
     note right of R3: R1 distance is 1 with SRTT of 70ms
+```
+
+### Publisher Flow
+
+Publisher starts by indicating that it will publish using a name. Publisher includes additional parameters, such as authorization tokens. 
+Origin relay receives the publish information and performs authorization, validation, and if allowed looks at the subscribe information
+table for all subscriber nodes know at this time. It then computes which peer or peers to reach each of the subscriber node Ids. 
+For each peer, it creates a SNS Id with a Set of all s-relay node Ids that are via the peer. The SNS Id and Set (also referred to map-and-set)
+is advertised to the peer relay using the same peering connection but a higher priority stream (aka QUIC stream).
+
+```mermaid
+---
+title: 
+---
+sequenceDiagram
+    actor P as Publisher
+    participant O as o-relay
+    participant V as v-relay
+    participant S as s-relay
+    participant SUB as Subscriber
+
+    P ->> O: PUBLISH(name=Bob-HD-Video, params=...)
+    O ->> O: Process Publish
+    note Right of O: 1) Authorize/Validate Publish
+    note Right of O: 2) Loookup Subscriber Node Relays<br>matching name=Bob-HD-Video
+    note Right of O: 3) Compute Peer(s) to use to reach s-relays
+    note Right of O: 4) Create SNS Id(s) for each peer with<br>the associated Set of s-relay node Ids
+    O ->> V: SUBSCRIBE_NODE_SET_ADV(Id=1, [100:2:1, 100:2:2, 103:2:1])
+    O ->> P: PUBLISH_OK() - can send data now
+    V ->> S: SUBSCRIBE_NODE_SET_ADV(Id=18, [100:2:1])
+    Note right of S: Subscribe is already established, no message needed
+    P -->> O: DATA
+    O -->> V: SNS_ID=1 (id on start of stream) DATA
+    V -->> S: SNS_ID=18 (id on start of stream) DATA
+    S -->> SUB: DATA
 ```
 
 ### Subscribe Advertisement

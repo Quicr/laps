@@ -1262,4 +1262,13 @@ namespace laps::peering {
         }
     }
 
+    void PeerManager::OnStreamClosed(const quicr::TransportConnId& connection_handle,
+                                     std::uint64_t stream_id,
+                                     std::shared_ptr<quicr::StreamRxContext> rx_context,
+                                     quicr::StreamClosedFlag flag)
+    {
+        SPDLOG_LOGGER_DEBUG(
+          LOGGER, "Peer conn_id {} stream id: {} flag: {}", connection_handle, stream_id, static_cast<int>(flag));
+    }
+
 } // namespace laps
