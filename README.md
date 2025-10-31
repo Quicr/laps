@@ -1,4 +1,16 @@
-# Latency Aware Publish Subscriber (laps)
+# Latency Aware Publish Subscriber (laps) Relay
+
+LAPS implements [MOQT](https://datatracker.ietf.org/doc/html/draft-ietf-moq-transport-07) client side connections to support both publishers and subscribers.
+
+LAPS is a relay implementation that implements MOQT for clients with distributed
+scale spanning a global footprint. 
+
+[Relay protocol peering](docs/relay-protocol.md) between relays uses a different protocol than MOQT that ensures
+low latency data forwarding with often less than 1ms added per relay hop.  The protocol architecture and design
+document provides indepth details.
+
+
+Current MOQT version supported is draft-14. 
 
 ## Development
 
