@@ -33,7 +33,6 @@ namespace laps::peering {
         std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
 
         SubscribeNodeSet() = default;
-        SubscribeNodeSet(NodeIdValueType source_node_id, const FullNameHash& full_name);
         SubscribeNodeSet(std::span<uint8_t const> serialized_data, bool withdraw = false);
 
         uint32_t SizeBytes(bool withdraw) const;

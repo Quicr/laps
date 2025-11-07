@@ -4,7 +4,9 @@
 
 #include "node_info.h"
 #include "peering/common.h"
+#include "quicr/detail/base_track_handler.h"
 #include "quicr/hash.h"
+
 #include <set>
 
 #include <quicr/track_name.h>
@@ -22,7 +24,8 @@ namespace laps::peering {
       public:
         NodeIdValueType source_node_id; ///< Id of the originating source node
 
-        quicr::FullTrackName full_name; ///< Full name hash
+        quicr::messages::TrackNamespace name_space;
+        quicr::messages::TrackName name;
 
         /**
          * @brief Encode node object into bytes that can be written on the wire
