@@ -90,6 +90,15 @@ namespace laps::peering {
         bool RemoveAnnounce(const AnnounceInfo& announce_info);
 
         /**
+         * @brief Get all matching (prefix matched) announce source node Ids
+         *
+         * @param full_name_hash        Namespace and optionally name to match
+         *
+         * @returns a set of announce source node Ids
+         */
+        std::set<NodeIdValueType> GetAnnounceIds(FullNameHash full_name_hash);
+
+        /**
          * @brief Gets the best peer session for given node id
          */
         std::weak_ptr<PeerSession> GetBestPeerSession(NodeIdValueType node_id);
@@ -158,8 +167,13 @@ namespace laps::peering {
          */
         std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, std::map<PeerSessionId, FibEntry>> peer_fib_;
 
-        /// Key is the namespace hash of the announce (hash of tuple and name), value is the source node ID
-        std::map<quicr::TrackNamespaceHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;
+        /**
+         * @brief State map of announces received
+         *
+         * @details State map tracks both PUBLISH and PUBLISH_NAMESPACE. Name does not have to be defined.
+         *      Key is the full name hash of the full track name, value is the source node ID and Announce Info
+         */
+        std::map<quicr::TrackFullNameHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;
 
         /**
          * @brief Nodes by peer session id

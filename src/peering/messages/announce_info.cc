@@ -5,7 +5,7 @@
 
 namespace laps::peering {
 
-    AnnounceInfo::AnnounceInfo(NodeIdValueType source_node_id, const FullNameHash& full_name)
+    AnnounceInfo::AnnounceInfo(NodeIdValueType source_node_id, const quicr::FullTrackName& full_name)
       : source_node_id(source_node_id)
       , full_name(full_name)
     {
@@ -14,7 +14,7 @@ namespace laps::peering {
     uint32_t AnnounceInfo::SizeBytes() const
     {
         return sizeof(source_node_id) + 1 /* num of namespace tuples */
-               + full_name.SizeBytes();
+               + full_name.name.size() + full_name.name_space.GetHashes().size() * sizeof(uint64_t);
     }
 
     AnnounceInfo::AnnounceInfo(std::span<const uint8_t> serialized_data)
@@ -27,6 +27,7 @@ namespace laps::peering {
         uint8_t tuple_size = *it++;
 
         for (uint8_t i = 0; i < tuple_size; i++) {
+
             full_name.namespace_tuples.push_back(ValueOf<uint64_t>({ it, it + 8 }));
             it += 8;
         }

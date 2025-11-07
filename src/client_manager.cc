@@ -33,44 +33,44 @@ namespace laps {
           LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, remote.ip, remote.port);
     }
 
-    std::vector<quicr::ConnectionHandle> ClientManager::UnannounceReceived(quicr::ConnectionHandle connection_handle,
-                                                                           const quicr::TrackNamespace& track_namespace)
+    std::vector<quicr::ConnectionHandle> ClientManager::PublishNamespaceDoneReceived(
+      quicr::ConnectionHandle connection_handle,
+      const quicr::TrackNamespace& track_namespace)
     {
         auto th = quicr::TrackHash({ track_namespace, {} });
 
-        SPDLOG_LOGGER_DEBUG(
-          LOGGER,
-          "Received unannounce from connection handle: {0} for namespace hash: {1}, removing all tracks "
-          "associated with namespace",
-          connection_handle,
-          th.track_namespace_hash);
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Received publish namespace done from connection handle: {0} for namespace hash: {1}",
+                            connection_handle,
+                            th.track_namespace_hash);
 
         // TODO: Fix O(prefix namespaces) matching
-        std::vector<quicr::ConnectionHandle> sub_annos_connections;
-        for (const auto& [ns, conns] : state_.subscribes_announces) {
+        std::vector<quicr::ConnectionHandle> sub_namespace_connections;
+        for (const auto& [ns, conns] : state_.subscribes_namespaces) {
             if (!ns.HasSamePrefix(track_namespace)) {
                 continue;
             }
 
             for (auto sub_conn_handle : conns) {
-                SPDLOG_DEBUG(
-                  "Received unannounce matches prefix subscribed from connection handle: {} for namespace hash: {}",
-                  sub_conn_handle,
-                  th.track_namespace_hash);
+                SPDLOG_DEBUG("Received publish namespace done matches prefix subscribed from connection handle: {} for "
+                             "namespace hash: {}",
+                             sub_conn_handle,
+                             th.track_namespace_hash);
 
-                sub_annos_connections.emplace_back(sub_conn_handle);
+                sub_namespace_connections.emplace_back(sub_conn_handle);
             }
         }
 
-        for (auto track_alias : state_.announce_active[{ track_namespace, connection_handle }]) {
+        for (auto track_alias : state_.namespace_active[{ track_namespace, connection_handle }]) {
             auto ptd = state_.pub_subscribes[{ track_alias, connection_handle }];
             if (ptd != nullptr) {
-                SPDLOG_LOGGER_INFO(LOGGER,
-                                   "Received unannounce from connection handle: {0} for namespace hash: {1}, removing "
-                                   "track alias: {2}",
-                                   connection_handle,
-                                   th.track_namespace_hash,
-                                   track_alias);
+                SPDLOG_LOGGER_INFO(
+                  LOGGER,
+                  "Received publish namespace done from connection handle: {0} for namespace hash: {1}, removing "
+                  "track alias: {2}",
+                  connection_handle,
+                  th.track_namespace_hash,
+                  track_alias);
 
                 UnsubscribeTrack(connection_handle, ptd);
             }
@@ -89,10 +89,10 @@ namespace laps {
             }
         }
 
-        state_.announce_active.erase({ track_namespace, connection_handle });
+        state_.namespace_active.erase({ track_namespace, connection_handle });
         peer_manager_.ClientUnannounce({ track_namespace, {} });
 
-        return sub_annos_connections;
+        return sub_namespace_connections;
     }
 
     void ClientManager::PurgePublishState(quicr::ConnectionHandle connection_handle)
@@ -115,14 +115,14 @@ namespace laps {
         }
 
         std::vector<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>> anno_remove_list;
-        for (const auto& [key, _] : state_.announce_active) {
+        for (const auto& [key, _] : state_.namespace_active) {
             if (key.second == connection_handle) {
                 anno_remove_list.push_back(key);
             }
         }
 
         for (const auto& remove_key : anno_remove_list) {
-            state_.announce_active.erase(remove_key);
+            state_.namespace_active.erase(remove_key);
         }
     }
 
@@ -132,7 +132,7 @@ namespace laps {
     {
 
         auto subscribe_to_publisher = [&] {
-            auto& anno_tracks = state_.announce_active[{ track_namespace, connection_handle }];
+            auto& anno_tracks = state_.namespace_active[{ track_namespace, connection_handle }];
 
             // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
             for (const auto& [ns, sub_tracks] : state_.subscribe_active_) {
@@ -180,8 +180,8 @@ namespace laps {
                            th.track_fullname_hash);
 
         // Add to state if not exist
-        auto it = state_.announce_active.find({ track_namespace, connection_handle });
-        if (it != state_.announce_active.end()) {
+        auto it = state_.namespace_active.find({ track_namespace, connection_handle });
+        if (it != state_.namespace_active.end()) {
             /*
              * @note Duplicate announce from same connection handle can happen when there are
              *      more than one publish tracks (different name) but use the same namespace.
@@ -197,7 +197,7 @@ namespace laps {
         std::vector<quicr::ConnectionHandle> sub_annos_connections;
 
         // TODO: Fix O(prefix namespaces) matching
-        for (const auto& [ns, conns] : state_.subscribes_announces) {
+        for (const auto& [ns, conns] : state_.subscribes_namespaces) {
             if (!ns.HasSamePrefix(track_namespace)) {
                 continue;
             }
@@ -293,8 +293,8 @@ namespace laps {
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
-        std::cout << "size of subscribe namespace " << state_.subscribes_announces.size() << std::endl;
-        auto [it, is_new] = state_.subscribes_announces.try_emplace(prefix_namespace);
+        std::cout << "size of subscribe namespace " << state_.subscribes_namespaces.size() << std::endl;
+        auto [it, is_new] = state_.subscribes_namespaces.try_emplace(prefix_namespace);
         it->second.insert(connection_handle);
 
         if (is_new) {
@@ -306,7 +306,7 @@ namespace laps {
         std::vector<quicr::TrackNamespace> matched_ns;
 
         // TODO: Fix O(prefix namespaces) matching
-        for (const auto& [key, _] : state_.announce_active) {
+        for (const auto& [key, _] : state_.namespace_active) {
             // Add matching announced namespaces to vector without duplicates
             if (key.first.HasSamePrefix(prefix_namespace) && (matched_ns.empty() || matched_ns.back() != key.first)) {
                 matched_ns.push_back(key.first);
@@ -323,8 +323,8 @@ namespace laps {
     void ClientManager::UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                                      const quicr::TrackNamespace& prefix_namespace)
     {
-        auto it = state_.subscribes_announces.find(prefix_namespace);
-        if (it == state_.subscribes_announces.end()) {
+        auto it = state_.subscribes_namespaces.find(prefix_namespace);
+        if (it == state_.subscribes_namespaces.end()) {
             return;
         }
 
@@ -356,7 +356,7 @@ namespace laps {
 
         // Remove all subscribe announces for this connection handle
         std::vector<quicr::TrackNamespace> remove_ns;
-        for (auto& [ns, conns] : state_.subscribes_announces) {
+        for (auto& [ns, conns] : state_.subscribes_namespaces) {
             auto it = conns.find(connection_handle);
             if (it != conns.end()) {
                 conns.erase(it);
@@ -367,7 +367,7 @@ namespace laps {
         }
 
         for (auto ns : remove_ns) {
-            state_.subscribes_announces.erase(ns);
+            state_.subscribes_namespaces.erase(ns);
         }
 
         // Clean up subscribe states
@@ -989,7 +989,7 @@ namespace laps {
         }
 
         // Subscribe to announcer if announcer is active
-        for (auto& [key, track_aliases] : state_.announce_active) {
+        for (auto& [key, track_aliases] : state_.namespace_active) {
             if (!key.first.HasSamePrefix(track_full_name.name_space)) {
                 continue;
             }

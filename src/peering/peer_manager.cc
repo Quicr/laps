@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
 #include "client_manager.h"
+#include "fetch_handler.h"
 #include "state.h"
 #include "subscribe_handler.h"
 #include <peering/messages/data_header.h>
@@ -130,7 +131,7 @@ namespace laps::peering {
 
             // If no publish, then check announces
             if (not announce_matches) {
-                for (auto& [key, track_aliases] : state_.announce_active) {
+                for (auto& [key, track_aliases] : state_.namespace_active) {
                     if (!key.first.HasSamePrefix(sub.track_namespace)) {
                         continue;
                     }
@@ -240,11 +241,15 @@ namespace laps::peering {
                                            const AnnounceInfo& announce_info,
                                            bool withdraw)
     try {
-        SPDLOG_LOGGER_INFO(LOGGER,
-                           "Announce info received peer_session_id: {} hash: {} withdraw: {}",
-                           peer_session_id,
-                           announce_info.full_name.full_name_hash,
-                           withdraw);
+        auto th = quicr::TrackHash(announce_info.full_name);
+        SPDLOG_LOGGER_INFO(
+          LOGGER,
+          "Announce info received peer_session_id: {} namespace hash: {} name hash: {} fullname hash: {} withdraw: {}",
+          peer_session_id,
+          th.track_namespace_hash,
+          th.track_name_hash,
+          th.track_fullname_hash,
+          withdraw);
 
         auto peer_session = GetPeerSession(peer_session_id);
         if (not withdraw && !info_base_->AddAnnounce(announce_info)) {
@@ -254,11 +259,6 @@ namespace laps::peering {
 
         if (withdraw && !info_base_->RemoveAnnounce(announce_info)) {
             // Don't send to other peers if we don't have state (loop)
-            return;
-        }
-
-        if (node_info_.type != NodeType::kStub) {
-            // Only send announce info if this node is a STUB
             return;
         }
 
@@ -436,6 +436,11 @@ namespace laps::peering {
                                 peer_session_id,
                                 data_header.sns_id);
         }
+    }
+
+    std::set<NodeIdValueType> PeerManager::GetOriginNodeId(FullNameHash full_name_hash)
+    {
+        info_base_->
     }
 
     void PeerManager::ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
@@ -683,9 +688,9 @@ namespace laps::peering {
     {
         AnnounceInfo ai;
 
-        ai.full_name.full_name_hash = std::hash<quicr::TrackNamespace>{}(track_full_name.name_space);
-        ai.full_name.namespace_tuples.reserve(track_full_name.name_space.GetHashes().size());
+        ai.full_name = track_full_name;
         ai.source_node_id = node_info_.id;
+        auto th = quicr::TrackHash(track_full_name);
 
         if (not withdraw) {
             info_base_->AddAnnounce(ai);
@@ -693,24 +698,26 @@ namespace laps::peering {
             info_base_->RemoveAnnounce(ai);
         }
 
-        for (const auto ns_item : track_full_name.name_space.GetHashes()) {
-            ai.full_name.namespace_tuples.push_back(ns_item);
+        for (const auto& sess : client_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {}",
+                                th.track_namespace_hash,
+                                th.track_name_hash,
+                                th.track_fullname_hash,
+                                sess.first);
+
+            sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
-        ai.full_name.name_hash = 0;
+        for (const auto& sess : server_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {}",
+                                th.track_namespace_hash,
+                                th.track_name_hash,
+                                th.track_fullname_hash,
+                                sess.first);
 
-        if (node_info_.type == NodeType::kStub) { // Only send if node type is STUB
-            for (const auto& sess : client_peer_sessions_) {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
-                sess.second->SendAnnounceInfo(ai, withdraw);
-            }
-
-            for (const auto& sess : server_peer_sessions_) {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
-                sess.second->SendAnnounceInfo(ai, withdraw);
-            }
+            sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
         if (not withdraw) {

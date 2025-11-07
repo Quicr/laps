@@ -65,8 +65,9 @@ namespace laps {
         void UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                           const quicr::TrackNamespace& prefix_namespace) override;
 
-        std::vector<quicr::ConnectionHandle> UnannounceReceived(quicr::ConnectionHandle connection_handle,
-                                                                const quicr::TrackNamespace& track_namespace) override;
+        std::vector<quicr::ConnectionHandle> PublishNamespaceDoneReceived(
+          quicr::ConnectionHandle connection_handle,
+          const quicr::TrackNamespace& track_namespace) override;
 
         void PublishNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                       const quicr::TrackNamespace& track_namespace,

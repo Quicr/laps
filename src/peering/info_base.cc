@@ -177,6 +177,20 @@ namespace laps::peering {
         return removed;
     }
 
+    std::set<NodeIdValueType> InfoBase::GetAnnounceIds(Track full_name_hash)
+    {
+        std::lock_guard _(mutex_);
+
+        auto it = announces_.find(announce_info.full_name.namespace_hash);
+        if (it != announces_.end()) {
+            removed = it->second.erase(announce_info.source_node_id) ? true : false;
+
+            if (it->second.empty()) {
+                announces_.erase(it);
+            }
+        }
+    }
+
     std::weak_ptr<PeerSession> InfoBase::GetBestPeerSession(NodeIdValueType node_id)
     {
         std::lock_guard _(mutex_);

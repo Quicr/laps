@@ -14,13 +14,13 @@ namespace laps {
         std::mutex state_mutex;
 
         /**
-         * Map of subscribes (e.g., track alias) sent to announcements
+         * Map of subscribes (e.g., track alias) matched to a publish namespace
          *
          * @example
-         *      track_alias_set = announce_active[track_namespace_hash, connection_handle]
+         *      track_alias_set = namespace_active[track_namespace_hash, connection_handle]
          */
         std::map<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
-          announce_active;
+          namespace_active;
 
         /**
          * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
@@ -38,8 +38,8 @@ namespace laps {
         std::map<std::pair<uint64_t, quicr::ConnectionHandle>, std::shared_ptr<SubscribeTrackHandler>>
           pub_subscribes_by_req_id;
 
-        /// Subscriber connection handles by subscribe prefix namespace for subscribe announces
-        std::map<quicr::TrackNamespace, std::set<quicr::ConnectionHandle>> subscribes_announces;
+        /// Subscriber connection handles by subscribe prefix namespace for subscribe namespace
+        std::map<quicr::TrackNamespace, std::set<quicr::ConnectionHandle>> subscribes_namespaces;
 
         struct SubscribePublishHandlerInfo
         {
