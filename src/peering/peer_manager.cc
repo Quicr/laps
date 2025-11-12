@@ -162,12 +162,8 @@ namespace laps::peering {
                                        s_attrs.new_group_request_id.has_value() ? s_attrs.new_group_request_id.value()
                                                                                 : -1);
 
-                    client_manager_->ProcessSubscribe(0,
-                                                      0,
-                                                      subscribe_info.track_hash,
-                                                      { sub.track_namespace, sub.track_name },
-                                                      quicr::messages::FilterType::kLargestObject,
-                                                      s_attrs);
+                    client_manager_->ProcessSubscribe(
+                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
@@ -241,7 +237,7 @@ namespace laps::peering {
                                            const AnnounceInfo& announce_info,
                                            bool withdraw)
     try {
-        auto th = quicr::TrackHash(announce_info.full_name);
+        auto th = quicr::TrackHash({ announce_info.name_space, announce_info.name });
         SPDLOG_LOGGER_INFO(
           LOGGER,
           "Announce info received peer_session_id: {} namespace hash: {} name hash: {} fullname hash: {} withdraw: {}",
@@ -438,9 +434,9 @@ namespace laps::peering {
         }
     }
 
-    std::set<NodeIdValueType> PeerManager::GetOriginNodeId(FullNameHash full_name_hash)
+    std::set<NodeIdValueType> PeerManager::GetOriginNodeId(quicr::FullTrackName full_name)
     {
-        info_base_->
+        return info_base_->GetAnnounceIds(full_name.name_space, full_name.name, false);
     }
 
     void PeerManager::ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
@@ -688,7 +684,8 @@ namespace laps::peering {
     {
         AnnounceInfo ai;
 
-        ai.full_name = track_full_name;
+        ai.name_space = track_full_name.name_space;
+        ai.name = track_full_name.name;
         ai.source_node_id = node_info_.id;
         auto th = quicr::TrackHash(track_full_name);
 
@@ -774,12 +771,8 @@ namespace laps::peering {
                                                "Subscribe to client manager track alias: {}",
                                                sub_info.track_hash.track_fullname_hash);
 
-                            cm->ProcessSubscribe(0,
-                                                 0,
-                                                 sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name },
-                                                 quicr::messages::FilterType::kLargestObject,
-                                                 s_attrs);
+                            cm->ProcessSubscribe(
+                              0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
                         }
 
                         auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);

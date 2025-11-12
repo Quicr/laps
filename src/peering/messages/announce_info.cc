@@ -25,6 +25,9 @@ namespace laps::peering {
         source_node_id = ValueOf<uint64_t>({ it, it + 8 });
         it += 8;
 
+        fullname_hash = ValueOf<uint64_t>({ it, it + 8 });
+        it += 8;
+
         uint8_t num_entries = *it;
         ++it;
 
@@ -52,6 +55,9 @@ namespace laps::peering {
     {
         auto src_node_bytes = BytesOf(announce_info.source_node_id);
         data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
+
+        auto fullname_hash_bytes = BytesOf(announce_info.fullname_hash);
+        data.insert(data.end(), fullname_hash_bytes.rbegin(), fullname_hash_bytes.rend());
 
         const auto& entries = announce_info.name_space.GetEntries();
 

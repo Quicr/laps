@@ -14,10 +14,11 @@ TEST_CASE("Serialize Announce Info")
     announce_info.name_space =
       quicr::messages::TrackNamespace{ "abc"s, "12345"s, "third tuple"s, "now the final tuple"s };
     announce_info.name = quicr::messages::TrackName{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    announce_info.fullname_hash = 0x9876543210;
 
     auto net_data = announce_info.Serialize(false);
 
-    CHECK_EQ(net_data.size(), 66);
+    CHECK_EQ(net_data.size(), 74);
 
     AnnounceInfo decoded_ai(net_data);
 
@@ -25,4 +26,5 @@ TEST_CASE("Serialize Announce Info")
 
     CHECK(announce_info.name_space == decoded_ai.name_space);
     CHECK(announce_info.name == decoded_ai.name);
+    CHECK_EQ(announce_info.fullname_hash, decoded_ai.fullname_hash);
 }

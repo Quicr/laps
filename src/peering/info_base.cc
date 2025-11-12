@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "info_base.h"
+#include <quicr/hash.h>
 
 namespace laps::peering {
     bool InfoBase::AddNode(std::shared_ptr<PeerSession> peer_session, const NodeInfo& node_info)
@@ -148,13 +149,39 @@ namespace laps::peering {
         return std::nullopt;
     }
 
+    std::vector<std::size_t> InfoBase::PrefixHashNamespaceTuples(const quicr::TrackNamespace& name_space)
+    {
+        const auto& entries = name_space.GetHashes();
+        std::vector<std::size_t> hashes(entries.size());
+
+        uint64_t hash = 0;
+        for (std::size_t i = 0; i < hashes.size(); ++i) {
+            quicr::hash_combine(hash, hashes[i]);
+            hashes[i] = hash;
+        }
+
+        return hashes;
+    }
+
     bool InfoBase::AddAnnounce(const AnnounceInfo& announce_info)
     {
         std::lock_guard _(mutex_);
 
         auto [__, is_new] =
-          announces_[announce_info.full_name.namespace_hash].emplace(announce_info.source_node_id, announce_info);
+          announces_[announce_info.fullname_hash].emplace(announce_info.source_node_id, announce_info);
 
+        if (is_new) {
+            for (const auto& prefix_hash : PrefixHashNamespaceTuples(announce_info.name_space)) {
+                const auto it = prefix_lookup_announces_.find(prefix_hash);
+                if (it == prefix_lookup_announces_.end()) {
+                    prefix_lookup_announces_.emplace(prefix_hash, std::unordered_set{ announce_info.fullname_hash });
+                } else {
+                    if (auto s_it = it->second.find(announce_info.fullname_hash); s_it != it->second.end()) {
+                        it->second.emplace(announce_info.fullname_hash);
+                    }
+                }
+            }
+        }
         // TODO: If not new, update metrics in existing entry
 
         return is_new;
@@ -165,9 +192,34 @@ namespace laps::peering {
         bool removed{ false };
         std::lock_guard _(mutex_);
 
-        auto it = announces_.find(announce_info.full_name.namespace_hash);
+        auto it = announces_.find(announce_info.fullname_hash);
         if (it != announces_.end()) {
             removed = it->second.erase(announce_info.source_node_id) ? true : false;
+
+            if (removed) {
+                std::vector<uint64_t> remove_prefix_hashes;
+
+                for (const auto& prefix_hash : PrefixHashNamespaceTuples(announce_info.name_space)) {
+                    const auto it = prefix_lookup_announces_.find(prefix_hash);
+                    if (it == prefix_lookup_announces_.end()) {
+                        continue;
+                    }
+
+                    // remove announce full hash name from each prefix tuple set
+                    if (auto s_it = it->second.find(announce_info.fullname_hash); s_it != it->second.end()) {
+                        it->second.erase(s_it);
+
+                        if (it->second.empty()) {
+                            remove_prefix_hashes.push_back(prefix_hash);
+                        }
+                    }
+                }
+
+                // clean up the prefix lookup announces map
+                for (const auto prefix_hash : remove_prefix_hashes) {
+                    prefix_lookup_announces_.erase(prefix_hash);
+                }
+            }
 
             if (it->second.empty()) {
                 announces_.erase(it);
@@ -177,18 +229,49 @@ namespace laps::peering {
         return removed;
     }
 
-    std::set<NodeIdValueType> InfoBase::GetAnnounceIds(Track full_name_hash)
+    std::set<NodeIdValueType> InfoBase::GetAnnounceIds(quicr::messages::TrackNamespace name_space,
+                                                       quicr::messages::TrackName name,
+                                                       bool exact)
     {
+        std::set<NodeIdValueType> announces_ids;
         std::lock_guard _(mutex_);
 
-        auto it = announces_.find(announce_info.full_name.namespace_hash);
+        // Attempt to get a full match on namespace and/or namespace + name
+        const auto th = quicr::TrackHash({ name_space, name });
+        auto it = announces_.find(th.track_fullname_hash);
         if (it != announces_.end()) {
-            removed = it->second.erase(announce_info.source_node_id) ? true : false;
-
-            if (it->second.empty()) {
-                announces_.erase(it);
+            for (const auto& a_info : it->second) {
+                announces_ids.emplace(it->first);
             }
         }
+
+        if (!announces_ids.empty() || exact)
+            return announces_ids;
+
+        // prefix match
+        const auto prefix_hashes = PrefixHashNamespaceTuples(name_space);
+
+        for (auto it = prefix_hashes.rbegin(); it != prefix_hashes.rend(); ++it) {
+            auto p_it = prefix_lookup_announces_.find(*it);
+            if (p_it != prefix_lookup_announces_.end()) {
+                for (auto f_hash : p_it->second) {
+                    auto it = announces_.find(f_hash);
+                    if (it != announces_.end()) {
+                        for (const auto& a_info : it->second) {
+                            announces_ids.emplace(it->first);
+                        }
+
+                        if (!announces_ids.empty()) {
+                            return announces_ids;
+                        }
+                    }
+                }
+
+                break;
+            }
+        }
+
+        return announces_ids;
     }
 
     std::weak_ptr<PeerSession> InfoBase::GetBestPeerSession(NodeIdValueType node_id)

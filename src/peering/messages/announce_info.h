@@ -22,10 +22,17 @@ namespace laps::peering {
     class AnnounceInfo
     {
       public:
-        NodeIdValueType source_node_id; ///< Id of the originating source node
+        /**
+         * Id of the originating source node
+         *
+         * When this node id matches self node, it means this is originated by this node, otherwise
+         * it was learned via peering.
+         */
+        NodeIdValueType source_node_id;
 
         quicr::messages::TrackNamespace name_space;
         quicr::messages::TrackName name;
+        quicr::TrackFullNameHash fullname_hash;
 
         /**
          * @brief Encode node object into bytes that can be written on the wire

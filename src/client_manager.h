@@ -83,7 +83,6 @@ namespace laps {
 
         void SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                uint64_t request_id,
-                               quicr::messages::FilterType filter_type,
                                const quicr::FullTrackName& track_full_name,
                                const quicr::messages::SubscribeAttributes&) override;
 
@@ -117,7 +116,6 @@ namespace laps {
                               uint64_t request_id,
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
-                              quicr::messages::FilterType filter_type,
                               const quicr::messages::SubscribeAttributes&);
 
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,

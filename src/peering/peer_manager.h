@@ -96,7 +96,7 @@ namespace laps::peering {
          *
          * @return Returns a set of origin relay node Ids matching the full track name hash
          */
-        std::set<NodeIdValueType> GetOriginNodeId(quicr::TrackHash full_name_hash);
+        std::set<NodeIdValueType> GetOriginNodeId(quicr::FullTrackName full_name);
 
         bool HasSubscribers(uint64_t track_fullname_hash);
 
