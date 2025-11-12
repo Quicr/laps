@@ -172,12 +172,13 @@ namespace laps::peering {
 
         if (is_new) {
             for (const auto& prefix_hash : PrefixHashNamespaceTuples(announce_info.name_space)) {
-                const auto it = prefix_lookup_announces_.find(prefix_hash);
+                auto it = prefix_lookup_announces_.find(prefix_hash);
+                auto& hash_set = it->second;
                 if (it == prefix_lookup_announces_.end()) {
-                    prefix_lookup_announces_.emplace(prefix_hash, std::unordered_set{ announce_info.fullname_hash });
+                    prefix_lookup_announces_.emplace(prefix_hash, std::set{ announce_info.fullname_hash });
                 } else {
-                    if (auto s_it = it->second.find(announce_info.fullname_hash); s_it != it->second.end()) {
-                        it->second.emplace(announce_info.fullname_hash);
+                    if (auto s_it = hash_set.find(announce_info.fullname_hash); s_it == hash_set.end()) {
+                        hash_set.emplace(announce_info.fullname_hash);
                     }
                 }
             }
@@ -192,37 +193,35 @@ namespace laps::peering {
         bool removed{ false };
         std::lock_guard _(mutex_);
 
-        auto it = announces_.find(announce_info.fullname_hash);
-        if (it != announces_.end()) {
-            removed = it->second.erase(announce_info.source_node_id) ? true : false;
+        auto anno_it = announces_.find(announce_info.fullname_hash);
+        if (anno_it != announces_.end()) {
+            std::vector<uint64_t> remove_prefix_hashes;
 
-            if (removed) {
-                std::vector<uint64_t> remove_prefix_hashes;
-
-                for (const auto& prefix_hash : PrefixHashNamespaceTuples(announce_info.name_space)) {
-                    const auto it = prefix_lookup_announces_.find(prefix_hash);
-                    if (it == prefix_lookup_announces_.end()) {
-                        continue;
-                    }
-
-                    // remove announce full hash name from each prefix tuple set
-                    if (auto s_it = it->second.find(announce_info.fullname_hash); s_it != it->second.end()) {
-                        it->second.erase(s_it);
-
-                        if (it->second.empty()) {
-                            remove_prefix_hashes.push_back(prefix_hash);
-                        }
-                    }
+            for (const auto& prefix_hash : PrefixHashNamespaceTuples(announce_info.name_space)) {
+                const auto prefix_lookup_it = prefix_lookup_announces_.find(prefix_hash);
+                if (prefix_lookup_it == prefix_lookup_announces_.end()) {
+                    continue;
                 }
 
-                // clean up the prefix lookup announces map
-                for (const auto prefix_hash : remove_prefix_hashes) {
-                    prefix_lookup_announces_.erase(prefix_hash);
+                // remove announce full hash name from each prefix tuple set
+                if (auto s_it = prefix_lookup_it->second.find(announce_info.fullname_hash);
+                    s_it != prefix_lookup_it->second.end()) {
+                    prefix_lookup_it->second.erase(s_it);
+                    removed = true;
+
+                    if (prefix_lookup_it->second.empty()) {
+                        remove_prefix_hashes.push_back(prefix_hash);
+                    }
                 }
             }
 
-            if (it->second.empty()) {
-                announces_.erase(it);
+            // clean up the prefix lookup announces map
+            for (const auto prefix_hash : remove_prefix_hashes) {
+                prefix_lookup_announces_.erase(prefix_hash);
+            }
+
+            if (anno_it->second.empty()) {
+                announces_.erase(anno_it);
             }
         }
 

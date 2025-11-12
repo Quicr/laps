@@ -9,7 +9,7 @@
 
 #include <map>
 #include <quicr/detail/messages.h>
-#include <unordered_set>
+#include <set>
 
 namespace laps::peering {
 
@@ -198,7 +198,7 @@ namespace laps::peering {
          *      that matches the lookup prefix hash.  The vaule is a set of full hash values to be used
          *      to find in the announces_ state map.
          */
-        std::map<quicr::TrackNamespaceHash, std::unordered_set<quicr::TrackNamespaceHash>> prefix_lookup_announces_;
+        std::map<quicr::TrackNamespaceHash, std::set<quicr::TrackNamespaceHash>> prefix_lookup_announces_;
 
         /**
          * @brief Nodes by peer session id
