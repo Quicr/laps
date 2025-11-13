@@ -12,6 +12,70 @@ document provides indepth details.
 
 Current MOQT version supported is draft-14. 
 
+### Slack
+
+Join the `#laps` channel on [quicdev Slack](https://quicdev.slack.com) to connect with developers and contributors of LAPS.
+ 
+> [!NOTE]
+> Access to the quicdev Slack workspace requires an invitation.
+> To request an invite, please follow the instructions under "Implementing QUIC" on quicwg.org.
+
+Join the `#laps` channel in https://quicdev.slack.com to communicate with other developers and contributers of laps. Slack requires an invite to access [quicdev](https://quicdev.slack.com).  Follow
+the instructions in https://quicwg.org under `Implementing QUIC` to get an invite. 
+
+## MOQT Developer Playground
+
+A developer playground for interoperability testing with Media over QUIC Transport (MOQT) applications.
+
+**Specifications:**
+- **Maintenance Window:** Daily restart at 00:01 UTC
+- **Instance:** AWS `t4g.micro` (2 vCPUs, 1GB RAM)
+- **Transport:** Native QUIC on port `33437`
+
+### Use Case & Limitations
+
+**Intended for:**
+- MOQT application development and interop testing
+- Protocol compliance verification
+
+**Not suitable for:**
+- Performance/stress testing
+- Production workloads
+- Relay-to-relay protocol development
+
+> [!IMPORTANT]
+> For relay implementation discussions, contact the team via Slack. See [relay-protocol documentation](docs/relay-protocol.md).
+
+### Network Topology
+
+```mermaid
+---
+title: Pubic Relay Topology
+---
+flowchart TD
+   EAST["us-east-2.relay.quicr.org"] <--> WEST["us-west-2.relay.quicr.org"] 
+   EAST <--> EUC["eu-central-1.relay.quicr.org"]
+
+   classDef nodeClass fill:#949494,color:#3d3d3d,stroke:#8f8f8f,stroke-width:2px
+   class WEST,EAST,EUC nodeClass
+```
+
+**Architecture:**
+Flat mesh topology with full peering between nodes. Additional regions available upon request.
+ 
+**Endpoints:**
+ 
+| Region	| URL |
+| ------ | --- |
+| Anycast (recommended) | moq://relay.quicr.org:33437 |
+| US West (Oregon) | moq://us-west-2.relay.quicr.org:33437 |
+| US East (Ohio) | moq://us-east-2.relay.quicr.org:33437 |
+| EU Central (Frankfurt) | moq://eu-central-1.relay.quicr.org:33437 |
+ 
+> [!TIP]
+> Use anycast endpoint for automatic region selection. Use region-specific endpoints for testing cross-region behavior.
+
+
 ## Development
 
 ### Version
