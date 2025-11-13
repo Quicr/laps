@@ -20,9 +20,6 @@ Join the `#laps` channel on [quicdev Slack](https://quicdev.slack.com) to connec
 > Access to the quicdev Slack workspace requires an invitation.
 > To request an invite, please follow the instructions under "Implementing QUIC" on quicwg.org.
 
-Join the `#laps` channel in https://quicdev.slack.com to communicate with other developers and contributers of laps. Slack requires an invite to access [quicdev](https://quicdev.slack.com).  Follow
-the instructions in https://quicwg.org under `Implementing QUIC` to get an invite. 
-
 ## MOQT Developer Playground
 
 A developer playground for interoperability testing with Media over QUIC Transport (MOQT) applications.
