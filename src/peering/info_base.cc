@@ -250,23 +250,19 @@ namespace laps::peering {
         // prefix match
         const auto prefix_hashes = PrefixHashNamespaceTuples(name_space);
 
-        for (auto it = prefix_hashes.rbegin(); it != prefix_hashes.rend(); ++it) {
-            auto p_it = prefix_lookup_announces_.find(*it);
-            if (p_it != prefix_lookup_announces_.end()) {
-                for (auto f_hash : p_it->second) {
-                    auto it = announces_.find(f_hash);
-                    if (it != announces_.end()) {
-                        for (const auto& a_info : it->second) {
-                            announces_ids.emplace(it->first);
-                        }
+        auto p_it = prefix_lookup_announces_.find(prefix_hashes.back());
+        if (p_it != prefix_lookup_announces_.end()) {
+            for (auto f_hash : p_it->second) {
+                auto it = announces_.find(f_hash);
+                if (it != announces_.end()) {
+                    for (const auto& [nid, ai] : it->second) {
+                        // matched namespace must be at least the same size of requested namespace prefix
+                        if (name_space.GetHashes().size() < ai.name_space.GetHashes().size())
+                            break;
 
-                        if (!announces_ids.empty()) {
-                            return announces_ids;
-                        }
+                        announces_ids.emplace(nid);
                     }
                 }
-
-                break;
             }
         }
 

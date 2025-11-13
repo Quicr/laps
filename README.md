@@ -12,6 +12,19 @@ document provides indepth details.
 
 Current MOQT version supported is draft-14. 
 
+
+```mermaid
+---
+title: Pubic Relay Topology
+---
+flowchart TD
+   EAST["us-east-2.relay.quicr.org"] <--> WEST["us-west-2.relay.quicr.org"] 
+   EAST <--> EUC["eu-central-1.relay.quicr.org"]
+
+   classDef nodeClass fill:#949494,color:#3d3d3d,stroke:#8f8f8f,stroke-width:2px
+   class WEST,EAST,EUC nodeClass
+```
+
 ## Development
 
 ### Version
