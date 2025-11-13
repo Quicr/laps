@@ -109,7 +109,6 @@ namespace laps {
 
         void PublishReceived(quicr::ConnectionHandle connection_handle,
                              uint64_t request_id,
-                             const quicr::FullTrackName& track_full_name,
                              const quicr::messages::PublishAttributes& publish_attributes) override;
 
         void ProcessSubscribe(quicr::ConnectionHandle connection_handle,

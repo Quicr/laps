@@ -226,10 +226,9 @@ namespace laps {
 
     void ClientManager::PublishReceived(quicr::ConnectionHandle connection_handle,
                                         uint64_t request_id,
-                                        const quicr::FullTrackName& track_full_name,
                                         const quicr::messages::PublishAttributes& publish_attributes)
     {
-        auto th = quicr::TrackHash(track_full_name);
+        auto th = quicr::TrackHash(publish_attributes.track_full_name);
 
         SPDLOG_INFO("Received publish from connection handle: {} using track alias: {} request_id: {}",
                     connection_handle,
@@ -241,7 +240,7 @@ namespace laps {
 
         // passively create the subscribe handler towards the publisher
         auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-          track_full_name, 0, quicr::messages::GroupOrder::kAscending, *this, true);
+          publish_attributes.track_full_name, 0, quicr::messages::GroupOrder::kAscending, *this, true);
 
         sub_track_handler->SetRequestId(request_id);
         sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
@@ -255,12 +254,12 @@ namespace laps {
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
         state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
 
-        quicr::messages::SubscribeAttributes s_attrs;
-        s_attrs.is_publisher_initiated = true;
-        s_attrs.priority = publish_attributes.priority;
-        s_attrs.group_order = publish_attributes.group_order;
+        quicr::messages::PublishAttributes attrs;
+        attrs.is_publisher_initiated = true;
+        attrs.priority = publish_attributes.priority;
+        attrs.group_order = publish_attributes.group_order;
 
-        ResolvePublish(connection_handle, request_id, s_attrs, publish_response);
+        ResolvePublish(connection_handle, request_id, attrs, publish_response);
 
         // Check if there are any subscribers
         bool has_subs{ false };
@@ -284,7 +283,7 @@ namespace laps {
          * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and data
          * forwarding path creation. This needs to be done last to all other client work.
          */
-        peer_manager_.ClientAnnounce(track_full_name, {}, false);
+        peer_manager_.ClientAnnounce(publish_attributes.track_full_name, {}, false);
     }
 
     void ClientManager::SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
@@ -347,7 +346,7 @@ namespace laps {
 
         const quicr::SubscribeNamespaceResponse response = { .reason_code =
                                                                quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
-                                                             .tracks = {},
+                                                             .tracks = matched_tracks,
                                                              .namespaces = std::move(matched_ns) };
         ResolveSubscribeNamespace(connection_handle, attributes.request_id, prefix_namespace, response);
     }
