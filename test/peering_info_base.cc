@@ -112,6 +112,14 @@ TEST_CASE("Prefix match announces")
     const auto ns4 = quicr::messages::TrackNamespace{ "first"s };
 
     auto result = ib->GetAnnounceIds(ns1, {}, false);
+    CHECK_EQ(result.size(), 0);
 
+    result = ib->GetAnnounceIds(ns2, {}, false);
+    CHECK_EQ(result.size(), 1);
+
+    result = ib->GetAnnounceIds(ns3, {}, false);
+    CHECK_EQ(result.size(), 1);
+
+    result = ib->GetAnnounceIds(ns4, {}, false);
     CHECK_EQ(result.size(), 1);
 }

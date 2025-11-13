@@ -156,7 +156,7 @@ namespace laps::peering {
 
         uint64_t hash = 0;
         for (std::size_t i = 0; i < hashes.size(); ++i) {
-            quicr::hash_combine(hash, hashes[i]);
+            quicr::hash_combine(hash, entries[i]);
             hashes[i] = hash;
         }
 
@@ -256,10 +256,6 @@ namespace laps::peering {
                 auto it = announces_.find(f_hash);
                 if (it != announces_.end()) {
                     for (const auto& [nid, ai] : it->second) {
-                        // matched namespace must be at least the same size of requested namespace prefix
-                        if (name_space.GetHashes().size() < ai.name_space.GetHashes().size())
-                            break;
-
                         announces_ids.emplace(nid);
                     }
                 }
