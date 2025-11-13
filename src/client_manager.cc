@@ -298,18 +298,50 @@ namespace laps {
         it->second.insert(connection_handle);
 
         if (is_new) {
-            SPDLOG_INFO("Subscribe announces received connection handle: {} for namespace_hash: {}, adding to state",
+            SPDLOG_INFO("Subscribe namespace received connection handle: {} for namespace_hash: {}, adding to state",
                         connection_handle,
                         th.track_namespace_hash);
         }
 
         std::vector<quicr::TrackNamespace> matched_ns;
+        std::vector<quicr::SubscribeNamespaceResponse::AvailableTrack> matched_tracks;
 
         // TODO: Fix O(prefix namespaces) matching
         for (const auto& [key, _] : state_.namespace_active) {
             // Add matching announced namespaces to vector without duplicates
             if (key.first.HasSamePrefix(prefix_namespace) && (matched_ns.empty() || matched_ns.back() != key.first)) {
                 matched_ns.push_back(key.first);
+            }
+        }
+
+        // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
+        //  subscribes
+        for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
+            if (ta_conn.second == connection_handle || !handler)
+                continue;
+
+            const auto& track_full_name = handler->GetFullTrackName();
+            const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
+            if (ns_matched) {
+                std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
+
+                quicr::messages::PublishAttributes publish_attributes;
+                publish_attributes.track_alias = ta_conn.first;
+                publish_attributes.priority = handler->GetPriority(); // Original priority?
+                publish_attributes.group_order = handler->GetGroupOrder();
+                publish_attributes.delivery_timeout = handler->GetDeliveryTimeout();
+                publish_attributes.filter_type = handler->GetFilterType();
+                publish_attributes.forward = true;
+                publish_attributes.new_group_request_id = std::nullopt;
+                publish_attributes.is_publisher_initiated = true;
+                matched_tracks.emplace_back(track_full_name, largest_location, publish_attributes);
+
+                SPDLOG_LOGGER_INFO(
+                  LOGGER,
+                  "Matched PUBLISH track for SUBSCRIBE_NAMESPACE: conn: {} track_alias: {} track_hash: {}",
+                  connection_handle,
+                  ta_conn.first,
+                  quicr::TrackHash(track_full_name).track_fullname_hash);
             }
         }
 
