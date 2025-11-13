@@ -161,12 +161,8 @@ namespace laps::peering {
                                        s_attrs.new_group_request_id.has_value() ? s_attrs.new_group_request_id.value()
                                                                                 : -1);
 
-                    client_manager_->ProcessSubscribe(0,
-                                                      0,
-                                                      subscribe_info.track_hash,
-                                                      { sub.track_namespace, sub.track_name },
-                                                      quicr::messages::FilterType::kLargestObject,
-                                                      s_attrs);
+                    client_manager_->ProcessSubscribe(
+                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
@@ -767,12 +763,8 @@ namespace laps::peering {
                                                "Subscribe to client manager track alias: {}",
                                                sub_info.track_hash.track_fullname_hash);
 
-                            cm->ProcessSubscribe(0,
-                                                 0,
-                                                 sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name },
-                                                 quicr::messages::FilterType::kLargestObject,
-                                                 s_attrs);
+                            cm->ProcessSubscribe(
+                              0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
                         }
 
                         auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);

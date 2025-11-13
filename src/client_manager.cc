@@ -255,12 +255,11 @@ namespace laps {
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
         state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
 
-        ResolvePublish(connection_handle,
-                       request_id,
-                       true,
-                       publish_attributes.priority,
-                       publish_attributes.group_order,
-                       publish_response);
+        quicr::messages::SubscribeAttributes attrs;
+        attrs.priority = publish_attributes.priority;
+        attrs.group_order = publish_attributes.group_order;
+
+        ResolvePublish(connection_handle, request_id, attrs, publish_response);
 
         // Check if there are any subscribers
         bool has_subs{ false };
@@ -547,6 +546,7 @@ namespace laps {
                                    th.track_fullname_hash,
                                    {
                                      quicr::SubscribeResponse::ReasonCode::kOk,
+                                     false,
                                      std::nullopt,
                                      largest,
                                    });
@@ -559,6 +559,7 @@ namespace laps {
                            th.track_fullname_hash,
                            {
                              quicr::SubscribeResponse::ReasonCode::kTrackDoesNotExist,
+                             false,
                              "Track does not exist",
                              std::nullopt,
                            });
@@ -566,7 +567,6 @@ namespace laps {
 
     void ClientManager::SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                           uint64_t request_id,
-                                          quicr::messages::FilterType filter_type,
                                           const quicr::FullTrackName& track_full_name,
                                           const quicr::messages::SubscribeAttributes& attrs)
     {
@@ -583,13 +583,15 @@ namespace laps {
             ResolveSubscribe(connection_handle,
                              request_id,
                              th.track_fullname_hash,
-                             { quicr::SubscribeResponse::ReasonCode::kOk, std::nullopt, largest });
+                             { quicr::SubscribeResponse::ReasonCode::kOk, false, std::nullopt, largest });
         } else {
-            ResolveSubscribe(
-              connection_handle, request_id, th.track_fullname_hash, { quicr::SubscribeResponse::ReasonCode::kOk });
+            ResolveSubscribe(connection_handle,
+                             request_id,
+                             th.track_fullname_hash,
+                             { quicr::SubscribeResponse::ReasonCode::kOk, false });
         }
 
-        ProcessSubscribe(connection_handle, request_id, th, track_full_name, filter_type, attrs);
+        ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs);
     }
 
     std::optional<quicr::messages::Location> ClientManager::GetLargestAvailable(const quicr::FullTrackName& track_name)
@@ -847,7 +849,9 @@ namespace laps {
                                               kDefaultPriority,
                                               quicr::messages::GroupOrder::kAscending,
                                               std::chrono::milliseconds(kDefaultObjectTtl),
+                                              quicr::messages::FilterType::kLargestObject,
                                               1,
+                                              std::nullopt,
                                               true,
                                             });
 
@@ -912,7 +916,6 @@ namespace laps {
                                          uint64_t request_id,
                                          const quicr::TrackHash& th,
                                          const quicr::FullTrackName& track_full_name,
-                                         quicr::messages::FilterType filter_type,
                                          const quicr::messages::SubscribeAttributes& attrs)
     {
         if (connection_handle == 0 && request_id == 0) {
