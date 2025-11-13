@@ -255,9 +255,21 @@ namespace laps {
         state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
 
         quicr::messages::PublishAttributes attrs;
-        attrs.is_publisher_initiated = true;
+        attrs.is_publisher_initiated = false;
         attrs.priority = publish_attributes.priority;
         attrs.group_order = publish_attributes.group_order;
+        attrs.track_full_name = publish_attributes.track_full_name;
+        attrs.track_alias = publish_attributes.track_alias;
+        attrs.dynamic_groups = publish_attributes.dynamic_groups;
+        attrs.forward = publish_attributes.forward;
+
+        // Add connection handles for subscribe namespace subscribers
+        for (const auto& [tn, conn_ids] : state_.subscribes_namespaces) {
+            if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
+                publish_response.namespace_subscribers.insert(
+                  publish_response.namespace_subscribers.end(), conn_ids.begin(), conn_ids.end());
+            }
+        }
 
         ResolvePublish(connection_handle, request_id, attrs, publish_response);
 
@@ -292,7 +304,6 @@ namespace laps {
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
-        std::cout << "size of subscribe namespace " << state_.subscribes_namespaces.size() << std::endl;
         auto [it, is_new] = state_.subscribes_namespaces.try_emplace(prefix_namespace);
         it->second.insert(connection_handle);
 
