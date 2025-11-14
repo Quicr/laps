@@ -269,11 +269,28 @@ namespace laps::peering {
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
         }
 
-        if (!announce_info.name.size()) {
+        if (!announce_info.name.size()) { // PUBLISH_NAMESPACE
             if (!withdraw) {
                 client_manager_->PublishNamespaceReceived(0, announce_info.name_space, { .request_id = 0 });
             } else {
                 client_manager_->PublishNamespaceDoneReceived(0, announce_info.name_space);
+            }
+        } else { // PUBLISH
+            if (!withdraw) {
+                // TODO: Add defaults to announce info from original PUBLISH, but for now it's not needed
+                quicr::messages::PublishAttributes attrs;
+                attrs.track_full_name = { announce_info.name_space, announce_info.name };
+                attrs.track_alias = announce_info.fullname_hash;
+                attrs.is_publisher_initiated = true;
+                attrs.dynamic_groups = true;
+                attrs.forward = true;
+                attrs.group_order = quicr::messages::GroupOrder::kAscending;
+                attrs.priority = 64;
+                attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
+
+                client_manager_->PublishReceived(0, 0, attrs);
+            } else {
+                // TODO: Signal to client manager that the publish is done
             }
         }
 
