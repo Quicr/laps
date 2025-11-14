@@ -248,22 +248,7 @@ namespace laps {
         quicr::PublishResponse publish_response;
         publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
 
-        // passively create the subscribe handler towards the publisher
-        auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-          publish_attributes.track_full_name, 0, quicr::messages::GroupOrder::kAscending, *this, true);
-
-        sub_track_handler->SetRequestId(request_id);
-        sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
-        sub_track_handler->SetPriority(publish_attributes.priority);
-
-        if (publish_attributes.new_group_request_id.has_value()) {
-            sub_track_handler->SupportNewGroupRequest(true);
-        }
-
-        SubscribeTrack(connection_handle, sub_track_handler);
-        state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
-        state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
-
+        // Build list of connections that have matching subscribe namespace for publish to be sent
         quicr::messages::PublishAttributes attrs;
         attrs.is_publisher_initiated = false;
         attrs.priority = publish_attributes.priority;
@@ -276,36 +261,65 @@ namespace laps {
         // Add connection handles for subscribe namespace subscribers
         for (const auto& [tn, conn_ids] : state_.subscribes_namespaces) {
             if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
-                publish_response.namespace_subscribers.insert(
-                  publish_response.namespace_subscribers.end(), conn_ids.begin(), conn_ids.end());
+
+                // Only add connection id if connection ID doesn't already have an active subscribe
+                for (const auto& conn_id : conn_ids) {
+                    if (auto s_it = state_.subscribes.find({ th.track_fullname_hash, conn_id });
+                        s_it == state_.subscribes.end()) {
+                        publish_response.namespace_subscribers.emplace_back(conn_id);
+                    }
+                }
             }
         }
 
+        // passively create the subscribe handler towards the publisher
+        auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
+          publish_attributes.track_full_name, 0, quicr::messages::GroupOrder::kAscending, *this, true);
+
+        sub_track_handler->SetRequestId(request_id);
+        sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
+        sub_track_handler->SetPriority(publish_attributes.priority);
+
+        if (publish_attributes.new_group_request_id.has_value()) {
+            sub_track_handler->SupportNewGroupRequest(true);
+        }
+
+        state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
+        state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
+
+        // Do this before pause to maintain MOQT message sequence order
         ResolvePublish(connection_handle, request_id, attrs, publish_response);
 
-        // Check if there are any subscribers
-        bool has_subs{ false };
-        for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
-             ++it) {
-            if (it->first.first == th.track_fullname_hash) {
-                has_subs = true;
-                break;
+        if (connection_handle) {
+            SubscribeTrack(connection_handle, sub_track_handler);
+
+            // Check if there are any subscribers
+            bool has_subs{ false };
+            for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
+                 ++it) {
+                if (it->first.first == th.track_fullname_hash) {
+                    has_subs = true;
+                    break;
+                }
             }
+
+            if (not has_subs) {
+                SPDLOG_INFO("No subscribers, pause publish connection handle: {0} using track alias: {1}",
+                            connection_handle,
+                            th.track_fullname_hash);
+
+                sub_track_handler->Pause();
+            }
+
+            /*
+             * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and
+             * data forwarding path creation. This needs to be done last to all other client work.
+             */
+            peer_manager_.ClientAnnounce(publish_attributes.track_full_name, {}, false);
+        } else {
+            // For peering, need to set the track alias
+            sub_track_handler->SetTrackAlias(publish_attributes.track_alias);
         }
-
-        if (not has_subs) {
-            SPDLOG_INFO("No subscribers, pause publish connection handle: {0} using track alias: {1}",
-                        connection_handle,
-                        th.track_fullname_hash);
-
-            sub_track_handler->Pause();
-        }
-
-        /*
-         * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and data
-         * forwarding path creation. This needs to be done last to all other client work.
-         */
-        peer_manager_.ClientAnnounce(publish_attributes.track_full_name, {}, false);
     }
 
     void ClientManager::SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
@@ -337,8 +351,9 @@ namespace laps {
         // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
         //  subscribes
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.second == connection_handle || !handler)
+            if (ta_conn.second == connection_handle || !handler) {
                 continue;
+            }
 
             const auto& track_full_name = handler->GetFullTrackName();
             const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
@@ -467,6 +482,9 @@ namespace laps {
                         request_id);
             return;
         }
+
+        if (connection_handle)
+            peer_manager_.ClientAnnounce(s_it->second->GetFullTrackName(), {}, true);
 
         std::lock_guard<std::mutex> _(state_.state_mutex);
 
@@ -626,6 +644,16 @@ namespace laps {
                                           const quicr::messages::SubscribeAttributes& attrs)
     {
         auto th = quicr::TrackHash(track_full_name);
+
+        auto it = state_.subscribes.find({ th.track_fullname_hash, connection_handle });
+        if (it != state_.subscribes.end()) {
+            ResolveSubscribe(connection_handle,
+                             request_id,
+                             th.track_fullname_hash,
+                             { .reason_code = quicr::SubscribeResponse::ReasonCode::kNotSupported,
+                               .is_publisher_initiated = false,
+                               .error_reason = "Duplicate subscribe" });
+        }
 
         SPDLOG_LOGGER_INFO(LOGGER,
                            "New subscribe connection handle: {0} request_id: {1} track alias: {2} priority: {3}",

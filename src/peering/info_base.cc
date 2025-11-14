@@ -173,10 +173,10 @@ namespace laps::peering {
         if (is_new) {
             for (const auto& prefix_hash : PrefixHashNamespaceTuples(announce_info.name_space)) {
                 auto it = prefix_lookup_announces_.find(prefix_hash);
-                auto& hash_set = it->second;
                 if (it == prefix_lookup_announces_.end()) {
                     prefix_lookup_announces_.emplace(prefix_hash, std::set{ announce_info.fullname_hash });
                 } else {
+                    auto& hash_set = it->second;
                     if (auto s_it = hash_set.find(announce_info.fullname_hash); s_it == hash_set.end()) {
                         hash_set.emplace(announce_info.fullname_hash);
                     }
@@ -242,7 +242,7 @@ namespace laps::peering {
         auto it = announces_.find(th.track_fullname_hash);
         if (it != announces_.end()) {
             for (const auto& a_info : it->second) {
-                announces_ids.emplace(it->first);
+                announces_ids.emplace(a_info.first);
             }
         }
 
