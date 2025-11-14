@@ -14,8 +14,14 @@ namespace laps::peering {
 
     uint32_t AnnounceInfo::SizeBytes() const
     {
-        return sizeof(source_node_id) + 1 /* num of namespace tuples */
-               + name.size() + name_space.size();
+        // clang-format off
+        return   sizeof(source_node_id)
+               + sizeof(fullname_hash)
+               + 1 /* num of namespace tuples */
+               + sizeof(uint16_t) * name_space.GetEntries().size() + name_space.size()
+               + sizeof(uint16_t) + name.size();
+
+        // clang-format on
     }
 
     AnnounceInfo::AnnounceInfo(std::span<const uint8_t> serialized_data)
@@ -47,12 +53,15 @@ namespace laps::peering {
         uint16_t name_size = ValueOf<uint16_t>({ it, it + 2 });
         it += 2;
 
-        name.assign(it, it + name_size);
-        it += name_size;
+        if (name_size) {
+            name.assign(it, it + name_size);
+            it += name_size;
+        }
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const AnnounceInfo& announce_info)
     {
+        uint16_t short_var;
         auto src_node_bytes = BytesOf(announce_info.source_node_id);
         data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
 
@@ -64,14 +73,18 @@ namespace laps::peering {
         data.push_back(static_cast<uint8_t>(entries.size()));
 
         for (const auto& entry : entries) {
-            auto entry_size = BytesOf(static_cast<uint16_t>(entry.size()));
+            short_var = entry.size();
+            auto entry_size = BytesOf(short_var);
             data.insert(data.end(), entry_size.rbegin(), entry_size.rend());
             data.insert(data.end(), entry.begin(), entry.end());
         }
 
-        auto name_size = BytesOf(static_cast<uint16_t>(announce_info.name.size()));
+        short_var = announce_info.name.size();
+        auto name_size = BytesOf(short_var);
         data.insert(data.end(), name_size.rbegin(), name_size.rend());
-        data.insert(data.end(), announce_info.name.begin(), announce_info.name.end());
+        if (announce_info.name.size()) {
+            data.insert(data.end(), announce_info.name.begin(), announce_info.name.end());
+        }
 
         return data;
     }

@@ -61,6 +61,8 @@ namespace laps {
             }
         }
 
+        ResolvePublishNamespaceDone(connection_handle, track_namespace, sub_namespace_connections);
+
         for (auto track_alias : state_.namespace_active[{ track_namespace, connection_handle }]) {
             auto ptd = state_.pub_subscribes[{ track_alias, connection_handle }];
             if (ptd != nullptr) {
@@ -90,7 +92,9 @@ namespace laps {
         }
 
         state_.namespace_active.erase({ track_namespace, connection_handle });
-        peer_manager_.ClientUnannounce({ track_namespace, {} });
+
+        if (connection_handle)
+            peer_manager_.ClientUnannounce({ track_namespace, {} });
 
         return sub_namespace_connections;
     }
@@ -173,11 +177,12 @@ namespace laps {
 
         auto th = quicr::TrackHash({ track_namespace, {} });
 
-        SPDLOG_LOGGER_INFO(LOGGER,
-                           "Received announce from connection handle: {} for namespace_hash: {} fullname_hash: {}",
-                           connection_handle,
-                           th.track_namespace_hash,
-                           th.track_fullname_hash);
+        SPDLOG_LOGGER_INFO(
+          LOGGER,
+          "Received publish namespace from connection handle: {} for namespace_hash: {} fullname_hash: {}",
+          connection_handle,
+          th.track_namespace_hash,
+          th.track_fullname_hash);
 
         // Add to state if not exist
         auto it = state_.namespace_active.find({ track_namespace, connection_handle });
@@ -187,9 +192,12 @@ namespace laps {
              *      more than one publish tracks (different name) but use the same namespace.
              *      In this case, we just want to send subscribes
              */
-            subscribe_to_publisher();
+            if (connection_handle)
+                subscribe_to_publisher();
             return;
         }
+
+        state_.namespace_active.try_emplace(std::make_pair(track_namespace, connection_handle));
 
         PublishNamespaceResponse announce_response;
         announce_response.reason_code = quicr::Server::PublishNamespaceResponse::ReasonCode::kOk;
@@ -215,13 +223,15 @@ namespace laps {
         ResolvePublishNamespace(
           connection_handle, attrs.request_id, track_namespace, sub_annos_connections, announce_response);
 
-        subscribe_to_publisher();
+        if (connection_handle) {
+            subscribe_to_publisher();
 
-        /*
-         * Always send announcements to peer manager so new clients can trigger subscribe matching and data forwarding
-         *    path creation. This needs to be done last to all other client work.
-         */
-        peer_manager_.ClientAnnounce({ track_namespace, {} }, attrs, false);
+            /*
+             * Always send announcements to peer manager so new clients can trigger subscribe matching and data
+             * forwarding path creation. This needs to be done last to all other client work.
+             */
+            peer_manager_.ClientAnnounce({ track_namespace, {} }, attrs, false);
+        }
     }
 
     void ClientManager::PublishReceived(quicr::ConnectionHandle connection_handle,
@@ -357,7 +367,7 @@ namespace laps {
 
         const quicr::SubscribeNamespaceResponse response = { .reason_code =
                                                                quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
-                                                             .tracks = matched_tracks,
+                                                             .tracks = std::move(matched_tracks),
                                                              .namespaces = std::move(matched_ns) };
         ResolveSubscribeNamespace(connection_handle, attributes.request_id, prefix_namespace, response);
     }
@@ -374,6 +384,8 @@ namespace laps {
         SPDLOG_INFO("Unsubscribe announces received connection handle: {} for namespace_hash: {}, removing",
                     connection_handle,
                     th.track_namespace_hash);
+
+        state_.subscribes_namespaces.erase(it);
     }
 
     void ClientManager::ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status)
@@ -1034,7 +1046,7 @@ namespace laps {
 
         // Subscribe to announcer if announcer is active
         for (auto& [key, track_aliases] : state_.namespace_active) {
-            if (!key.first.HasSamePrefix(track_full_name.name_space)) {
+            if (!key.first.HasSamePrefix(track_full_name.name_space) || !key.second) {
                 continue;
             }
 

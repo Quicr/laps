@@ -220,6 +220,8 @@ namespace laps::peering {
                 prefix_lookup_announces_.erase(prefix_hash);
             }
 
+            anno_it->second.erase(announce_info.source_node_id);
+
             if (anno_it->second.empty()) {
                 announces_.erase(anno_it);
             }

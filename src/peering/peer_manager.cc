@@ -238,14 +238,15 @@ namespace laps::peering {
                                            bool withdraw)
     try {
         auto th = quicr::TrackHash({ announce_info.name_space, announce_info.name });
-        SPDLOG_LOGGER_INFO(
-          LOGGER,
-          "Announce info received peer_session_id: {} namespace hash: {} name hash: {} fullname hash: {} withdraw: {}",
-          peer_session_id,
-          th.track_namespace_hash,
-          th.track_name_hash,
-          th.track_fullname_hash,
-          withdraw);
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "Announce info received peer_session_id: {} namespace hash: {} name hash: {} fullname hash: "
+                           "{} == {} withdraw: {}",
+                           peer_session_id,
+                           th.track_namespace_hash,
+                           th.track_name_hash,
+                           th.track_fullname_hash,
+                           announce_info.fullname_hash,
+                           withdraw);
 
         auto peer_session = GetPeerSession(peer_session_id);
         if (not withdraw && !info_base_->AddAnnounce(announce_info)) {
@@ -266,6 +267,14 @@ namespace laps::peering {
         for (const auto& sess : server_peer_sessions_) {
             if (peer_session_id != sess.first)
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
+        }
+
+        if (!announce_info.name.size()) {
+            if (!withdraw) {
+                client_manager_->PublishNamespaceReceived(0, announce_info.name_space, { .request_id = 0 });
+            } else {
+                client_manager_->PublishNamespaceDoneReceived(0, announce_info.name_space);
+            }
         }
 
     } catch (const std::exception&) {
@@ -687,7 +696,9 @@ namespace laps::peering {
         ai.name_space = track_full_name.name_space;
         ai.name = track_full_name.name;
         ai.source_node_id = node_info_.id;
+
         auto th = quicr::TrackHash(track_full_name);
+        ai.fullname_hash = th.track_fullname_hash;
 
         if (not withdraw) {
             info_base_->AddAnnounce(ai);
@@ -696,23 +707,27 @@ namespace laps::peering {
         }
 
         for (const auto& sess : client_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {}",
-                                th.track_namespace_hash,
-                                th.track_name_hash,
-                                th.track_fullname_hash,
-                                sess.first);
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER,
+              "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {} withdraw: {}",
+              th.track_namespace_hash,
+              th.track_name_hash,
+              th.track_fullname_hash,
+              sess.first,
+              withdraw);
 
             sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
         for (const auto& sess : server_peer_sessions_) {
-            SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {}",
-                                th.track_namespace_hash,
-                                th.track_name_hash,
-                                th.track_fullname_hash,
-                                sess.first);
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER,
+              "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {} withdraw: {}",
+              th.track_namespace_hash,
+              th.track_name_hash,
+              th.track_fullname_hash,
+              sess.first,
+              withdraw);
 
             sess.second->SendAnnounceInfo(ai, withdraw);
         }

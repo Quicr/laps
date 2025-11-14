@@ -32,7 +32,7 @@ namespace laps::peering {
 
         quicr::messages::TrackNamespace name_space;
         quicr::messages::TrackName name;
-        quicr::TrackFullNameHash fullname_hash;
+        quicr::TrackFullNameHash fullname_hash{ 0 };
 
         /**
          * @brief Encode node object into bytes that can be written on the wire
