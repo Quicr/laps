@@ -314,10 +314,21 @@ namespace laps {
                 case Status::kNewGroupRequested:
                     reason = "new group requested";
                     break;
+                case Status::kDoneByFin:
+                    reason = "Done by FIN";
+                    status = Status::kOk;
+                    break;
+                case Status::kDoneByReset:
+                    reason = "Done by Reset";
+                    status = Status::kOk;
+                    break;
                 default:
                     break;
             }
-            SPDLOG_DEBUG("Track alias: {0} subscribe status change reason: {1}", GetTrackAlias().value(), reason);
+            SPDLOG_DEBUG("Track alias: {} subscribe status change reason: {} status: {}",
+                         GetTrackAlias().value(),
+                         reason,
+                         static_cast<int>(status));
         }
     }
 

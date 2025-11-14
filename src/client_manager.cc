@@ -653,6 +653,16 @@ namespace laps {
                              { .reason_code = quicr::SubscribeResponse::ReasonCode::kNotSupported,
                                .is_publisher_initiated = false,
                                .error_reason = "Duplicate subscribe" });
+
+            SPDLOG_LOGGER_INFO(
+              LOGGER,
+              "Duplicate subscribe connection handle: {0} request_id: {1} track alias: {2} priority: {3}",
+              connection_handle,
+              request_id,
+              th.track_fullname_hash,
+              attrs.priority);
+
+            return;
         }
 
         SPDLOG_LOGGER_INFO(LOGGER,
