@@ -4,6 +4,9 @@
 
 #include "node_info.h"
 #include "peering/common.h"
+#include "quicr/detail/base_track_handler.h"
+#include "quicr/hash.h"
+
 #include <set>
 
 #include <quicr/track_name.h>
@@ -11,17 +14,25 @@
 namespace laps::peering {
 
     /**
-     * @brief SubscriberInfo describes a publisher
+     * @brief AnnounceInfo describes a publisher
      *
-     * @details Subscriber info describes a subscrier of a specific track.
+     * @details Announce info describes a publisher. Supports prefix matching.
      *    This info is exchanged with the relay control server(s).
      */
     class AnnounceInfo
     {
       public:
-        NodeIdValueType source_node_id; ///< Id of the originating source node
+        /**
+         * Id of the originating source node
+         *
+         * When this node id matches self node, it means this is originated by this node, otherwise
+         * it was learned via peering.
+         */
+        NodeIdValueType source_node_id;
 
-        FullNameHash full_name; ///< Full name hash
+        quicr::messages::TrackNamespace name_space;
+        quicr::messages::TrackName name;
+        quicr::TrackFullNameHash fullname_hash{ 0 };
 
         /**
          * @brief Encode node object into bytes that can be written on the wire
@@ -29,7 +40,7 @@ namespace laps::peering {
         std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
 
         AnnounceInfo() = default;
-        AnnounceInfo(NodeIdValueType source_node_id, const FullNameHash& full_name);
+        AnnounceInfo(NodeIdValueType source_node_id, const quicr::FullTrackName& full_name);
         AnnounceInfo(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;

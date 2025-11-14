@@ -78,6 +78,26 @@ namespace laps::peering {
             client_manager_ = std::move(client_manager);
         }
 
+        /**
+         * @brief Send data directly to a node
+         * @details In some cases data needs to be sent directly to a relay node. This method uses
+         *      the relay peering to send data directly to the node_id
+         *
+         * @param node_id       Target node ID to data to
+         * @param type          Type of the data to send
+         * @param data          Data payload to send
+         */
+        void SendToNode(NodeIdValueType node_id, DataType type, std::span<const uint8_t> data);
+
+        /**
+         * @brief Get the origin node ids by namespace and name matching
+         *
+         * @param full_name_hash     Full name has, which can be just a namespace/prefix to find matches for
+         *
+         * @return Returns a set of origin relay node Ids matching the full track name hash
+         */
+        std::set<NodeIdValueType> GetOriginNodeId(quicr::FullTrackName full_name);
+
         bool HasSubscribers(uint64_t track_fullname_hash);
 
         void InfoBaseSyncPeer(PeerSession& peer_session);

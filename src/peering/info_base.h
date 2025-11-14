@@ -9,6 +9,7 @@
 
 #include <map>
 #include <quicr/detail/messages.h>
+#include <set>
 
 namespace laps::peering {
 
@@ -90,6 +91,26 @@ namespace laps::peering {
         bool RemoveAnnounce(const AnnounceInfo& announce_info);
 
         /**
+         * @brief Get matching (prefix matched) announce source node Ids
+         *
+         * @details Will return the node ids of the o-relay(s) that have publishers that prefix match
+         *      the namespace. If name has value, then the name will be used to return a full match on
+         *      namespace and name. If exact is true, then the only node ids return will be exact match
+         *      on namespace and name. If exact is false, then node ids will be returned matching
+         *      the name_space as a prefix lookup.
+         *
+         * @param name_space        Namespace or prefix namespace used to prefix match announces to find ids
+         * @param name              Zero len if no name. If present, the name_space and name will be used
+         * @param exact             True to indicate full namespace and name match. Name MUST be defined
+         *                          False indicates return all matching name_space when name is not an exact match
+         *
+         * @returns a set of announce source node Ids
+         */
+        std::set<NodeIdValueType> GetAnnounceIds(quicr::messages::TrackNamespace name_space,
+                                                 quicr::messages::TrackName name,
+                                                 bool exact);
+
+        /**
          * @brief Gets the best peer session for given node id
          */
         std::weak_ptr<PeerSession> GetBestPeerSession(NodeIdValueType node_id);
@@ -158,8 +179,26 @@ namespace laps::peering {
          */
         std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, std::map<PeerSessionId, FibEntry>> peer_fib_;
 
-        /// Key is the namespace hash of the announce (hash of tuple and name), value is the source node ID
-        std::map<quicr::TrackNamespaceHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;
+        /**
+         * @brief State map of announces received
+         *
+         * @details State map tracks both PUBLISH and PUBLISH_NAMESPACE. Name does not have to be defined.
+         */
+        std::map<quicr::TrackFullNameHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;
+
+        /**
+         * @brief State map of prefix matchable tuple hashes to full announce namespace/name hash
+         *
+         * @details Announces are indexed by the full hash of all tuples and name. In order to
+         *      do prefix matching, each tuple needs to be evaulated from first to last.  Using a hash
+         *      of the tuple results in a complex nested map with varialble number of tuple (sub maps).  This
+         *      degrades performance and memory.  This second map is used for fast lookup supporting prefix
+         *      matching by hashing each tuple using the combined hash of the previous tuples.  This produces
+         *      a flat table of namespace tuple hashes that can be looked up using O(1) to find the prefix hash
+         *      that matches the lookup prefix hash.  The vaule is a set of full hash values to be used
+         *      to find in the announces_ state map.
+         */
+        std::map<quicr::TrackNamespaceHash, std::set<quicr::TrackNamespaceHash>> prefix_lookup_announces_;
 
         /**
          * @brief Nodes by peer session id
@@ -170,6 +209,7 @@ namespace laps::peering {
         std::mutex mutex_;
 
       private:
+        static std::vector<std::size_t> PrefixHashNamespaceTuples(const quicr::TrackNamespace& name_space);
     };
 
 }

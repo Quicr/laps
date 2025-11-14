@@ -211,7 +211,7 @@ namespace laps::peering {
             return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending announce info id: {} source_node_id: {} withdraw: {}",
-                            announce_info.full_name.full_name_hash,
+                            announce_info.fullname_hash,
                             announce_info.source_node_id,
                             withdraw);
         transport_->Enqueue(t_conn_id_,
