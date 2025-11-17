@@ -65,8 +65,9 @@ namespace laps {
         void UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                           const quicr::TrackNamespace& prefix_namespace) override;
 
-        std::vector<quicr::ConnectionHandle> UnannounceReceived(quicr::ConnectionHandle connection_handle,
-                                                                const quicr::TrackNamespace& track_namespace) override;
+        std::vector<quicr::ConnectionHandle> PublishNamespaceDoneReceived(
+          quicr::ConnectionHandle connection_handle,
+          const quicr::TrackNamespace& track_namespace) override;
 
         void PublishNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                       const quicr::TrackNamespace& track_namespace,
@@ -82,7 +83,6 @@ namespace laps {
 
         void SubscribeReceived(quicr::ConnectionHandle connection_handle,
                                uint64_t request_id,
-                               quicr::messages::FilterType filter_type,
                                const quicr::FullTrackName& track_full_name,
                                const quicr::messages::SubscribeAttributes&) override;
 
@@ -109,14 +109,12 @@ namespace laps {
 
         void PublishReceived(quicr::ConnectionHandle connection_handle,
                              uint64_t request_id,
-                             const quicr::FullTrackName& track_full_name,
                              const quicr::messages::PublishAttributes& publish_attributes) override;
 
         void ProcessSubscribe(quicr::ConnectionHandle connection_handle,
                               uint64_t request_id,
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
-                              quicr::messages::FilterType filter_type,
                               const quicr::messages::SubscribeAttributes&);
 
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,

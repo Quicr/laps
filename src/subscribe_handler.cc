@@ -291,7 +291,7 @@ namespace laps {
                     reason = "subscribe error";
                     if (GetTrackAlias().has_value()) {
                         auto& anno_tracks =
-                          server_.state_.announce_active[{ GetFullTrackName().name_space, GetConnectionId() }];
+                          server_.state_.namespace_active[{ GetFullTrackName().name_space, GetConnectionId() }];
                         anno_tracks.erase(GetTrackAlias().value());
                         server_.state_.pub_subscribes.erase({ GetTrackAlias().value(), GetConnectionId() });
                     }
@@ -314,10 +314,21 @@ namespace laps {
                 case Status::kNewGroupRequested:
                     reason = "new group requested";
                     break;
+                case Status::kDoneByFin:
+                    reason = "Done by FIN";
+                    status = Status::kOk;
+                    break;
+                case Status::kDoneByReset:
+                    reason = "Done by Reset";
+                    status = Status::kOk;
+                    break;
                 default:
                     break;
             }
-            SPDLOG_DEBUG("Track alias: {0} subscribe status change reason: {1}", GetTrackAlias().value(), reason);
+            SPDLOG_DEBUG("Track alias: {} subscribe status change reason: {} status: {}",
+                         GetTrackAlias().value(),
+                         reason,
+                         static_cast<int>(status));
         }
     }
 

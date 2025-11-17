@@ -2,7 +2,7 @@
 
 #include "peering/messages/announce_info.h"
 
-#include <iostream>
+using namespace std::string_literals;
 
 TEST_CASE("Serialize Announce Info")
 {
@@ -11,28 +11,21 @@ TEST_CASE("Serialize Announce Info")
     AnnounceInfo announce_info;
     announce_info.source_node_id = 0xff00aabbcc;
 
-    FullNameHash full_name_hash;
-    full_name_hash.name_hash = 0x9000;
-    full_name_hash.namespace_tuples.push_back(0x1);
-    full_name_hash.namespace_tuples.push_back(0x90000001);
-    full_name_hash.namespace_tuples.push_back(0x14);
-    full_name_hash.namespace_tuples.push_back(0xaa0bb0cc0dd0ee);
-
-    announce_info.full_name = full_name_hash;
+    announce_info.name_space =
+      quicr::messages::TrackNamespace{ "abc"s, "12345"s, "third tuple"s, "now the final tuple"s };
+    announce_info.name = quicr::messages::TrackName{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    announce_info.fullname_hash = 0x9876543210;
 
     auto net_data = announce_info.Serialize(false);
 
-    CHECK_EQ(net_data.size(), 49);
+    CHECK_EQ(net_data.size(), 74);
+    CHECK_EQ(announce_info.SizeBytes(), 74);
 
     AnnounceInfo decoded_ai(net_data);
 
     CHECK_EQ(announce_info.source_node_id, decoded_ai.source_node_id);
 
-    CHECK_EQ(announce_info.full_name.namespace_tuples.size(), decoded_ai.full_name.namespace_tuples.size());
-
-    for (size_t i = 0; i < announce_info.full_name.namespace_tuples.size(); ++i) {
-        CHECK_EQ(announce_info.full_name.namespace_tuples[i], decoded_ai.full_name.namespace_tuples[i]);
-    }
-
-    CHECK_EQ(announce_info.full_name.name_hash, decoded_ai.full_name.name_hash);
+    CHECK(announce_info.name_space == decoded_ai.name_space);
+    CHECK(announce_info.name == decoded_ai.name);
+    CHECK_EQ(announce_info.fullname_hash, decoded_ai.fullname_hash);
 }

@@ -15,6 +15,9 @@ namespace laps::peering {
         kDatagram = 0,
         kExistingStream,
         kNewStream,
+        kControlSignaling,
+        kFetchNewStream,
+        kFetchExistingStream,
     };
 
     /**

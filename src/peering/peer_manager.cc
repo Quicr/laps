@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "peer_manager.h"
 #include "client_manager.h"
+#include "fetch_handler.h"
 #include "state.h"
 #include "subscribe_handler.h"
 #include <peering/messages/data_header.h>
@@ -130,7 +131,7 @@ namespace laps::peering {
 
             // If no publish, then check announces
             if (not announce_matches) {
-                for (auto& [key, track_aliases] : state_.announce_active) {
+                for (auto& [key, track_aliases] : state_.namespace_active) {
                     if (!key.first.HasSamePrefix(sub.track_namespace)) {
                         continue;
                     }
@@ -161,12 +162,8 @@ namespace laps::peering {
                                        s_attrs.new_group_request_id.has_value() ? s_attrs.new_group_request_id.value()
                                                                                 : -1);
 
-                    client_manager_->ProcessSubscribe(0,
-                                                      0,
-                                                      subscribe_info.track_hash,
-                                                      { sub.track_namespace, sub.track_name },
-                                                      quicr::messages::FilterType::kLargestObject,
-                                                      s_attrs);
+                    client_manager_->ProcessSubscribe(
+                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
@@ -240,10 +237,15 @@ namespace laps::peering {
                                            const AnnounceInfo& announce_info,
                                            bool withdraw)
     try {
+        auto th = quicr::TrackHash({ announce_info.name_space, announce_info.name });
         SPDLOG_LOGGER_INFO(LOGGER,
-                           "Announce info received peer_session_id: {} hash: {} withdraw: {}",
+                           "Announce info received peer_session_id: {} namespace hash: {} name hash: {} fullname hash: "
+                           "{} == {} withdraw: {}",
                            peer_session_id,
-                           announce_info.full_name.full_name_hash,
+                           th.track_namespace_hash,
+                           th.track_name_hash,
+                           th.track_fullname_hash,
+                           announce_info.fullname_hash,
                            withdraw);
 
         auto peer_session = GetPeerSession(peer_session_id);
@@ -257,11 +259,6 @@ namespace laps::peering {
             return;
         }
 
-        if (node_info_.type != NodeType::kStub) {
-            // Only send announce info if this node is a STUB
-            return;
-        }
-
         for (const auto& sess : client_peer_sessions_) {
             if (peer_session_id != sess.first)
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
@@ -270,6 +267,31 @@ namespace laps::peering {
         for (const auto& sess : server_peer_sessions_) {
             if (peer_session_id != sess.first)
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
+        }
+
+        if (!announce_info.name.size()) { // PUBLISH_NAMESPACE
+            if (!withdraw) {
+                client_manager_->PublishNamespaceReceived(0, announce_info.name_space, { .request_id = 0 });
+            } else {
+                client_manager_->PublishNamespaceDoneReceived(0, announce_info.name_space);
+            }
+        } else { // PUBLISH
+            if (!withdraw) {
+                // TODO: Add defaults to announce info from original PUBLISH, but for now it's not needed
+                quicr::messages::PublishAttributes attrs;
+                attrs.track_full_name = { announce_info.name_space, announce_info.name };
+                attrs.track_alias = announce_info.fullname_hash;
+                attrs.is_publisher_initiated = true;
+                attrs.dynamic_groups = true;
+                attrs.forward = true;
+                attrs.group_order = quicr::messages::GroupOrder::kAscending;
+                attrs.priority = 64;
+                attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
+
+                client_manager_->PublishReceived(0, 0, attrs);
+            } else {
+                // TODO: Signal to client manager that the publish is done
+            }
         }
 
     } catch (const std::exception&) {
@@ -436,6 +458,11 @@ namespace laps::peering {
                                 peer_session_id,
                                 data_header.sns_id);
         }
+    }
+
+    std::set<NodeIdValueType> PeerManager::GetOriginNodeId(quicr::FullTrackName full_name)
+    {
+        return info_base_->GetAnnounceIds(full_name.name_space, full_name.name, false);
     }
 
     void PeerManager::ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
@@ -683,9 +710,12 @@ namespace laps::peering {
     {
         AnnounceInfo ai;
 
-        ai.full_name.full_name_hash = std::hash<quicr::TrackNamespace>{}(track_full_name.name_space);
-        ai.full_name.namespace_tuples.reserve(track_full_name.name_space.GetHashes().size());
+        ai.name_space = track_full_name.name_space;
+        ai.name = track_full_name.name;
         ai.source_node_id = node_info_.id;
+
+        auto th = quicr::TrackHash(track_full_name);
+        ai.fullname_hash = th.track_fullname_hash;
 
         if (not withdraw) {
             info_base_->AddAnnounce(ai);
@@ -693,24 +723,30 @@ namespace laps::peering {
             info_base_->RemoveAnnounce(ai);
         }
 
-        for (const auto ns_item : track_full_name.name_space.GetHashes()) {
-            ai.full_name.namespace_tuples.push_back(ns_item);
+        for (const auto& sess : client_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER,
+              "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {} withdraw: {}",
+              th.track_namespace_hash,
+              th.track_name_hash,
+              th.track_fullname_hash,
+              sess.first,
+              withdraw);
+
+            sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
-        ai.full_name.name_hash = 0;
+        for (const auto& sess : server_peer_sessions_) {
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER,
+              "Sending namespace hash: {} name hash: {} full_name_hash: {} to peer_session_id: {} withdraw: {}",
+              th.track_namespace_hash,
+              th.track_name_hash,
+              th.track_fullname_hash,
+              sess.first,
+              withdraw);
 
-        if (node_info_.type == NodeType::kStub) { // Only send if node type is STUB
-            for (const auto& sess : client_peer_sessions_) {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
-                sess.second->SendAnnounceInfo(ai, withdraw);
-            }
-
-            for (const auto& sess : server_peer_sessions_) {
-                SPDLOG_LOGGER_DEBUG(
-                  LOGGER, "Sending announce hash: {} peer_session_id: {}", ai.full_name.full_name_hash, sess.first);
-                sess.second->SendAnnounceInfo(ai, withdraw);
-            }
+            sess.second->SendAnnounceInfo(ai, withdraw);
         }
 
         if (not withdraw) {
@@ -767,12 +803,8 @@ namespace laps::peering {
                                                "Subscribe to client manager track alias: {}",
                                                sub_info.track_hash.track_fullname_hash);
 
-                            cm->ProcessSubscribe(0,
-                                                 0,
-                                                 sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name },
-                                                 quicr::messages::FilterType::kLargestObject,
-                                                 s_attrs);
+                            cm->ProcessSubscribe(
+                              0, 0, sub_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs);
                         }
 
                         auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);
