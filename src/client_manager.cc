@@ -665,12 +665,14 @@ namespace laps {
             return;
         }
 
-        SPDLOG_LOGGER_INFO(LOGGER,
-                           "New subscribe connection handle: {0} request_id: {1} track alias: {2} priority: {3}",
-                           connection_handle,
-                           request_id,
-                           th.track_fullname_hash,
-                           attrs.priority);
+        SPDLOG_LOGGER_INFO(
+          LOGGER,
+          "New subscribe connection handle: {} request_id: {} track alias: {} priority: {} delivery timeout: {}ms",
+          connection_handle,
+          request_id,
+          th.track_fullname_hash,
+          attrs.priority,
+          attrs.delivery_timeout.count());
 
         if (const auto largest = GetLargestAvailable(track_full_name)) {
             ResolveSubscribe(
@@ -756,9 +758,14 @@ namespace laps {
             end = { 0, 0 };
         }
 
-        reason_code = quicr::FetchResponse::ReasonCode::kInternalError;
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Fetch received conn_id: {} request_id: {} range start: {} end: {} largest_location: {}",
+                            connection_handle,
+                            request_id,
+                            start.group,
+                            end->group,
+                            largest_location.has_value() ? largest_location.value().group : 0);
 
-        SPDLOG_LOGGER_DEBUG(LOGGER, "Fetch received conn_id: {} request_id: {}", connection_handle, request_id);
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
             defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
 
