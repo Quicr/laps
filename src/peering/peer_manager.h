@@ -78,16 +78,41 @@ namespace laps::peering {
             client_manager_ = std::move(client_manager);
         }
 
+        enum class NodeChannelStatus : uint8_t
+        {
+            kOk = 0,      ///< No error, operation successful
+            kErrorExists, ///< Channel already exists
+        };
+
         /**
-         * @brief Send data directly to a node
-         * @details In some cases data needs to be sent directly to a relay node. This method uses
-         *      the relay peering to send data directly to the node_id
+         * @brief Create direct node channel to a node
+         * @details Creates a node channel to another node that can be used to send signaling and data directly
          *
-         * @param node_id       Target node ID to data to
-         * @param type          Type of the data to send
-         * @param data          Data payload to send
+         * @param node_id       Node ID of the node to send data to
+         *
+         * Returns NodeChannelStatus
          */
-        void SendToNode(NodeIdValueType node_id, DataType type, std::span<const uint8_t> data);
+        NodeChannelStatus CreateNodeChannel(NodeIdValueType node_id);
+
+        /**
+         * @brief Closes a node channel to a node
+         *
+         * @param node_id       Node ID of the node to close the channel with
+         *
+         * @returns NodeChannelStatus
+         */
+        NodeChannelStatus CloseNodeChannel(NodeIdValueType node_id);
+
+        /**
+         * @brief Send data to a node channel
+         * @details Send either signaling or any data to an open node channel
+         *
+         * @param node_id       Node ID of the node to send data to
+         * @param data          Encoded/serialized data to send to the node
+
+         * @returns NodeChannelStatus
+         */
+        NodeChannelStatus SendToNodeChannel(NodeIdValueType node_id, std::span<const uint8_t> data);
 
         /**
          * @brief Get the origin node ids by namespace and name matching
