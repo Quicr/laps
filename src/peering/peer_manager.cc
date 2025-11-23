@@ -1051,15 +1051,12 @@ namespace laps::peering {
             peer_session.SendNodeInfo(node_item.node_info);
         }
 
-        // Send all announces if STUB node
-        if (node_info_.type == NodeType::kStub) {
-            for (const auto& [th, anno_item] : info_base_->announces_) {
-                for (const auto& [_, anno_info] : anno_item) {
-                    if (peer_session.remote_node_info_.id == anno_info.source_node_id)
-                        continue; // Skip, don't send self or remote to self
+        for (const auto& [th, anno_item] : info_base_->announces_) {
+            for (const auto& [_, anno_info] : anno_item) {
+                if (peer_session.remote_node_info_.id == anno_info.source_node_id)
+                    continue; // Skip, don't send self or remote to self
 
-                    peer_session.SendAnnounceInfo(anno_info);
-                }
+                peer_session.SendAnnounceInfo(anno_info);
             }
         }
 

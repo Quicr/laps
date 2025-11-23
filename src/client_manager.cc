@@ -977,6 +977,10 @@ namespace laps {
     bool ClientManager::DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                                         bool new_group_request)
     {
+        if (sub_to_pub_track_handler->GetConnectionId() <= 1) {
+            // No updates sent to peering
+        }
+
         auto now = std::chrono::steady_clock::now();
 
         uint64_t elapsed = config_.sub_dampen_ms_ + 1;
