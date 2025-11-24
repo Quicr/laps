@@ -881,7 +881,12 @@ namespace laps {
                     }
 
                     SPDLOG_TRACE("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
-                    pub_fetch_h->PublishObject(object.headers, object.data);
+
+                    try {
+                        pub_fetch_h->PublishObject(object.headers, object.data);
+                    } catch (const std::exception& e) {
+                        SPDLOG_LOGGER_ERROR(LOGGER, "Caught exception sending fetch object: {}", e.what());
+                    }
                 }
             }
         });
