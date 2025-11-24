@@ -984,7 +984,7 @@ namespace laps {
     {
         if (sub_to_pub_track_handler->GetConnectionId() <= 1) {
             // No updates sent to peering
-            return;
+            return false;
         }
 
         auto now = std::chrono::steady_clock::now();
