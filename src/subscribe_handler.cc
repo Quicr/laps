@@ -161,7 +161,8 @@ namespace laps {
                                  s_hdr.priority,
                                  std::nullopt,
                                  quicr::TrackMode::kStream,
-                                 obj.extensions },
+                                 obj.extensions,
+                                 obj.immutable_extensions },
                                obj.payload);
 
                 *next_object_id_ += 1;
