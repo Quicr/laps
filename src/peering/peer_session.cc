@@ -98,6 +98,26 @@ namespace laps::peering {
         return { it->second.id, is_new };
     }
 
+    std::pair<SubscribeNodeSetId, bool> PeerSession::CreateNodeChannelSourceNode(NodeIdValueType node_id,
+                                                                                 uint8_t priority)
+    {
+        auto [it, _] = node_channel_sns_.try_emplace(node_id, 0);
+        auto& sns_id = it->second;
+
+        if (sns_id == 0) { // If not set, create the data context
+            sns_id = transport_->CreateDataContext(t_conn_id_, true, priority, false);
+            SubscribeNodeSet sns;
+            sns.id = sns_id;
+            sns.priority = priority;
+            sns.nodes.emplace(node_id);
+
+            SendSns(sns, false);
+            return { sns_id, true };
+        }
+
+        return { sns_id, false };
+    }
+
     std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
                                                                             NodeIdValueType sub_node_id,
                                                                             uint8_t priority)

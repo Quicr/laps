@@ -119,6 +119,16 @@ namespace laps::peering {
                                                                    uint8_t priority);
 
         /**
+         * @brief Create SNS id to reach a target node id
+         *
+         * @param node_id            Target NodeId of the node to each
+         * @param priority           Priority to use for the data context
+         *
+         * @returns pair Subscribe Node Set Id and True if node is new or False if existing
+         */
+        std::pair<SubscribeNodeSetId, bool> CreateNodeChannelSourceNode(NodeIdValueType node_id, uint8_t priority);
+
+        /**
          * @brief Remove subscriber source node from the subscribe id state
          *
          * @details Removes the subscribe source node from the nodes set. When there are no
@@ -209,6 +219,9 @@ namespace laps::peering {
 
         /// Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)
         std::map<quicr::TrackFullNameHash, SubscribeNodeSet> sub_sns_;
+
+        /// Map of target node ids with the value of the SNS id created
+        std::map<NodeIdValueType, SubscribeNodeSetId> node_channel_sns_;
 
         /// Map of subscriber source nodes initiated by peer ingress SNS.
         /// Key is the ingress peer session ID and SNS ID, value is the SNS egress via this peer

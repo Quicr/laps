@@ -66,6 +66,42 @@ namespace laps::peering {
         return false;
     }
 
+    SubscribeNodeSetId PeerManager::CreateNodeChannel(NodeIdValueType node_id, uint8_t priority)
+    try {
+        SPDLOG_LOGGER_INFO(LOGGER, "Create node channel to node id: ", NodeId().Value(node_id));
+
+        uint64_t update_ref = rand();
+
+        std::lock_guard _(state_.state_mutex);
+
+        auto bp_it = info_base_->nodes_best_.find(node_id);
+        if (bp_it != info_base_->nodes_best_.end()) {
+            const auto& peer_session = bp_it->second.lock();
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Best peer session id: {} for to reach node id: {}",
+                                peer_session->GetSessionId(),
+                                NodeId().Value(node_id));
+
+            if (auto [sns_id, is_new] = peer_session->CreateNodeChannelSourceNode(node_id, priority); is_new) {
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER, "Created SNS id: {} for peer session id: {}", sns_id, peer_session->GetSessionId());
+
+                if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
+                      { 0, peer_session->GetSessionId() }, InfoBase::FibEntry{ update_ref, 0, sns_id, bp_it->second });
+                    is_new) {
+                } else {
+                    SPDLOG_LOGGER_INFO(
+                      LOGGER, "Duplicate client fib entry to reach node id: {}", NodeId().Value(node_id));
+                }
+            } else {
+                SPDLOG_LOGGER_INFO(LOGGER, "Duplicate SMS reach node id: {}", NodeId().Value(node_id));
+            }
+        }
+    } catch (const std::exception& e) {
+        SPDLOG_LOGGER_ERROR(LOGGER, "Caught exception creating node channel: {}", e.what());
+        // ignore
+    }
+
     void PeerManager::SubscribeInfoReceived(PeerSessionId peer_session_id, SubscribeInfo& subscribe_info, bool withdraw)
     try {
         SPDLOG_LOGGER_INFO(

@@ -80,39 +80,44 @@ namespace laps::peering {
 
         enum class NodeChannelStatus : uint8_t
         {
-            kOk = 0,      ///< No error, operation successful
-            kErrorExists, ///< Channel already exists
+            kOk = 0,   ///< No error, operation successful
+            kNotExist, ///< Node ID and SNS ID pair doesn't exist
         };
 
         /**
-         * @brief Create direct node channel to a node
+         * @brief Create direct node channel to a node using a QUIC stream
          * @details Creates a node channel to another node that can be used to send signaling and data directly
          *
          * @param node_id       Node ID of the node to send data to
+         * @param priority      Priority to use for data forwarding
          *
-         * Returns NodeChannelStatus
+         * Returns SNS ID for the channel created
          */
-        NodeChannelStatus CreateNodeChannel(NodeIdValueType node_id);
+        SubscribeNodeSetId CreateNodeChannel(NodeIdValueType node_id, uint8_t priority);
 
         /**
          * @brief Closes a node channel to a node
          *
          * @param node_id       Node ID of the node to close the channel with
+         * @param sns_id        SNS ID to close
          *
          * @returns NodeChannelStatus
          */
-        NodeChannelStatus CloseNodeChannel(NodeIdValueType node_id);
+        NodeChannelStatus CloseNodeChannel(NodeIdValueType node_id, SubscribeNodeSetId sns_id);
 
         /**
          * @brief Send data to a node channel
          * @details Send either signaling or any data to an open node channel
          *
          * @param node_id       Node ID of the node to send data to
+         * @param sns_id        SNS ID of data to send
          * @param data          Encoded/serialized data to send to the node
 
          * @returns NodeChannelStatus
          */
-        NodeChannelStatus SendToNodeChannel(NodeIdValueType node_id, std::span<const uint8_t> data);
+        NodeChannelStatus SendToNodeChannel(NodeIdValueType node_id,
+                                            SubscribeNodeSetId sns_id,
+                                            std::span<const uint8_t> data);
 
         /**
          * @brief Get the origin node ids by namespace and name matching
