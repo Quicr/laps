@@ -92,9 +92,6 @@ namespace laps {
             return;
         }
 
-        // Pipeline forward immediately to subscribers/peers
-        ForwardReceivedData(is_start, data);
-
         // Process MoQ object from stream data
         if (is_start || not stream_buffer_.AnyHasValue()) {
             stream_buffer_.Clear();
@@ -110,8 +107,39 @@ namespace laps {
                 // TODO: Add metrics to track this
                 return;
             }
-        } else {
-            stream_buffer_.Push({ data->data(), data->size() });
+
+            // Adapt publisher track alias to normalized track alias uses by subscribers
+            if (GetReceivedTrackAlias().value() != GetTrackAlias().value()) {
+                s_hdr.track_alias = GetTrackAlias().value();
+                quicr::Bytes updated_s_hdr;
+
+                bool zero_subgroup_id{ false };
+                const auto properties = quicr::messages::StreamHeaderProperties(s_hdr.type);
+                if (properties.subgroup_id_type != quicr::messages::SubgroupIdType::kExplicit) {
+                    s_hdr.subgroup_id = std::nullopt;
+                    zero_subgroup_id = true;
+                }
+
+                auto updated_data = std::make_shared<std::vector<uint8_t>>();
+                *updated_data << s_hdr;
+
+                if (zero_subgroup_id) {
+                    s_hdr.subgroup_id = 0;
+                }
+
+                updated_data->insert(
+                  updated_data->end(), data->begin() + (data->size() - stream_buffer_.Size()), data->end());
+
+                ForwardReceivedData(true, updated_data);
+            } else {
+                ForwardReceivedData(is_start, data);
+            }
+
+        } else if (data) {
+            ForwardReceivedData(is_start, data);
+
+            // Buffer for cache/full parse
+            stream_buffer_.Push(*data);
         }
 
         auto& s_hdr = stream_buffer_.GetAny<quicr::messages::StreamHeaderSubGroup>();

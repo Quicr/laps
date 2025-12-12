@@ -240,14 +240,6 @@ namespace laps {
     {
         auto th = quicr::TrackHash(publish_attributes.track_full_name);
 
-        SPDLOG_INFO("Received publish from connection handle: {} using track alias: {} request_id: {}",
-                    connection_handle,
-                    th.track_fullname_hash,
-                    request_id);
-
-        quicr::PublishResponse publish_response;
-        publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
-
         // Build list of connections that have matching subscribe namespace for publish to be sent
         quicr::messages::PublishAttributes attrs;
         attrs.is_publisher_initiated = false;
@@ -257,6 +249,29 @@ namespace laps {
         attrs.track_alias = publish_attributes.track_alias;
         attrs.dynamic_groups = publish_attributes.dynamic_groups;
         attrs.forward = publish_attributes.forward;
+
+        /*
+        if (state_.pub_subscribes.contains({ th.track_fullname_hash, connection_handle })) {
+            SPDLOG_INFO(
+              "Received duplicate publish from connection handle: {} using track alias: {} request_id: {}, keepalive",
+              connection_handle,
+              th.track_fullname_hash,
+              request_id);
+
+            ResolvePublish(
+              connection_handle, request_id, attrs, { .reason_code = quicr::PublishResponse::ReasonCode::kNotSupported
+        });
+
+            return;
+        }*/
+
+        SPDLOG_INFO("Received publish from connection handle: {} using track alias: {} request_id: {}",
+                    connection_handle,
+                    th.track_fullname_hash,
+                    request_id);
+
+        quicr::PublishResponse publish_response;
+        publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
 
         // Add connection handles for subscribe namespace subscribers
         for (const auto& [tn, conn_ids] : state_.subscribes_namespaces) {
