@@ -492,18 +492,53 @@ namespace laps {
 
         const auto s_it = state_.pub_subscribes_by_req_id.find({ request_id, connection_handle });
         if (s_it == state_.pub_subscribes_by_req_id.end()) {
-            SPDLOG_WARN("Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
-                        connection_handle,
-                        request_id);
+            SPDLOG_LOGGER_WARN(LOGGER,
+                               "Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
+                               connection_handle,
+                               request_id);
             return;
         }
 
         if (connection_handle)
             peer_manager_.ClientAnnounce(s_it->second->GetFullTrackName(), {}, true);
 
-        std::lock_guard<std::mutex> _(state_.state_mutex);
+        std::unique_lock<std::mutex> lock(state_.state_mutex);
 
         auto th = quicr::TrackHash(s_it->second->GetFullTrackName());
+
+        // Find subscribers that match this publisher and unsubscribe if all publishers are gone
+        std::vector<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>> unsub_list;
+        for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
+             ++it) {
+            if (it->first.first != th.track_fullname_hash) {
+                break;
+            }
+
+            auto p_it = it->second.publish_handlers.find(connection_handle);
+            if (p_it != it->second.publish_handlers.end()) {
+                UnbindPublisherTrack(
+                  it->first.second, connection_handle, p_it->second, it->second.publish_handlers.size() <= 1);
+                it->second.publish_handlers.erase(p_it);
+
+                if (it->second.publish_handlers.empty()) {
+                    SPDLOG_LOGGER_INFO(LOGGER,
+                                       "No publishers left, unsubscribe conn_id: {} track_alias: {} request_id: {}",
+                                       it->first.second,
+                                       it->second.track_alias,
+                                       it->second.request_id);
+
+                    unsub_list.emplace_back(connection_handle, request_id);
+                }
+            }
+        }
+
+        lock.unlock();
+        for (auto& [c_handle, req_id] : unsub_list) {
+            UnsubscribeReceived(c_handle, req_id);
+        }
+
+        lock.lock();
+
         state_.pub_subscribes.erase({ th.track_fullname_hash, connection_handle });
         state_.pub_subscribes_by_req_id.erase(s_it);
     }
@@ -1137,6 +1172,7 @@ namespace laps {
                                                           *this);
                 SubscribeTrack(key.second, sub_track_h);
 
+                state_.pub_subscribes_by_req_id[{ sub_track_h->GetRequestId().value(), key.second }] = sub_track_h;
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
 
                 if (attrs.new_group_request_id) {
