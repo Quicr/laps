@@ -240,14 +240,6 @@ namespace laps {
     {
         auto th = quicr::TrackHash(publish_attributes.track_full_name);
 
-        SPDLOG_INFO("Received publish from connection handle: {} using track alias: {} request_id: {}",
-                    connection_handle,
-                    th.track_fullname_hash,
-                    request_id);
-
-        quicr::PublishResponse publish_response;
-        publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
-
         // Build list of connections that have matching subscribe namespace for publish to be sent
         quicr::messages::PublishAttributes attrs;
         attrs.is_publisher_initiated = false;
@@ -257,6 +249,29 @@ namespace laps {
         attrs.track_alias = publish_attributes.track_alias;
         attrs.dynamic_groups = publish_attributes.dynamic_groups;
         attrs.forward = publish_attributes.forward;
+
+        /*
+        if (state_.pub_subscribes.contains({ th.track_fullname_hash, connection_handle })) {
+            SPDLOG_INFO(
+              "Received duplicate publish from connection handle: {} using track alias: {} request_id: {}, keepalive",
+              connection_handle,
+              th.track_fullname_hash,
+              request_id);
+
+            ResolvePublish(
+              connection_handle, request_id, attrs, { .reason_code = quicr::PublishResponse::ReasonCode::kNotSupported
+        });
+
+            return;
+        }*/
+
+        SPDLOG_INFO("Received publish from connection handle: {} using track alias: {} request_id: {}",
+                    connection_handle,
+                    th.track_fullname_hash,
+                    request_id);
+
+        quicr::PublishResponse publish_response;
+        publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
 
         // Add connection handles for subscribe namespace subscribers
         for (const auto& [tn, conn_ids] : state_.subscribes_namespaces) {
@@ -477,18 +492,53 @@ namespace laps {
 
         const auto s_it = state_.pub_subscribes_by_req_id.find({ request_id, connection_handle });
         if (s_it == state_.pub_subscribes_by_req_id.end()) {
-            SPDLOG_WARN("Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
-                        connection_handle,
-                        request_id);
+            SPDLOG_LOGGER_WARN(LOGGER,
+                               "Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
+                               connection_handle,
+                               request_id);
             return;
         }
 
         if (connection_handle)
             peer_manager_.ClientAnnounce(s_it->second->GetFullTrackName(), {}, true);
 
-        std::lock_guard<std::mutex> _(state_.state_mutex);
+        std::unique_lock<std::mutex> lock(state_.state_mutex);
 
         auto th = quicr::TrackHash(s_it->second->GetFullTrackName());
+
+        // Find subscribers that match this publisher and unsubscribe if all publishers are gone
+        std::vector<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>> unsub_list;
+        for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
+             ++it) {
+            if (it->first.first != th.track_fullname_hash) {
+                break;
+            }
+
+            auto p_it = it->second.publish_handlers.find(connection_handle);
+            if (p_it != it->second.publish_handlers.end()) {
+                UnbindPublisherTrack(
+                  it->first.second, connection_handle, p_it->second, it->second.publish_handlers.size() <= 1);
+                it->second.publish_handlers.erase(p_it);
+
+                if (it->second.publish_handlers.empty()) {
+                    SPDLOG_LOGGER_INFO(LOGGER,
+                                       "No publishers left, unsubscribe conn_id: {} track_alias: {} request_id: {}",
+                                       it->first.second,
+                                       it->second.track_alias,
+                                       it->second.request_id);
+
+                    unsub_list.emplace_back(connection_handle, request_id);
+                }
+            }
+        }
+
+        lock.unlock();
+        for (auto& [c_handle, req_id] : unsub_list) {
+            UnsubscribeReceived(c_handle, req_id);
+        }
+
+        lock.lock();
+
         state_.pub_subscribes.erase({ th.track_fullname_hash, connection_handle });
         state_.pub_subscribes_by_req_id.erase(s_it);
     }
@@ -674,7 +724,8 @@ namespace laps {
           attrs.priority,
           attrs.delivery_timeout.count());
 
-        if (const auto largest = GetLargestAvailable(track_full_name)) {
+        auto largest = GetLargestAvailable(track_full_name);
+        if (largest.has_value()) {
             ResolveSubscribe(
               connection_handle,
               request_id,
@@ -685,7 +736,7 @@ namespace laps {
               connection_handle, request_id, th.track_fullname_hash, { quicr::SubscribeResponse::ReasonCode::kOk });
         }
 
-        ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs);
+        ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs, largest);
     }
 
     std::optional<quicr::messages::Location> ClientManager::GetLargestAvailable(const quicr::FullTrackName& track_name)
@@ -1024,8 +1075,21 @@ namespace laps {
                                          uint64_t request_id,
                                          const quicr::TrackHash& th,
                                          const quicr::FullTrackName& track_full_name,
-                                         const quicr::messages::SubscribeAttributes& attrs)
+                                         const quicr::messages::SubscribeAttributes& attrs,
+                                         std::optional<quicr::messages::Location> largest)
     {
+
+        auto start_location = attrs.start_location;
+
+        if (attrs.filter_type == quicr::messages::FilterType::kNextGroupStart && largest.has_value()) {
+            start_location.group = largest->group + 1;
+            start_location.object = 0;
+        }
+
+        if (largest.has_value()) {
+            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe largest group: {} object: {}", largest->group, largest->object);
+        }
+
         if (connection_handle == 0 && request_id == 0) {
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Processing peer subscribe track alias: {} priority: {} new_group_request: {}",
@@ -1037,14 +1101,16 @@ namespace laps {
         else {
             SPDLOG_LOGGER_INFO(LOGGER,
                                "Processing subscribe connection handle: {} request_id: {} track alias: {} priority: "
-                               "{} ns: {} name: {} new_group_request: {}",
+                               "{} ns: {} name: {} new_group_request: {} start group: {} object: {}",
                                connection_handle,
                                request_id,
                                th.track_fullname_hash,
                                attrs.priority,
                                th.track_namespace_hash,
                                th.track_name_hash,
-                               attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
+                               attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1,
+                               start_location.group,
+                               start_location.object);
 
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
@@ -1059,7 +1125,8 @@ namespace laps {
                                                   attrs.priority,
                                                   static_cast<uint32_t>(attrs.delivery_timeout.count()),
                                                   attrs.group_order,
-                                                  {} });
+                                                  {},
+                                                  start_location });
 
             // Always send updates to peers to support subscribe updates and refresh group support
             quicr::messages::Subscribe sub(
@@ -1122,6 +1189,7 @@ namespace laps {
                                                           *this);
                 SubscribeTrack(key.second, sub_track_h);
 
+                state_.pub_subscribes_by_req_id[{ sub_track_h->GetRequestId().value(), key.second }] = sub_track_h;
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
 
                 if (attrs.new_group_request_id) {

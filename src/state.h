@@ -50,6 +50,7 @@ namespace laps {
             uint32_t object_ttl{ 0 };
             quicr::messages::GroupOrder group_order;
             std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> publish_handlers;
+            quicr::messages::Location start_location;
         };
 
         /**
