@@ -70,8 +70,11 @@ namespace laps {
                     continue;
                 }
 
-                sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
-                sub_info.publish_handlers[self_connection_handle]->pipeline_ = true;
+                if (object.headers.group_id >= sub_info.start_location.group &&
+                    object.headers.object_id >= sub_info.start_location.object) {
+                    sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
+                    sub_info.publish_handlers[self_connection_handle]->pipeline_ = true;
+                }
             }
         } catch (const std::exception& e) {
             SPDLOG_ERROR("Caught exception trying to publish. (error={})", e.what());

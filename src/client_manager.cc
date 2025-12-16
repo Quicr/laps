@@ -724,7 +724,8 @@ namespace laps {
           attrs.priority,
           attrs.delivery_timeout.count());
 
-        if (const auto largest = GetLargestAvailable(track_full_name)) {
+        auto largest = GetLargestAvailable(track_full_name);
+        if (largest.has_value()) {
             ResolveSubscribe(
               connection_handle,
               request_id,
@@ -735,7 +736,7 @@ namespace laps {
               connection_handle, request_id, th.track_fullname_hash, { quicr::SubscribeResponse::ReasonCode::kOk });
         }
 
-        ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs);
+        ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs, largest);
     }
 
     std::optional<quicr::messages::Location> ClientManager::GetLargestAvailable(const quicr::FullTrackName& track_name)
@@ -1074,8 +1075,21 @@ namespace laps {
                                          uint64_t request_id,
                                          const quicr::TrackHash& th,
                                          const quicr::FullTrackName& track_full_name,
-                                         const quicr::messages::SubscribeAttributes& attrs)
+                                         const quicr::messages::SubscribeAttributes& attrs,
+                                         std::optional<quicr::messages::Location> largest)
     {
+
+        auto start_location = attrs.start_location;
+
+        if (attrs.filter_type == quicr::messages::FilterType::kNextGroupStart && largest.has_value()) {
+            start_location.group = largest->group + 1;
+            start_location.object = 0;
+        }
+
+        if (largest.has_value()) {
+            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe largest group: {} object: {}", largest->group, largest->object);
+        }
+
         if (connection_handle == 0 && request_id == 0) {
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Processing peer subscribe track alias: {} priority: {} new_group_request: {}",
@@ -1087,14 +1101,16 @@ namespace laps {
         else {
             SPDLOG_LOGGER_INFO(LOGGER,
                                "Processing subscribe connection handle: {} request_id: {} track alias: {} priority: "
-                               "{} ns: {} name: {} new_group_request: {}",
+                               "{} ns: {} name: {} new_group_request: {} start group: {} object: {}",
                                connection_handle,
                                request_id,
                                th.track_fullname_hash,
                                attrs.priority,
                                th.track_namespace_hash,
                                th.track_name_hash,
-                               attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
+                               attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1,
+                               start_location.group,
+                               start_location.object);
 
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
@@ -1109,7 +1125,8 @@ namespace laps {
                                                   attrs.priority,
                                                   static_cast<uint32_t>(attrs.delivery_timeout.count()),
                                                   attrs.group_order,
-                                                  {} });
+                                                  {},
+                                                  start_location });
 
             // Always send updates to peers to support subscribe updates and refresh group support
             quicr::messages::Subscribe sub(
