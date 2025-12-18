@@ -927,7 +927,7 @@ namespace laps {
                     }
 
                     if (end->object && object.headers.group_id == end->group &&
-                        object.headers.object_id >= end->object) {
+                        object.headers.object_id > end->object) {
                         return;
                     }
 
