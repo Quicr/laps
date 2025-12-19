@@ -31,6 +31,7 @@ namespace laps {
 
         bool debug{ false }; /// Debug logging/code
         bool use_reset_wait_strategy{ false };
+        bool detached_subs{ false };
 
         std::string relay_id_;
         std::string tls_cert_filename_;
