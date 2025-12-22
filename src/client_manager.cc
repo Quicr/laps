@@ -532,12 +532,16 @@ namespace laps {
             }
         }
 
-        lock.unlock();
-        for (auto& [c_handle, req_id] : unsub_list) {
-            UnsubscribeReceived(c_handle, req_id);
-        }
+        // TODO: check if subscribe requests detatch or not
 
-        lock.lock();
+        if (!config_.detached_subs) {
+            lock.unlock();
+            for (auto& [c_handle, req_id] : unsub_list) {
+                UnsubscribeReceived(c_handle, req_id);
+            }
+
+            lock.lock();
+        }
 
         state_.pub_subscribes.erase({ th.track_fullname_hash, connection_handle });
         state_.pub_subscribes_by_req_id.erase(s_it);
@@ -810,11 +814,14 @@ namespace laps {
         }
 
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Fetch received conn_id: {} request_id: {} range start: {} end: {} largest_location: {}",
+                            "Fetch received conn_id: {} request_id: {} range start group: {} start object: {} end "
+                            "group: {} end object: {} largest_location: {}",
                             connection_handle,
                             request_id,
                             start.group,
+                            start.object,
                             end->group,
+                            end->object,
                             largest_location.has_value() ? largest_location.value().group : 0);
 
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
