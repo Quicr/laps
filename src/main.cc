@@ -82,12 +82,12 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     cfg.tls_cert_filename_ = cli_opts["cert"].as<std::string>();
     cfg.tls_key_filename_ = cli_opts["key"].as<std::string>();
 
-    if (!std::filesystem::exists(cfg.tls_cert_filename_)) {
+    if (!cfg.tls_cert_filename_.empty() && !std::filesystem::exists(cfg.tls_cert_filename_)) {
         SPDLOG_LOGGER_ERROR(cfg.logger_, "TLS certificate file not found: {}", cfg.tls_cert_filename_);
         exit(EXIT_FAILURE);
     }
 
-    if (!std::filesystem::exists(cfg.tls_key_filename_)) {
+    if (!cfg.tls_key_filename_.empty() && !std::filesystem::exists(cfg.tls_key_filename_)) {
         SPDLOG_LOGGER_ERROR(cfg.logger_, "TLS key file not found: {}", cfg.tls_key_filename_);
         exit(EXIT_FAILURE);
     }
