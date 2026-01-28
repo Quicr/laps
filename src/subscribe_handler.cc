@@ -64,14 +64,14 @@ namespace laps {
                     continue;
                 }
 
-                if (sub_info.publish_handlers[self_connection_handle]->pipeline_) {
+                if (sub_info.publish_handlers[self_connection_handle]->SentFirstObject(object_headers.group_id,
+                                                                                       object_headers.subgroup_id)) {
                     continue;
                 }
 
                 if (object.headers.group_id >= sub_info.start_location.group &&
                     object.headers.object_id >= sub_info.start_location.object) {
                     sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
-                    sub_info.publish_handlers[self_connection_handle]->pipeline_ = true;
                 }
             }
         } catch (const std::exception& e) {
@@ -86,9 +86,6 @@ namespace laps {
         is_datagram_ = false;
 
         auto& stream = streams_[stream_id];
-
-        // Pipeline forward immediately to subscribers/peers
-        // ForwardReceivedData(is_start, stream.current_group_id, stream.current_subgroup_id, data);
 
         // Process MoQ object from stream data
         if (is_start) {
@@ -294,9 +291,7 @@ namespace laps {
             }
 
             const auto pub_track_h = sub_info.publish_handlers[self_connection_handle];
-            if (is_new_stream) {
-                pub_track_h->pipeline_ = true;
-            } else if (not pub_track_h->pipeline_) {
+            if (not pub_track_h->SentFirstObject(group_id, subgroup_id)) {
                 continue;
             }
 
@@ -364,5 +359,4 @@ namespace laps {
     {
         is_from_peer_ = true;
     }
-
 }

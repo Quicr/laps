@@ -46,7 +46,7 @@ namespace laps {
                     break;
                 case Status::kPaused:
                     reason = "paused";
-                    pipeline_ = false;
+                    // TODO: Pause should likely clear out all subgroups in flight and start over fresh
                     break;
                 case Status::kSubscriptionUpdated:
                     reason = "subscription updated";
@@ -75,5 +75,18 @@ namespace laps {
                      metrics.quic.tx_object_duration_us.avg,
                      metrics.quic.tx_queue_discards,
                      metrics.quic.tx_queue_size.avg);
+    }
+
+    bool PublishTrackHandler::SentFirstObject(uint32_t group_id, uint32_t subgroup_id)
+    {
+        const auto group_it = stream_info_by_group_.find(group_id);
+        if (group_it != stream_info_by_group_.end()) {
+            const auto subgroup_it = group_it->second.find(subgroup_id);
+            if (subgroup_it != group_it->second.end()) {
+                return subgroup_it->second.last_object_id.has_value();
+            }
+        }
+
+        return false;
     }
 }
