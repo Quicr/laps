@@ -500,13 +500,6 @@ namespace laps::peering {
 
             data_header.Deserialize(*data);
 
-            // Set Any object if new stream
-            if (data_header.type == DataType::kNewStream) {
-                eflags.new_stream = true;
-                eflags.clear_tx_queue = true;
-                eflags.use_reset = true;
-            }
-
             // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
             manager_.ForwardPeerData(
               GetSessionId(), true, stream_id.has_value() ? *stream_id : 0, data_header, data, hdr_len, eflags);

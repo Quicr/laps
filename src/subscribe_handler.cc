@@ -38,12 +38,10 @@ namespace laps {
 
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
-        if (pending_new_group_request_id_.has_value() && current_group_id_ != object_headers.group_id) {
+        if (pending_new_group_request_id_.has_value() &&
+            (object_headers.group_id == 0 || object_headers.group_id > *pending_new_group_request_id_)) {
             pending_new_group_request_id_.reset();
         }
-
-        current_group_id_ = object_headers.group_id;
-        current_subgroup_id_ = object_headers.subgroup_id;
 
         if (auto group = cache_entry.Get(object_headers.group_id)) {
             group->insert(std::move(object));
@@ -84,65 +82,57 @@ namespace laps {
     {
         is_datagram_ = false;
 
-        if (stream_id > current_stream_id_) {
-            current_stream_id_ = stream_id;
-        } else if (stream_id < current_stream_id_) {
-            SPDLOG_DEBUG(
-              "Old stream data received, stream_id: {} is less than {}, ignoring", stream_id, current_stream_id_);
-            return;
-        }
+        auto& stream = streams_[stream_id];
 
         // Pipeline forward immediately to subscribers/peers
-        ForwardReceivedData(is_start, data);
+        ForwardReceivedData(is_start, stream.current_group_id, stream.current_subgroup_id, data);
 
         // Process MoQ object from stream data
-        if (is_start || not stream_buffer_.AnyHasValue()) {
-            stream_buffer_.Clear();
+        if (is_start) {
+            stream.buffer.Clear();
 
-            stream_buffer_.InitAny<quicr::messages::StreamHeaderSubGroup>();
-            stream_buffer_.Push(*data);
+            stream.buffer.InitAny<quicr::messages::StreamHeaderSubGroup>();
+            stream.buffer.Push(*data);
 
             // Expect that on initial start of stream, there is enough data to process the stream headers
 
-            auto& s_hdr = stream_buffer_.GetAny<quicr::messages::StreamHeaderSubGroup>();
-            if (not(stream_buffer_ >> s_hdr)) {
+            auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
+            if (not(stream.buffer >> s_hdr)) {
                 SPDLOG_ERROR("Not enough data to process new stream headers, stream is invalid");
                 // TODO: Add metrics to track this
                 return;
             }
         } else {
-            stream_buffer_.Push({ data->data(), data->size() });
+            stream.buffer.Push({ data->data(), data->size() });
         }
 
-        auto& s_hdr = stream_buffer_.GetAny<quicr::messages::StreamHeaderSubGroup>();
+        auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
 
         while (true) {
-            if (not stream_buffer_.AnyHasValueB()) {
-                stream_buffer_.InitAnyB<quicr::messages::StreamSubGroupObject>();
+            if (not stream.buffer.AnyHasValueB()) {
+                stream.buffer.InitAnyB<quicr::messages::StreamSubGroupObject>();
             }
 
-            auto& obj = stream_buffer_.GetAnyB<quicr::messages::StreamSubGroupObject>();
+            auto& obj = stream.buffer.GetAnyB<quicr::messages::StreamSubGroupObject>();
             obj.stream_type = s_hdr.type;
             const auto subgroup_properties = quicr::messages::StreamHeaderProperties(s_hdr.type);
-            if (stream_buffer_ >> obj) {
+            if (stream.buffer >> obj) {
                 subscribe_track_metrics_.objects_received++;
 
-                if (next_object_id_.has_value()) {
-                    if (current_group_id_ != s_hdr.group_id || current_subgroup_id_ != s_hdr.subgroup_id) {
-                        next_object_id_ = obj.object_delta;
+                if (stream.next_object_id.has_value()) {
+                    if (stream.current_group_id != s_hdr.group_id || stream.current_group_id != s_hdr.subgroup_id) {
+                        stream.next_object_id = obj.object_delta;
                     } else {
-                        *next_object_id_ += obj.object_delta;
+                        *stream.next_object_id += obj.object_delta;
                     }
                 } else {
-                    next_object_id_ = obj.object_delta;
+                    stream.next_object_id = obj.object_delta;
                 }
 
-                if (pending_new_group_request_id_.has_value() && current_group_id_ != s_hdr.group_id) {
+                if (pending_new_group_request_id_.has_value() &&
+                    (s_hdr.group_id == 0 || s_hdr.group_id > *pending_new_group_request_id_)) {
                     pending_new_group_request_id_.reset();
                 }
-
-                current_group_id_ = s_hdr.group_id;
-                current_subgroup_id_ = s_hdr.subgroup_id.value();
 
                 if (!s_hdr.subgroup_id.has_value()) {
                     if (subgroup_properties.subgroup_id_type != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
@@ -150,11 +140,11 @@ namespace laps {
                                      static_cast<std::uint8_t>(s_hdr.type));
                         return;
                     }
-                    s_hdr.subgroup_id = next_object_id_;
+                    s_hdr.subgroup_id = stream.next_object_id;
                 }
 
                 ObjectReceived({ s_hdr.group_id,
-                                 next_object_id_.value(),
+                                 stream.next_object_id.value(),
                                  s_hdr.subgroup_id.value(),
                                  obj.payload.size(),
                                  obj.object_status,
@@ -165,8 +155,8 @@ namespace laps {
                                  obj.immutable_extensions },
                                obj.payload);
 
-                *next_object_id_ += 1;
-                stream_buffer_.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+                *stream.next_object_id += 1;
+                stream.buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
             }
 
             break; // Not complete, wait for more data
@@ -177,16 +167,13 @@ namespace laps {
     {
         is_datagram_ = true;
 
-        // Pipeline forward immediately to subscribers/peers
-        ForwardReceivedData(false, data);
-
-        // Process MoQ object from stream data
-        stream_buffer_.Clear();
-
-        stream_buffer_.Push(*data);
+        dgram_buffer_.Clear();
+        dgram_buffer_.Push(*data);
 
         quicr::messages::ObjectDatagram msg;
-        if (stream_buffer_ >> msg) {
+        if (dgram_buffer_ >> msg) {
+            ForwardReceivedData(false, msg.group_id, 0, data);
+
             subscribe_track_metrics_.objects_received++;
             subscribe_track_metrics_.bytes_received += msg.payload.size();
             ObjectReceived(
@@ -206,6 +193,8 @@ namespace laps {
     }
 
     void SubscribeTrackHandler::ForwardReceivedData(bool is_new_stream,
+                                                    uint64_t group_id,
+                                                    uint64_t subgroup_id,
                                                     std::shared_ptr<const std::vector<uint8_t>> data)
     {
         auto self_connection_handle = GetConnectionId();
@@ -268,13 +257,14 @@ namespace laps {
             }
 
             const auto pub_track_h = sub_info.publish_handlers[self_connection_handle];
-            if (is_new_stream && pub_track_h->SentFirstObject()) {
+            if (is_new_stream) {
                 pub_track_h->pipeline_ = true;
             } else if (not pub_track_h->pipeline_) {
                 continue;
             }
 
-            sub_info.publish_handlers[self_connection_handle]->ForwardPublishedData(is_new_stream, data);
+            sub_info.publish_handlers[self_connection_handle]->ForwardPublishedData(
+              is_new_stream, group_id, subgroup_id, data);
         }
     }
 

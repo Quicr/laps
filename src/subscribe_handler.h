@@ -33,7 +33,6 @@ namespace laps {
         void SetFromPeer();
 
         std::optional<uint64_t> GetPendingNewRquestId() { return pending_new_group_request_id_; };
-        uint64_t GetLatestGroupId() { return current_group_id_; }
 
         struct PublisherLastUpdateInfo
         {
@@ -41,14 +40,14 @@ namespace laps {
         } pub_last_update_info_;
 
       private:
-        void ForwardReceivedData(bool is_new_stream, std::shared_ptr<const std::vector<uint8_t>> data);
+        void ForwardReceivedData(bool is_new_stream,
+                                 uint64_t group_id,
+                                 uint64_t subgroup_id,
+                                 std::shared_ptr<const std::vector<uint8_t>> data);
 
         ClientManager& server_;
 
-        uint64_t current_stream_id_{ 0 };
-
         bool is_datagram_{ false };
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
-        quicr::StreamBuffer<uint8_t> stream_buffer_;
     };
 } // namespace laps
