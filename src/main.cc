@@ -5,6 +5,7 @@
 
 #include <condition_variable>
 #include <cxxopts.hpp>
+#include <filesystem>
 #include <set>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -80,6 +81,17 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     cfg.debug = cli_opts["debug"].as<bool>();
     cfg.tls_cert_filename_ = cli_opts["cert"].as<std::string>();
     cfg.tls_key_filename_ = cli_opts["key"].as<std::string>();
+
+    if (!cfg.tls_cert_filename_.empty() && !std::filesystem::exists(cfg.tls_cert_filename_)) {
+        SPDLOG_LOGGER_ERROR(cfg.logger_, "TLS certificate file not found: {}", cfg.tls_cert_filename_);
+        exit(EXIT_FAILURE);
+    }
+
+    if (!cfg.tls_key_filename_.empty() && !std::filesystem::exists(cfg.tls_key_filename_)) {
+        SPDLOG_LOGGER_ERROR(cfg.logger_, "TLS key file not found: {}", cfg.tls_key_filename_);
+        exit(EXIT_FAILURE);
+    }
+
     cfg.peering.listening_port = cli_opts["peer_port"].as<uint16_t>();
     cfg.object_ttl_ = cli_opts["object_ttl"].as<uint32_t>();
     cfg.sub_dampen_ms_ = cli_opts["sub_dampen_ms"].as<uint32_t>();
