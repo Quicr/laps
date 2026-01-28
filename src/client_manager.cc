@@ -1027,10 +1027,9 @@ namespace laps {
                 break;
             }
 
-            if (!(it->second->GetPendingNewRquestId().has_value() && *it->second->GetPendingNewRquestId() == 0 &&
-                  group_id == 0) &&
-                (group_id == 0 || (it->second->GetPendingNewRquestId().has_value() &&
-                                   it->second->GetPendingNewRquestId().value() < group_id))) {
+            if (!it->second->GetPendingNewRquestId().has_value() ||
+                (group_id == 0 && *it->second->GetPendingNewRquestId()) ||
+                *it->second->GetPendingNewRquestId() < group_id) {
 
                 it->second->SetNewGroupRequestId(group_id);
                 DampenOrUpdateTrackSubscription(it->second, true);

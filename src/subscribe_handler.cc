@@ -154,7 +154,7 @@ namespace laps {
                 subscribe_track_metrics_.objects_received++;
 
                 if (stream.next_object_id.has_value()) {
-                    if (stream.current_group_id != s_hdr.group_id || stream.current_group_id != s_hdr.subgroup_id) {
+                    if (stream.current_group_id != s_hdr.group_id || stream.current_subgroup_id != s_hdr.subgroup_id) {
                         stream.next_object_id = obj.object_delta;
                     } else {
                         *stream.next_object_id += obj.object_delta;
