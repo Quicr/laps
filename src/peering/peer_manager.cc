@@ -441,7 +441,7 @@ namespace laps::peering {
                 entry.stream_id = stream_id;
 
                 // Update SNS_ID if new stream header included or if datagram (both have sns_id)
-                if (eflags.new_stream || eflags.use_reliable == false) {
+                if (is_new_stream || eflags.use_reliable == false) {
                     auto sns_id_bytes = BytesOf(entry.out_sns_id);
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data_out.begin() + 2);
                 }
@@ -494,9 +494,6 @@ namespace laps::peering {
             case DataType::kNewStream:
                 set_sns_id = true;
                 eflags.use_reliable = true;
-                eflags.new_stream = true;
-                eflags.clear_tx_queue = true;
-                eflags.use_reset = true;
                 break;
         }
 
