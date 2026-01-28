@@ -163,6 +163,9 @@ namespace laps {
                     stream.next_object_id = obj.object_delta;
                 }
 
+                stream.current_group_id = s_hdr.group_id;
+                stream.current_subgroup_id = s_hdr.subgroup_id.value();
+
                 if (pending_new_group_request_id_.has_value() &&
                     (s_hdr.group_id == 0 || s_hdr.group_id > *pending_new_group_request_id_)) {
                     pending_new_group_request_id_.reset();
