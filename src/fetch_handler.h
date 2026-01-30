@@ -17,10 +17,8 @@ namespace laps {
                           const quicr::FullTrackName& full_track_name,
                           quicr::messages::ObjectPriority priority,
                           quicr::messages::GroupOrder group_order,
-                          quicr::messages::GroupId start_group,
-                          quicr::messages::GroupId end_group,
-                          quicr::messages::GroupId start_object,
-                          quicr::messages::GroupId end_object);
+                          const quicr::messages::Location& start_location,
+                          const quicr::messages::FetchEndLocation& end_location);
 
       public:
         static std::shared_ptr<FetchTrackHandler> Create(
@@ -28,19 +26,15 @@ namespace laps {
           const quicr::FullTrackName& full_track_name,
           quicr::messages::ObjectPriority priority,
           quicr::messages::GroupOrder group_order,
-          quicr::messages::GroupId start_group,
-          quicr::messages::GroupId end_group,
-          quicr::messages::GroupId start_object,
-          quicr::messages::GroupId end_object)
+          const quicr::messages::Location& start_location,
+          const quicr::messages::FetchEndLocation& end_location)
         {
             return std::shared_ptr<FetchTrackHandler>(new FetchTrackHandler(publish_fetch_handler,
                                                                             full_track_name,
                                                                             priority,
                                                                             group_order,
-                                                                            start_group,
-                                                                            end_group,
-                                                                            start_object,
-                                                                            end_object));
+                                                                            start_location,
+                                                                            end_location));
         }
 
         void StatusChanged(Status status) override;

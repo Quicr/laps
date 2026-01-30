@@ -11,17 +11,9 @@ namespace laps {
                                          const quicr::FullTrackName& full_track_name,
                                          quicr::messages::ObjectPriority priority,
                                          quicr::messages::GroupOrder group_order,
-                                         quicr::messages::GroupId start_group,
-                                         quicr::messages::GroupId end_group,
-                                         quicr::messages::GroupId start_object,
-                                         quicr::messages::GroupId end_object)
-      : quicr::FetchTrackHandler(full_track_name,
-                                 priority,
-                                 group_order,
-                                 start_group,
-                                 end_group,
-                                 start_object,
-                                 end_object)
+                                         const quicr::messages::Location& start_location,
+                                         const quicr::messages::FetchEndLocation& end_location)
+      : quicr::FetchTrackHandler(full_track_name, priority, group_order, start_location, end_location)
       , publish_fetch_handler_(std::move(publish_fetch_handler))
     {
     }

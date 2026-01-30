@@ -770,8 +770,8 @@ namespace laps {
                                       const quicr::FullTrackName& track_full_name,
                                       quicr::messages::SubscriberPriority priority,
                                       quicr::messages::GroupOrder group_order,
-                                      quicr::messages::Location start,
-                                      std::optional<quicr::messages::Location> end)
+                                      const quicr::messages::Location& start,
+                                      const quicr::messages::FetchEndLocation& end)
     {
         auto reason_code = quicr::FetchResponse::ReasonCode::kOk;
         std::optional<quicr::messages::Location> largest_location = std::nullopt;
@@ -791,12 +791,11 @@ namespace laps {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
         }
 
-        if (start.group > end->group || largest_location.value().group < start.group) {
+        if (start.group > end.group || largest_location.value().group < start.group) {
             reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
         }
 
-        const auto& cache_entries =
-          cache_entry_it->second.Get(start.group, end->group != 0 ? end->group : cache_entry_it->second.Size());
+        const auto& cache_entries = cache_entry_it->second.Get(start.group, end.group);
 
         if (cache_entries.empty()) {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
@@ -809,10 +808,6 @@ namespace laps {
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
 
-        if (!end.has_value()) {
-            end = { 0, 0 };
-        }
-
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Fetch received conn_id: {} request_id: {} range start group: {} start object: {} end "
                             "group: {} end object: {} largest_location: {}",
@@ -820,8 +815,8 @@ namespace laps {
                             request_id,
                             start.group,
                             start.object,
-                            end->group,
-                            end->object,
+                            end.group,
+                            end.object.has_value() ? std::to_string(*end.object) : "to_end",
                             largest_location.has_value() ? largest_location.value().group : 0);
 
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
@@ -831,14 +826,8 @@ namespace laps {
 
             if (rc != quicr::FetchResponse::ReasonCode::kOk) {
                 // Try to see if original publisher can provide the data
-                auto track_handler = FetchTrackHandler::Create(pub_fetch_h,
-                                                               track_full_name,
-                                                               priority,
-                                                               group_order,
-                                                               start.group,
-                                                               end->group,
-                                                               start.object,
-                                                               end->object);
+                auto track_handler =
+                  FetchTrackHandler::Create(pub_fetch_h, track_full_name, priority, group_order, start, end);
 
                 quicr::ConnectionHandle pub_connection_handle = 0;
 
@@ -933,8 +922,15 @@ namespace laps {
                         return;
                     }
 
-                    if (end->object && object.headers.group_id == end->group &&
-                        object.headers.object_id >= end->object) {
+                    // When intra-group, skip any objects prior to start.
+                    if (start.group == end.group && object.headers.group_id == start.group &&
+                        object.headers.object_id < start.object) {
+                        continue;
+                    }
+
+                    // Are we done? (end location is inclusive)
+                    if (end.object.has_value() && object.headers.group_id == end.group &&
+                        object.headers.object_id > *end.object) {
                         return;
                     }
 
@@ -972,9 +968,10 @@ namespace laps {
                                              const quicr::messages::JoiningFetchAttributes& attributes)
     {
         uint64_t joining_start = 0;
+        const auto largest = GetLargestAvailable(track_full_name);
 
         if (attributes.relative) {
-            if (const auto largest = GetLargestAvailable(track_full_name)) {
+            if (largest.has_value()) {
                 if (largest->group > attributes.joining_start)
                     joining_start = largest->group - attributes.joining_start;
             }
@@ -982,13 +979,18 @@ namespace laps {
             joining_start = attributes.joining_start;
         }
 
+        // For joining fetch, fetch from joining_start to the largest available group
+        const quicr::messages::FetchEndLocation end_location = {
+            largest.has_value() ? largest->group : joining_start, std::nullopt
+        };
+
         FetchReceived(connection_handle,
                       request_id,
                       track_full_name,
                       attributes.priority,
                       attributes.group_order,
                       { joining_start, 0 },
-                      std::nullopt);
+                      end_location);
     }
 
     void ClientManager::FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)
