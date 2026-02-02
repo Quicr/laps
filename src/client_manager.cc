@@ -771,7 +771,7 @@ namespace laps {
                                       quicr::messages::SubscriberPriority priority,
                                       quicr::messages::GroupOrder group_order,
                                       quicr::messages::Location start,
-                                      std::optional<quicr::messages::Location> end)
+                                      std::optional<quicr::messages::FetchEndLocation> end)
     {
         auto reason_code = quicr::FetchResponse::ReasonCode::kOk;
         std::optional<quicr::messages::Location> largest_location = std::nullopt;
@@ -821,7 +821,7 @@ namespace laps {
                             start.group,
                             start.object,
                             end->group,
-                            end->object,
+                            end->object.value_or(0),
                             largest_location.has_value() ? largest_location.value().group : 0);
 
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
@@ -835,10 +835,8 @@ namespace laps {
                                                                track_full_name,
                                                                priority,
                                                                group_order,
-                                                               start.group,
-                                                               end->group,
-                                                               start.object,
-                                                               end->object);
+                                                               { .group = start.group, .object = start.object },
+                                                               { .group = end->group, .object = end->object });
 
                 quicr::ConnectionHandle pub_connection_handle = 0;
 
