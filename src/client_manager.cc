@@ -936,7 +936,7 @@ namespace laps {
                     }
 
                     // Stop at end object, unless end object is zero
-                    if (end->object.has_value() && object.headers.group_id == end->group && *end->object != 0 &&
+                    if (end->object.has_value() && object.headers.group_id == end->group &&
                         object.headers.object_id > *end->object) {
                         return;
                     }
