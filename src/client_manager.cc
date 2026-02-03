@@ -795,8 +795,7 @@ namespace laps {
             reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
         }
 
-        const auto& cache_entries =
-          cache_entry_it->second.Get(start.group, end->group != 0 ? end->group : cache_entry_it->second.Size());
+        const auto& cache_entries = cache_entry_it->second.Get(start.group, end->group);
 
         if (cache_entries.empty()) {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
@@ -931,12 +930,19 @@ namespace laps {
                         return;
                     }
 
-                    if (end->object && object.headers.group_id == end->group &&
-                        object.headers.object_id >= end->object) {
+                    // Start at start object id
+                    if (start.group == object.headers.group_id && start.object > object.headers.object_id) {
+                        continue;
+                    }
+
+                    // Stop at end object, unless end object is zero
+                    if (end->object.has_value() && object.headers.group_id == end->group && *end->object != 0 &&
+                        object.headers.object_id > *end->object) {
                         return;
                     }
 
-                    SPDLOG_TRACE("Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
+                    SPDLOG_LOGGER_TRACE(
+                      LOGGER, "Fetching group: {} object: {}", object.headers.group_id, object.headers.object_id);
 
                     try {
                         pub_fetch_h->PublishObject(object.headers, object.data);
