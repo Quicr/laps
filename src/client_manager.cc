@@ -771,7 +771,7 @@ namespace laps {
                                       quicr::messages::SubscriberPriority priority,
                                       quicr::messages::GroupOrder group_order,
                                       quicr::messages::Location start,
-                                      std::optional<quicr::messages::FetchEndLocation> end)
+                                      quicr::messages::FetchEndLocation end)
     {
         auto reason_code = quicr::FetchResponse::ReasonCode::kOk;
         std::optional<quicr::messages::Location> largest_location = std::nullopt;
@@ -791,11 +791,11 @@ namespace laps {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
         }
 
-        if (start.group > end->group || largest_location.value().group < start.group) {
+        if (start.group > end.group || largest_location.value().group < start.group) {
             reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
         }
 
-        const auto& cache_entries = cache_entry_it->second.Get(start.group, end->group);
+        const auto& cache_entries = cache_entry_it->second.Get(start.group, end.group);
 
         if (cache_entries.empty()) {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
@@ -808,10 +808,6 @@ namespace laps {
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
 
-        if (!end.has_value()) {
-            end = { 0, 0 };
-        }
-
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Fetch received conn_id: {} request_id: {} range start group: {} start object: {} end "
                             "group: {} end object: {} largest_location: {}",
@@ -819,8 +815,8 @@ namespace laps {
                             request_id,
                             start.group,
                             start.object,
-                            end->group,
-                            end->object.value_or(0),
+                            end.group,
+                            end.object.value_or(0),
                             largest_location.has_value() ? largest_location.value().group : 0);
 
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
@@ -835,7 +831,7 @@ namespace laps {
                                                                priority,
                                                                group_order,
                                                                { .group = start.group, .object = start.object },
-                                                               { .group = end->group, .object = end->object });
+                                                               { .group = end.group, .object = end.object });
 
                 quicr::ConnectionHandle pub_connection_handle = 0;
 
@@ -936,8 +932,8 @@ namespace laps {
                     }
 
                     // Stop at end object, unless end object is zero
-                    if (end->object.has_value() && object.headers.group_id == end->group &&
-                        object.headers.object_id > *end->object) {
+                    if (end.object.has_value() && object.headers.group_id == end.group &&
+                        object.headers.object_id > *end.object) {
                         return;
                     }
 
@@ -976,11 +972,12 @@ namespace laps {
                                              const quicr::messages::JoiningFetchAttributes& attributes)
     {
         uint64_t joining_start = 0;
+        std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
         if (attributes.relative) {
-            if (const auto largest = GetLargestAvailable(track_full_name)) {
-                if (largest->group > attributes.joining_start)
-                    joining_start = largest->group - attributes.joining_start;
+            if (largest_location.has_value()) {
+                if (largest_location->group > attributes.joining_start)
+                    joining_start = largest_location->group - attributes.joining_start;
             }
         } else {
             joining_start = attributes.joining_start;
@@ -992,7 +989,7 @@ namespace laps {
                       attributes.priority,
                       attributes.group_order,
                       { joining_start, 0 },
-                      std::nullopt);
+                      { largest_location->group, std::nullopt });
     }
 
     void ClientManager::FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)

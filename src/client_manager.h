@@ -135,7 +135,7 @@ namespace laps {
                            quicr::messages::SubscriberPriority priority,
                            quicr::messages::GroupOrder group_order,
                            quicr::messages::Location start,
-                           std::optional<quicr::messages::FetchEndLocation> end);
+                           quicr::messages::FetchEndLocation end);
 
         State& state_;
         const Config& config_;
