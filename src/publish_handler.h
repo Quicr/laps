@@ -22,14 +22,8 @@ namespace laps {
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
 
-        bool pipeline_{ false }; // True indicates using pipeline forwarding, false is object forwarding
-
-        /**
-         * @brief Check if the first object has been sent or not
-         *
-         * @return True if one objet has been sent, False if no objects yet
-         */
-        constexpr bool SentFirstObject() const noexcept { return latest_object_id_.has_value(); }
+        // note: pipelining starts after the first object
+        bool SentFirstObject(uint32_t group_id, uint32_t subgroup_id);
 
       private:
         ClientManager& server_;

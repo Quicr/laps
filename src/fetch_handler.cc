@@ -11,17 +11,9 @@ namespace laps {
                                          const quicr::FullTrackName& full_track_name,
                                          quicr::messages::ObjectPriority priority,
                                          quicr::messages::GroupOrder group_order,
-                                         quicr::messages::GroupId start_group,
-                                         quicr::messages::GroupId end_group,
-                                         quicr::messages::GroupId start_object,
-                                         quicr::messages::GroupId end_object)
-      : quicr::FetchTrackHandler(full_track_name,
-                                 priority,
-                                 group_order,
-                                 start_group,
-                                 end_group,
-                                 start_object,
-                                 end_object)
+                                         const quicr::messages::Location& start_location,
+                                         const quicr::messages::FetchEndLocation& end_location)
+      : quicr::FetchTrackHandler(full_track_name, priority, group_order, start_location, end_location)
       , publish_fetch_handler_(std::move(publish_fetch_handler))
     {
     }
@@ -31,32 +23,32 @@ namespace laps {
                                            std::shared_ptr<const std::vector<uint8_t>> data)
     {
         subscribe_track_metrics_.bytes_received += data->size();
+        auto& stream = streams_[stream_id];
 
         if (is_start) {
-            // Process the fetch header and update it so that it works for the requestor
-            stream_buffer_.Clear();
+            stream.buffer.Clear();
 
-            stream_buffer_.InitAny<quicr::messages::FetchHeader>();
-            stream_buffer_.Push(*data);
+            stream.buffer.InitAny<quicr::messages::FetchHeader>();
+            stream.buffer.Push(*data);
 
             // Expect that on initial start of stream, there is enough data to process the stream headers
 
-            auto f_hdr = stream_buffer_.GetAny<quicr::messages::FetchHeader>();
-            if (not(stream_buffer_ >> f_hdr)) {
+            auto f_hdr = stream.buffer.GetAny<quicr::messages::FetchHeader>();
+            if (not(stream.buffer >> f_hdr)) {
                 SPDLOG_ERROR("Not enough data to process new stream headers, stream is invalid len: {} / {}",
-                             stream_buffer_.Size(),
+                             stream.buffer.Size(),
                              data->size());
                 // TODO: Add metrics to track this
                 return;
             }
 
-            size_t header_size = data->size() - stream_buffer_.Size();
+            size_t header_size = data->size() - stream.buffer.Size();
 
             SPDLOG_DEBUG("Fetch header added in rid: {} out rid: {} data sz: {} sbuf_size: {} header size: {}",
                          f_hdr.request_id,
                          *publish_fetch_handler_->GetRequestId(),
                          data->size(),
-                         stream_buffer_.Size(),
+                         stream.buffer.Size(),
                          header_size);
 
             f_hdr.request_id = *publish_fetch_handler_->GetRequestId();
@@ -65,12 +57,12 @@ namespace laps {
 
             if (header_size < data->size()) {
                 bytes->insert(bytes->end(), data->begin() + header_size, data->end());
-                stream_buffer_.Pop(stream_buffer_.Size());
+                stream.buffer.Pop(stream.buffer.Size());
             }
 
-            publish_fetch_handler_->ForwardPublishedData(true, std::move(bytes));
+            publish_fetch_handler_->ForwardPublishedData(true, 0, 0, std::move(bytes));
         } else {
-            publish_fetch_handler_->ForwardPublishedData(false, std::move(data));
+            publish_fetch_handler_->ForwardPublishedData(false, 0, 0, std::move(data));
         }
     }
 
