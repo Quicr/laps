@@ -338,6 +338,7 @@ namespace laps {
     }
 
     void ClientManager::SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                                   quicr::DataContextId data_ctx_id,
                                                    const quicr::TrackNamespace& prefix_namespace,
                                                    const quicr::SubscribeNamespaceAttributes& attributes)
     {
@@ -399,10 +400,11 @@ namespace laps {
                                                                quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
                                                              .tracks = std::move(matched_tracks),
                                                              .namespaces = std::move(matched_ns) };
-        ResolveSubscribeNamespace(connection_handle, attributes.request_id, prefix_namespace, response);
+        ResolveSubscribeNamespace(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
     }
 
     void ClientManager::UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                                     [[maybe_unused]] quicr::DataContextId data_ctx_id,
                                                      const quicr::TrackNamespace& prefix_namespace)
     {
         auto it = state_.subscribes_namespaces.find(prefix_namespace);

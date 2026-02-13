@@ -59,10 +59,12 @@ namespace laps {
                                    const ConnectionRemoteInfo& remote) override;
 
         void SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                        quicr::DataContextId data_ctx_id,
                                         const quicr::TrackNamespace& prefix_namespace,
                                         const quicr::SubscribeNamespaceAttributes& attributes) override;
 
         void UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                          quicr::DataContextId data_ctx_id,
                                           const quicr::TrackNamespace& prefix_namespace) override;
 
         std::vector<quicr::ConnectionHandle> PublishNamespaceDoneReceived(
