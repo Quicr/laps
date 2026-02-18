@@ -267,6 +267,7 @@ namespace laps {
         attrs.track_alias = publish_attributes.track_alias;
         attrs.dynamic_groups = publish_attributes.dynamic_groups;
         attrs.forward = publish_attributes.forward;
+        attrs.filter_type = publish_attributes.filter_type;
 
         /*
         if (state_.pub_subscribes.contains({ th.track_fullname_hash, connection_handle })) {
@@ -283,10 +284,11 @@ namespace laps {
             return;
         }*/
 
-        SPDLOG_INFO("Received publish from connection handle: {} using track alias: {} request_id: {}",
-                    connection_handle,
-                    th.track_fullname_hash,
-                    request_id);
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "Received publish from connection handle: {} using track alias: {} request_id: {}",
+                           connection_handle,
+                           th.track_fullname_hash,
+                           request_id);
 
         quicr::PublishResponse publish_response;
         publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
@@ -337,9 +339,10 @@ namespace laps {
             }
 
             if (not has_subs) {
-                SPDLOG_INFO("No subscribers, pause publish connection handle: {0} using track alias: {1}",
-                            connection_handle,
-                            th.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "No subscribers, pause publish connection handle: {0} using track alias: {1}",
+                                   connection_handle,
+                                   th.track_fullname_hash);
 
                 sub_track_handler->Pause();
             }
