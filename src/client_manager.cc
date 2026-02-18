@@ -148,7 +148,7 @@ namespace laps {
                                                  const quicr::PublishNamespaceAttributes& attrs)
     {
 
-        auto [req_it, _] = state_.requests.try_emplace({ attrs.request_id, connection_handle },
+        auto [req_it, _] = state_.requests.try_emplace({ connection_handle, attrs.request_id },
                                                        State::RequestTransaction::Type::kPublishNamespace,
                                                        State::RequestTransaction::State::kOk);
         req_it->second.related_data.emplace<quicr::TrackNamespace>(track_namespace);
@@ -1158,7 +1158,7 @@ namespace laps {
             // Always send updates to peers to support subscribe updates and refresh group support
             auto params =
               quicr::messages::Parameters{}
-                .Add(quicr::messages::ParameterType::kSubscriberPriority, 1)
+                .Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority)
                 .Add(quicr::messages::ParameterType::kGroupOrder, attrs.group_order)
                 .Add(quicr::messages::ParameterType::kSubscriptionFilter, quicr::messages::FilterType::kLargestObject);
 
