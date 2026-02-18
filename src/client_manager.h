@@ -69,7 +69,7 @@ namespace laps {
 
         std::vector<quicr::ConnectionHandle> PublishNamespaceDoneReceived(
           quicr::ConnectionHandle connection_handle,
-          const quicr::TrackNamespace& track_namespace) override;
+          quicr::messages::RequestID request_id) override;
 
         void PublishNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                       const quicr::TrackNamespace& track_namespace,
@@ -92,8 +92,7 @@ namespace laps {
 
         void TrackStatusReceived(quicr::ConnectionHandle connection_handle,
                                  uint64_t request_id,
-                                 const quicr::FullTrackName& track_full_name,
-                                 const quicr::messages::SubscribeAttributes& subscribe_attributes) override;
+                                 const quicr::FullTrackName& track_full_name) override;
 
         std::optional<quicr::messages::Location> GetLargestAvailable(const quicr::FullTrackName& track_name);
 
@@ -134,7 +133,7 @@ namespace laps {
         void FetchReceived(quicr::ConnectionHandle connection_handle,
                            uint64_t request_id,
                            const quicr::FullTrackName& track_full_name,
-                           quicr::messages::SubscriberPriority priority,
+                           uint8_t priority,
                            quicr::messages::GroupOrder group_order,
                            quicr::messages::Location start,
                            quicr::messages::FetchEndLocation end);

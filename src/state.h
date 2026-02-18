@@ -14,6 +14,34 @@ namespace laps {
         std::mutex state_mutex;
 
         /**
+         * Request Transaction struct to state track the active request
+         */
+        struct RequestTransaction
+        {
+            enum class Type : uint8_t
+            {
+                kSubscribeNamespace,
+                kPublishNamespace,
+            };
+
+            enum class State : uint8_t
+            {
+                kOk,
+                kPendingOk,
+                kError,
+            };
+
+            Type type;             ///< Type of request
+            State state;           ///< State of the request
+            std::any related_data; ///< Related data based on the type
+        };
+
+        /**
+         * Active requests by connection handle and request ID
+         */
+        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, RequestTransaction> requests;
+
+        /**
          * Map of subscribes (e.g., track alias) matched to a publish namespace
          *
          * @example
