@@ -113,9 +113,9 @@ namespace laps {
                 updated_data->insert(
                   updated_data->end(), data->begin() + (data->size() - stream.buffer.Size()), data->end());
 
-                ForwardReceivedData(is_start, stream.current_group_id, stream.current_subgroup_id, updated_data);
+                ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), updated_data);
             } else {
-                ForwardReceivedData(is_start, stream.current_group_id, stream.current_subgroup_id, data);
+                ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), data);
             }
 
         } else if (data) {
