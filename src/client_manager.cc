@@ -35,14 +35,27 @@ namespace laps {
 
     std::vector<quicr::ConnectionHandle> ClientManager::PublishNamespaceDoneReceived(
       quicr::ConnectionHandle connection_handle,
-      const quicr::TrackNamespace& track_namespace)
+      uint64_t request_id)
     {
-        auto th = quicr::TrackHash({ track_namespace, {} });
+
+        auto it = state_.requests.find({ connection_handle, request_id });
+        if (it == state_.requests.end()) {
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER,
+              "Received publish namespace done from connection handle: {0} request_id: {1} but request Id not in state",
+              connection_handle,
+              request_id);
+
+            return {};
+        }
 
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Received publish namespace done from connection handle: {0} for namespace hash: {1}",
+                            "Received publish namespace done from connection handle: {0} request_id: {1}",
                             connection_handle,
-                            th.track_namespace_hash);
+                            request_id);
+
+        auto& track_namespace = std::any_cast<quicr::TrackNamespace&>(it->second.related_data);
+        auto th = quicr::TrackHash({ track_namespace, {} });
 
         // TODO: Fix O(prefix namespaces) matching
         std::vector<quicr::ConnectionHandle> sub_namespace_connections;
@@ -61,7 +74,7 @@ namespace laps {
             }
         }
 
-        ResolvePublishNamespaceDone(connection_handle, track_namespace, sub_namespace_connections);
+        ResolvePublishNamespaceDone(connection_handle, request_id, sub_namespace_connections);
 
         for (auto track_alias : state_.namespace_active[{ track_namespace, connection_handle }]) {
             auto ptd = state_.pub_subscribes[{ track_alias, connection_handle }];
@@ -134,6 +147,11 @@ namespace laps {
                                                  const quicr::TrackNamespace& track_namespace,
                                                  const quicr::PublishNamespaceAttributes& attrs)
     {
+
+        auto [req_it, _] = state_.requests.try_emplace({ connection_handle, attrs.request_id },
+                                                       State::RequestTransaction::Type::kPublishNamespace,
+                                                       State::RequestTransaction::State::kOk);
+        req_it->second.related_data.emplace<quicr::TrackNamespace>(track_namespace);
 
         auto subscribe_to_publisher = [&] {
             auto& anno_tracks = state_.namespace_active[{ track_namespace, connection_handle }];
@@ -249,6 +267,7 @@ namespace laps {
         attrs.track_alias = publish_attributes.track_alias;
         attrs.dynamic_groups = publish_attributes.dynamic_groups;
         attrs.forward = publish_attributes.forward;
+        attrs.filter_type = publish_attributes.filter_type;
 
         /*
         if (state_.pub_subscribes.contains({ th.track_fullname_hash, connection_handle })) {
@@ -265,10 +284,11 @@ namespace laps {
             return;
         }*/
 
-        SPDLOG_INFO("Received publish from connection handle: {} using track alias: {} request_id: {}",
-                    connection_handle,
-                    th.track_fullname_hash,
-                    request_id);
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "Received publish from connection handle: {} using track alias: {} request_id: {}",
+                           connection_handle,
+                           th.track_fullname_hash,
+                           request_id);
 
         quicr::PublishResponse publish_response;
         publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
@@ -319,9 +339,10 @@ namespace laps {
             }
 
             if (not has_subs) {
-                SPDLOG_INFO("No subscribers, pause publish connection handle: {0} using track alias: {1}",
-                            connection_handle,
-                            th.track_fullname_hash);
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "No subscribers, pause publish connection handle: {0} using track alias: {1}",
+                                   connection_handle,
+                                   th.track_fullname_hash);
 
                 sub_track_handler->Pause();
             }
@@ -338,6 +359,7 @@ namespace laps {
     }
 
     void ClientManager::SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                                   quicr::DataContextId data_ctx_id,
                                                    const quicr::TrackNamespace& prefix_namespace,
                                                    const quicr::SubscribeNamespaceAttributes& attributes)
     {
@@ -379,7 +401,8 @@ namespace laps {
                 publish_attributes.track_alias = ta_conn.first;
                 publish_attributes.priority = handler->GetPriority(); // Original priority?
                 publish_attributes.group_order = handler->GetGroupOrder();
-                publish_attributes.delivery_timeout = handler->GetDeliveryTimeout();
+                publish_attributes.delivery_timeout =
+                  handler->GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl));
                 publish_attributes.filter_type = handler->GetFilterType();
                 publish_attributes.forward = true;
                 publish_attributes.new_group_request_id = std::nullopt;
@@ -399,10 +422,11 @@ namespace laps {
                                                                quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
                                                              .tracks = std::move(matched_tracks),
                                                              .namespaces = std::move(matched_ns) };
-        ResolveSubscribeNamespace(connection_handle, attributes.request_id, prefix_namespace, response);
+        ResolveSubscribeNamespace(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
     }
 
     void ClientManager::UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+                                                     [[maybe_unused]] quicr::DataContextId data_ctx_id,
                                                      const quicr::TrackNamespace& prefix_namespace)
     {
         auto it = state_.subscribes_namespaces.find(prefix_namespace);
@@ -646,8 +670,7 @@ namespace laps {
 
     void ClientManager::TrackStatusReceived(quicr::ConnectionHandle connection_handle,
                                             uint64_t request_id,
-                                            const quicr::FullTrackName& track_full_name,
-                                            const quicr::messages::SubscribeAttributes& subscribe_attributes)
+                                            const quicr::FullTrackName& track_full_name)
     {
         auto th = quicr::TrackHash(track_full_name);
 
@@ -670,9 +693,8 @@ namespace laps {
             if (it->first.second != connection_handle) {
                 ResolveTrackStatus(connection_handle,
                                    request_id,
-                                   th.track_fullname_hash,
                                    {
-                                     quicr::SubscribeResponse::ReasonCode::kOk,
+                                     quicr::RequestResponse::ReasonCode::kOk,
                                      it->second->IsPublisherInitiated(),
                                      std::nullopt,
                                      largest,
@@ -683,9 +705,8 @@ namespace laps {
 
         ResolveTrackStatus(connection_handle,
                            request_id,
-                           th.track_fullname_hash,
                            {
-                             quicr::SubscribeResponse::ReasonCode::kTrackDoesNotExist,
+                             quicr::RequestResponse::ReasonCode::kDoesNotExist,
                              false,
                              "Track does not exist",
                              std::nullopt,
@@ -704,7 +725,7 @@ namespace laps {
             ResolveSubscribe(connection_handle,
                              request_id,
                              th.track_fullname_hash,
-                             { .reason_code = quicr::SubscribeResponse::ReasonCode::kNotSupported,
+                             { .reason_code = quicr::RequestResponse::ReasonCode::kNotSupported,
                                .is_publisher_initiated = false,
                                .error_reason = "Duplicate subscribe" });
 
@@ -734,10 +755,10 @@ namespace laps {
               connection_handle,
               request_id,
               th.track_fullname_hash,
-              { quicr::SubscribeResponse::ReasonCode::kOk, attrs.is_publisher_initiated, std::nullopt, largest });
+              { quicr::RequestResponse::ReasonCode::kOk, attrs.is_publisher_initiated, std::nullopt, largest });
         } else {
             ResolveSubscribe(
-              connection_handle, request_id, th.track_fullname_hash, { quicr::SubscribeResponse::ReasonCode::kOk });
+              connection_handle, request_id, th.track_fullname_hash, { quicr::RequestResponse::ReasonCode::kOk });
         }
 
         ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs, largest);
@@ -768,7 +789,7 @@ namespace laps {
     void ClientManager::FetchReceived(quicr::ConnectionHandle connection_handle,
                                       uint64_t request_id,
                                       const quicr::FullTrackName& track_full_name,
-                                      quicr::messages::SubscriberPriority priority,
+                                      uint8_t priority,
                                       quicr::messages::GroupOrder group_order,
                                       quicr::messages::Location start,
                                       quicr::messages::FetchEndLocation end)
@@ -1012,6 +1033,7 @@ namespace laps {
                                               kDefaultPriority,
                                               quicr::messages::GroupOrder::kAscending,
                                               std::chrono::milliseconds(kDefaultObjectTtl),
+                                              std::chrono::milliseconds(0),
                                               quicr::messages::FilterType::kLargestObject,
                                               1,
                                               true,
@@ -1137,17 +1159,13 @@ namespace laps {
                                                   start_location });
 
             // Always send updates to peers to support subscribe updates and refresh group support
-            quicr::messages::Subscribe sub(
-              request_id,
-              track_full_name.name_space,
-              track_full_name.name,
-              attrs.priority,
-              attrs.group_order,
-              true,
-              quicr::messages::FilterType::kLargestObject, // Filters are only for edge to apply
-              std::nullopt,
-              std::nullopt,
-              {});
+            auto params =
+              quicr::messages::Parameters{}
+                .Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority)
+                .Add(quicr::messages::ParameterType::kGroupOrder, attrs.group_order)
+                .Add(quicr::messages::ParameterType::kSubscriptionFilter, quicr::messages::FilterType::kLargestObject);
+
+            quicr::messages::Subscribe sub(request_id, track_full_name.name_space, track_full_name.name, params);
 
             // TODO: Current new group is not sent by client in subscribe. It's only in subscribe updates.
 

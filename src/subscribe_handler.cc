@@ -95,7 +95,6 @@ namespace laps {
             stream.buffer.Push(*data);
 
             // Expect that on initial start of stream, there is enough data to process the stream headers
-
             auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
             if (not(stream.buffer >> s_hdr)) {
                 SPDLOG_ERROR("Not enough data to process new stream headers, stream is invalid");
@@ -108,26 +107,15 @@ namespace laps {
                 s_hdr.track_alias = GetTrackAlias().value();
                 quicr::Bytes updated_s_hdr;
 
-                bool zero_subgroup_id{ false };
-                const auto properties = quicr::messages::StreamHeaderProperties(s_hdr.type);
-                if (properties.subgroup_id_type != quicr::messages::SubgroupIdType::kExplicit) {
-                    s_hdr.subgroup_id = std::nullopt;
-                    zero_subgroup_id = true;
-                }
-
                 auto updated_data = std::make_shared<std::vector<uint8_t>>();
                 *updated_data << s_hdr;
-
-                if (zero_subgroup_id) {
-                    s_hdr.subgroup_id = 0;
-                }
 
                 updated_data->insert(
                   updated_data->end(), data->begin() + (data->size() - stream.buffer.Size()), data->end());
 
-                ForwardReceivedData(is_start, stream.current_group_id, stream.current_subgroup_id, updated_data);
+                ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), updated_data);
             } else {
-                ForwardReceivedData(is_start, stream.current_group_id, stream.current_subgroup_id, data);
+                ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), data);
             }
 
         } else if (data) {
@@ -145,8 +133,7 @@ namespace laps {
             }
 
             auto& obj = stream.buffer.GetAnyB<quicr::messages::StreamSubGroupObject>();
-            obj.stream_type = s_hdr.type;
-            const auto subgroup_properties = quicr::messages::StreamHeaderProperties(s_hdr.type);
+            obj.properties.emplace(*s_hdr.properties);
             if (stream.buffer >> obj) {
                 subscribe_track_metrics_.objects_received++;
 
@@ -169,11 +156,10 @@ namespace laps {
                 }
 
                 if (!s_hdr.subgroup_id.has_value()) {
-                    if (subgroup_properties.subgroup_id_type != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
-                        SPDLOG_ERROR("Bad stream header type when no subgroup ID: {0}",
-                                     static_cast<std::uint8_t>(s_hdr.type));
-                        return;
+                    if (obj.properties->subgroup_id_mode != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
+                        throw quicr::messages::ProtocolViolationException("Subgoup ID mismatch");
                     }
+                    // Set the subgroup ID from the first object ID.
                     s_hdr.subgroup_id = stream.next_object_id;
                 }
 
@@ -251,7 +237,7 @@ namespace laps {
             if (is_new_stream) {
                 d_type = peering::DataType::kNewStream;
 
-                if (GetDeliveryTimeout().count() == 0) {
+                if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
                     // Use default if delivery timeout is not set
                     SetDeliveryTimeout(std::chrono::milliseconds(server_.config_.object_ttl_));
                 }
@@ -259,8 +245,11 @@ namespace laps {
         }
 
         if (not is_from_peer_) {
-            server_.peer_manager_.ClientDataRecv(
-              *track_alias, GetPriority(), GetDeliveryTimeout().count(), d_type, data);
+            server_.peer_manager_.ClientDataRecv(*track_alias,
+                                                 GetPriority(),
+                                                 GetDeliveryTimeout().value_or(std::chrono::milliseconds(0)).count(),
+                                                 d_type,
+                                                 data);
         }
 
         // Fanout object to subscribers

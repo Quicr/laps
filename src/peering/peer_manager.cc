@@ -102,19 +102,10 @@ namespace laps::peering {
         if (not withdraw) {
             uint64_t update_ref = rand();
 
-            quicr::messages::Subscribe sub(
-              [](quicr::messages::Subscribe& msg) {
-                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
-                      msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                      msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
-                  }
-              },
-              [](quicr::messages::Subscribe& msg) {
-                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                      msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
-                  }
-              });
+            quicr::messages::Subscribe sub;
             subscribe_info.subscribe_data >> sub;
+
+            auto priority = sub.parameters.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority);
 
             std::lock_guard _(state_.state_mutex);
             bool announce_matches{ false };
@@ -176,10 +167,8 @@ namespace laps::peering {
                       subscribe_info.source_node_id,
                       peer_session->GetSessionId());
 
-                    if (auto [sns_id, is_new] =
-                          peer_session->AddSubscribeSourceNode(subscribe_info.track_hash.track_fullname_hash,
-                                                               subscribe_info.source_node_id,
-                                                               sub.subscriber_priority);
+                    if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
+                          subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id, priority);
                         is_new) {
                         SPDLOG_LOGGER_INFO(
                           LOGGER,
@@ -269,11 +258,16 @@ namespace laps::peering {
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
         }
 
+        /*
+         * TODO: Track namespace as request ID works internally between peering and client managers to support
+         *       stateless tracking of namespaces to request IDs. Might need to revisit this
+         */
         if (!announce_info.name.size()) { // PUBLISH_NAMESPACE
             if (!withdraw) {
-                client_manager_->PublishNamespaceReceived(0, announce_info.name_space, { .request_id = 0 });
+                client_manager_->PublishNamespaceReceived(
+                  0, announce_info.name_space, { .request_id = th.track_namespace_hash });
             } else {
-                client_manager_->PublishNamespaceDoneReceived(0, announce_info.name_space);
+                client_manager_->PublishNamespaceDoneReceived(0, th.track_namespace_hash);
             }
         } else { // PUBLISH
             if (!withdraw) {
@@ -526,18 +520,7 @@ namespace laps::peering {
     void PeerManager::ClientUnsubscribe(uint64_t track_fullname_hash)
     {
         if (auto si = info_base_->GetSubscribe(track_fullname_hash, node_info_.id)) {
-            quicr::messages::Subscribe sub(
-              [](quicr::messages::Subscribe& msg) {
-                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
-                      msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                      msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
-                  }
-              },
-              [](quicr::messages::Subscribe& msg) {
-                  if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                      msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
-                  }
-              });
+            quicr::messages::Subscribe sub;
             si->subscribe_data >> sub;
 
             info_base_->RemoveSubscribe(*si);
@@ -566,24 +549,21 @@ namespace laps::peering {
         auto tfn = track_full_name;
         auto th = quicr::TrackHash(tfn);
 
-        quicr::messages::Subscribe sub(
-          [](quicr::messages::Subscribe& msg) {
-              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
-                  msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                  msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
-              }
-          },
-          [](quicr::messages::Subscribe& msg) {
-              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                  msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
-              }
-          });
+        quicr::messages::Subscribe sub;
 
         // Check for existing subscribe and update
         if (auto si = info_base_->GetSubscribe(th.track_fullname_hash, node_info_.id)) {
             try {
                 // Update subscription params with new group request
                 si->subscribe_data >> sub;
+
+                std::optional<uint64_t> new_group_request_id;
+                if (sub.parameters.Contains(quicr::messages::ParameterType::kNewGroupRequest)) {
+                    new_group_request_id =
+                      sub.parameters.Get<std::uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
+                } else {
+                    sub.parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, attrs.new_group_request_id);
+                }
 
                 bool has_new_group_request = false;
                 for (auto it = sub.parameters.begin(); it != sub.parameters.end(); ++it) {
@@ -592,7 +572,7 @@ namespace laps::peering {
 
                         if (!attrs.new_group_request_id.has_value()) {
                             // Remove new group request since it's not requested but was found
-                            sub.parameters.erase(it);
+                            sub.parameters.parameters.erase(it);
                             quicr::Bytes sub_data;
                             sub_data << sub;
 
@@ -605,9 +585,7 @@ namespace laps::peering {
                 }
 
                 if (attrs.new_group_request_id.has_value() && not has_new_group_request) {
-                    const auto val = BytesOf(attrs.new_group_request_id.value());
-                    sub.parameters.push_back({ .type = quicr::messages::ParameterType::kNewGroupRequest,
-                                               .value = { val.begin(), val.end() } });
+                    sub.parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, attrs.new_group_request_id);
 
                     quicr::Bytes sub_data;
                     sub_data << sub;
@@ -650,18 +628,7 @@ namespace laps::peering {
         auto tfn = track_full_name;
         auto th = quicr::TrackHash(tfn);
 
-        quicr::messages::Subscribe sub(
-          [](quicr::messages::Subscribe& msg) {
-              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
-                  msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                  msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
-              }
-          },
-          [](quicr::messages::Subscribe& msg) {
-              if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                  msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
-              }
-          });
+        quicr::messages::Subscribe sub;
 
         if (subscribe_data.empty())
             return; // Empty means it was supposed to be an update which didn't happen
@@ -759,18 +726,7 @@ namespace laps::peering {
                     if (si_it.first == node_info_.id)
                         continue;
                     const auto& sub_info = si_it.second;
-                    quicr::messages::Subscribe sub(
-                      [](quicr::messages::Subscribe& msg) {
-                          if (msg.filter_type == quicr::messages::FilterType::kAbsoluteStart ||
-                              msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                              msg.group_0 = std::make_optional<quicr::messages::Subscribe::Group_0>();
-                          }
-                      },
-                      [](quicr::messages::Subscribe& msg) {
-                          if (msg.filter_type == quicr::messages::FilterType::kAbsoluteRange) {
-                              msg.group_1 = std::make_optional<quicr::messages::Subscribe::Group_1>();
-                          }
-                      });
+                    quicr::messages::Subscribe sub;
 
                     try {
                         sub_info.subscribe_data >> sub;
@@ -818,10 +774,10 @@ namespace laps::peering {
                               sub_info.source_node_id,
                               peer_session->GetSessionId());
 
-                            if (auto [sns_id, is_new] =
-                                  peer_session->AddSubscribeSourceNode(sub_info.track_hash.track_fullname_hash,
-                                                                       sub_info.source_node_id,
-                                                                       sub.subscriber_priority);
+                            if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
+                                  sub_info.track_hash.track_fullname_hash,
+                                  sub_info.source_node_id,
+                                  sub.parameters.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority));
                                 is_new) {
                                 SPDLOG_LOGGER_INFO(
                                   LOGGER,
