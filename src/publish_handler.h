@@ -17,6 +17,7 @@ namespace laps {
                             quicr::TrackMode track_mode,
                             uint8_t default_priority,
                             uint32_t default_ttl,
+                            quicr::messages::Location start_location,
                             ClientManager& server);
 
         void StatusChanged(Status status) override;
@@ -27,6 +28,12 @@ namespace laps {
 
       private:
         ClientManager& server_;
+
+      public:
+        /*
+         * Filter related variables
+         */
+        quicr::messages::Location start_location_{ 0, 0 };
     };
 
 } // namespace laps

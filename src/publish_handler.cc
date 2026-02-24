@@ -13,9 +13,11 @@ namespace laps {
                                              quicr::TrackMode track_mode,
                                              uint8_t default_priority,
                                              uint32_t default_ttl,
+                                             quicr::messages::Location start_location,
                                              ClientManager& server)
       : quicr::PublishTrackHandler(full_track_name, track_mode, default_priority, default_ttl)
       , server_(server)
+      , start_location_(start_location)
     {
     }
 

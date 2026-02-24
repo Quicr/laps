@@ -76,7 +76,7 @@ namespace laps {
 
         ResolvePublishNamespaceDone(connection_handle, request_id, sub_namespace_connections);
 
-        for (auto track_alias : state_.namespace_active[{ track_namespace, connection_handle }]) {
+        for (auto track_alias : state_.pub_namespace_active[{ track_namespace, connection_handle }]) {
             auto ptd = state_.pub_subscribes[{ track_alias, connection_handle }];
             if (ptd != nullptr) {
                 SPDLOG_LOGGER_INFO(
@@ -90,21 +90,9 @@ namespace laps {
                 UnsubscribeTrack(connection_handle, ptd);
             }
             state_.pub_subscribes.erase({ track_alias, connection_handle });
-
-            // Remove publish handler from subscribe
-            for (auto it = state_.subscribes.lower_bound({ track_alias, 0 }); it != state_.subscribes.end(); ++it) {
-                if (it->first.first != track_alias) {
-                    break;
-                }
-
-                auto p_it = it->second.publish_handlers.find(connection_handle);
-                if (p_it != it->second.publish_handlers.end()) {
-                    it->second.publish_handlers.erase(p_it);
-                }
-            }
         }
 
-        state_.namespace_active.erase({ track_namespace, connection_handle });
+        state_.pub_namespace_active.erase({ track_namespace, connection_handle });
 
         if (connection_handle)
             peer_manager_.ClientUnannounce({ track_namespace, {} });
@@ -132,14 +120,14 @@ namespace laps {
         }
 
         std::vector<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>> anno_remove_list;
-        for (const auto& [key, _] : state_.namespace_active) {
+        for (const auto& [key, _] : state_.pub_namespace_active) {
             if (key.second == connection_handle) {
                 anno_remove_list.push_back(key);
             }
         }
 
         for (const auto& remove_key : anno_remove_list) {
-            state_.namespace_active.erase(remove_key);
+            state_.pub_namespace_active.erase(remove_key);
         }
     }
 
@@ -154,7 +142,7 @@ namespace laps {
         req_it->second.related_data.emplace<quicr::TrackNamespace>(track_namespace);
 
         auto subscribe_to_publisher = [&] {
-            auto& anno_tracks = state_.namespace_active[{ track_namespace, connection_handle }];
+            auto& anno_tracks = state_.pub_namespace_active[{ track_namespace, connection_handle }];
 
             // Check if there are any subscribes. If so, send subscribe to announce for all tracks matching namespace
             for (const auto& [ns, sub_tracks] : state_.subscribe_active_) {
@@ -203,8 +191,8 @@ namespace laps {
           th.track_fullname_hash);
 
         // Add to state if not exist
-        auto it = state_.namespace_active.find({ track_namespace, connection_handle });
-        if (it != state_.namespace_active.end()) {
+        auto it = state_.pub_namespace_active.find({ track_namespace, connection_handle });
+        if (it != state_.pub_namespace_active.end()) {
             /*
              * @note Duplicate announce from same connection handle can happen when there are
              *      more than one publish tracks (different name) but use the same namespace.
@@ -215,7 +203,7 @@ namespace laps {
             return;
         }
 
-        state_.namespace_active.try_emplace(std::make_pair(track_namespace, connection_handle));
+        state_.pub_namespace_active.try_emplace(std::make_pair(track_namespace, connection_handle));
 
         PublishNamespaceResponse announce_response;
         announce_response.reason_code = quicr::Server::PublishNamespaceResponse::ReasonCode::kOk;
@@ -378,7 +366,7 @@ namespace laps {
         std::vector<quicr::SubscribeNamespaceResponse::AvailableTrack> matched_tracks;
 
         // TODO: Fix O(prefix namespaces) matching
-        for (const auto& [key, _] : state_.namespace_active) {
+        for (const auto& [key, _] : state_.pub_namespace_active) {
             // Add matching announced namespaces to vector without duplicates
             if (key.first.HasSamePrefix(prefix_namespace) && (matched_ns.empty() || matched_ns.back() != key.first)) {
                 matched_ns.push_back(key.first);
@@ -538,21 +526,26 @@ namespace laps {
                 break;
             }
 
-            auto p_it = it->second.publish_handlers.find(connection_handle);
-            if (p_it != it->second.publish_handlers.end()) {
-                UnbindPublisherTrack(
-                  it->first.second, connection_handle, p_it->second, it->second.publish_handlers.size() <= 1);
-                it->second.publish_handlers.erase(p_it);
+            bool have_publishers{ false };
+            for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
+                 ++it) {
 
-                if (it->second.publish_handlers.empty()) {
-                    SPDLOG_LOGGER_INFO(LOGGER,
-                                       "No publishers left, unsubscribe conn_id: {} track_alias: {} request_id: {}",
-                                       it->first.second,
-                                       it->second.track_alias,
-                                       it->second.request_id);
-
-                    unsub_list.emplace_back(connection_handle, request_id);
+                if (it->first.first != th.track_fullname_hash) {
+                    break;
                 }
+
+                have_publishers = true;
+                break;
+            }
+
+            if (!have_publishers) {
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "No publishers left, unsubscribe conn_id: {} track_alias: {} request_id: {}",
+                                   it->first.second,
+                                   it->second.track_alias,
+                                   it->second.request_id);
+
+                unsub_list.emplace_back(connection_handle, request_id);
             }
         }
 
@@ -600,11 +593,17 @@ namespace laps {
         auto ftn = sub_it->second.track_full_name;
         auto th = quicr::TrackHash(sub_it->second.track_full_name);
 
-        for (auto& [pub_conn_handle, handler] : sub_it->second.publish_handlers) {
-            if (handler != nullptr) {
-                UnbindPublisherTrack(connection_handle, pub_conn_handle, handler);
-                handler.reset();
-            }
+        // Remove subscribe from publisher subscribe handler
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+            const auto& [key, sub_to_pub_handler] = *it;
+            const auto& [track_alias, conn_handle] = key;
+
+            if (track_alias != th.track_fullname_hash)
+                break;
+
+            sub_to_pub_handler->RemoveSubscriber(conn_handle);
         }
 
         auto& sub_active_list =
@@ -1155,8 +1154,7 @@ namespace laps {
                                                   attrs.priority,
                                                   static_cast<uint32_t>(attrs.delivery_timeout.count()),
                                                   attrs.group_order,
-                                                  {},
-                                                  start_location });
+                                                  {} });
 
             // Always send updates to peers to support subscribe updates and refresh group support
             auto params =
@@ -1189,11 +1187,14 @@ namespace laps {
                 it->second->Resume();
             }
 
+            it->second->AddSubscriber(
+              connection_handle, request_id, attrs.priority, attrs.delivery_timeout, attrs.start_location);
+
             DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request_id.has_value());
         }
 
         // Subscribe to announcer if announcer is active
-        for (auto& [key, track_aliases] : state_.namespace_active) {
+        for (auto& [key, track_aliases] : state_.pub_namespace_active) {
             if (!key.first.HasSamePrefix(track_full_name.name_space) || !key.second) {
                 continue;
             }
@@ -1214,6 +1215,9 @@ namespace laps {
                                                           quicr::messages::GroupOrder::kAscending,
                                                           *this);
                 SubscribeTrack(key.second, sub_track_h);
+
+                sub_track_h->AddSubscriber(
+                  connection_handle, request_id, attrs.priority, attrs.delivery_timeout, attrs.start_location);
 
                 state_.pub_subscribes_by_req_id[{ sub_track_h->GetRequestId().value(), key.second }] = sub_track_h;
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;

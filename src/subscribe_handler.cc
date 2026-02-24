@@ -23,6 +23,52 @@ namespace laps {
     {
     }
 
+    SubscribeTrackHandler::~SubscribeTrackHandler()
+    {
+        for (auto& [conn_handle, handler] : subscribers) {
+            server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), handler);
+        }
+    }
+
+    void SubscribeTrackHandler::AddSubscriber(quicr::ConnectionHandle conn_handle,
+                                              quicr::messages::RequestID request_id,
+                                              uint8_t priority,
+                                              std::chrono::milliseconds delivery_timeout,
+                                              quicr::messages::Location start_location)
+    {
+
+        if (subscribers.contains(conn_handle)) {
+            // Duplicate
+            return;
+        }
+
+        auto pub_track_h = std::make_shared<PublishTrackHandler>(
+          GetFullTrackName(),
+          is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream,
+          priority == 0 ? GetPriority() : priority,
+          delivery_timeout.count() == 0
+            ? GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count()
+            : delivery_timeout.count(),
+          start_location,
+          server_);
+
+        // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
+        server_.BindPublisherTrack(conn_handle, GetConnectionId(), request_id, pub_track_h, false);
+
+        subscribers.emplace(conn_handle, pub_track_h);
+    }
+
+    void SubscribeTrackHandler::RemoveSubscriber(quicr::ConnectionHandle conn_handle)
+    {
+        auto it = subscribers.find(conn_handle);
+        if (it == subscribers.end()) {
+            return;
+        }
+
+        server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), it->second);
+        subscribers.erase(conn_handle);
+    }
+
     void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
     {
         auto self_connection_handle = GetConnectionId();
@@ -51,27 +97,19 @@ namespace laps {
 
         try {
             // Fanout object to subscribers
-            for (auto it = server_.state_.subscribes.lower_bound({ GetTrackAlias().value(), 0 });
-                 it != server_.state_.subscribes.end();
-                 ++it) {
-                auto& [key, sub_info] = *it;
-                const auto& sub_track_alias = key.first;
+            for (auto& [conn_handle, pub_handler] : subscribers) {
 
-                if (sub_track_alias != GetTrackAlias().value())
-                    break;
-
-                if (sub_info.publish_handlers[self_connection_handle] == nullptr) {
+                if (pub_handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
+                    // pipeline this connection/subscriber via forward data method instead
                     continue;
                 }
 
-                if (sub_info.publish_handlers[self_connection_handle]->SentFirstObject(object_headers.group_id,
-                                                                                       object_headers.subgroup_id)) {
-                    continue;
-                }
+                pub_handler->SetDefaultTrackMode(is_datagram_ ? quicr::TrackMode::kDatagram
+                                                              : quicr::TrackMode::kStream);
 
-                if (object.headers.group_id >= sub_info.start_location.group &&
-                    object.headers.object_id >= sub_info.start_location.object) {
-                    sub_info.publish_handlers[self_connection_handle]->PublishObject(object_headers, data);
+                if (object.headers.group_id >= pub_handler->start_location_.group &&
+                    object.headers.object_id >= pub_handler->start_location_.object) {
+                    pub_handler->PublishObject(object_headers, data);
                 }
             }
         } catch (const std::exception& e) {
@@ -226,11 +264,9 @@ namespace laps {
         }
 
         peering::DataType d_type;
-        auto track_mode = quicr::TrackMode::kStream;
 
         if (is_datagram_) {
             d_type = peering::DataType::kDatagram;
-            track_mode = quicr::TrackMode::kDatagram;
         } else {
             d_type = peering::DataType::kExistingStream;
 
@@ -253,39 +289,14 @@ namespace laps {
         }
 
         // Fanout object to subscribers
-        for (auto it = server_.state_.subscribes.lower_bound({ track_alias.value(), 0 });
-             it != server_.state_.subscribes.end();
-             ++it) {
-            auto& [key, sub_info] = *it;
-            const auto& sub_track_alias = key.first;
-            const auto& connection_handle = key.second;
+        for (auto& [conn_handle, pub_handler] : subscribers) {
 
-            if (sub_track_alias != track_alias.value())
-                break;
-
-            if (!sub_info.publish_handlers.contains(self_connection_handle)) {
-                // Create the publish track handler and bind it on first object received
-                auto pub_track_h = std::make_shared<PublishTrackHandler>(
-                  sub_info.track_full_name,
-                  track_mode,
-                  sub_info.priority == 0 ? GetPriority() : sub_info.priority,
-                  sub_info.object_ttl == 0 ? server_.config_.object_ttl_ : sub_info.object_ttl,
-                  server_);
-
-                // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-                server_.BindPublisherTrack(
-                  connection_handle, self_connection_handle, sub_info.request_id, pub_track_h, false);
-                sub_info.publish_handlers[self_connection_handle] = pub_track_h;
+            if (!pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                // Pipeline not enabled, use full object forwarding instead
                 continue;
             }
 
-            const auto pub_track_h = sub_info.publish_handlers[self_connection_handle];
-            if (not pub_track_h->SentFirstObject(group_id, subgroup_id)) {
-                continue;
-            }
-
-            sub_info.publish_handlers[self_connection_handle]->ForwardPublishedData(
-              is_new_stream, group_id, subgroup_id, data);
+            pub_handler->ForwardPublishedData(is_new_stream, group_id, subgroup_id, data);
         }
     }
 
@@ -303,7 +314,7 @@ namespace laps {
                     reason = "subscribe error";
                     if (GetTrackAlias().has_value()) {
                         auto& anno_tracks =
-                          server_.state_.namespace_active[{ GetFullTrackName().name_space, GetConnectionId() }];
+                          server_.state_.pub_namespace_active[{ GetFullTrackName().name_space, GetConnectionId() }];
                         anno_tracks.erase(GetTrackAlias().value());
                         server_.state_.pub_subscribes.erase({ GetTrackAlias().value(), GetConnectionId() });
                     }

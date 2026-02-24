@@ -48,7 +48,7 @@ namespace laps {
          *      track_alias_set = namespace_active[track_namespace_hash, connection_handle]
          */
         std::map<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
-          namespace_active;
+          pub_namespace_active;
 
         /**
          * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
@@ -77,7 +77,6 @@ namespace laps {
             uint8_t priority{ 0 };
             uint32_t object_ttl{ 0 };
             quicr::messages::GroupOrder group_order;
-            std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> publish_handlers;
             quicr::messages::Location start_location;
         };
 

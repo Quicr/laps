@@ -122,7 +122,7 @@ namespace laps::peering {
 
             // If no publish, then check announces
             if (not announce_matches) {
-                for (auto& [key, track_aliases] : state_.namespace_active) {
+                for (auto& [key, track_aliases] : state_.pub_namespace_active) {
                     if (!key.first.HasSamePrefix(sub.track_namespace)) {
                         continue;
                     }
