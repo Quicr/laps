@@ -598,12 +598,12 @@ namespace laps {
              it != state_.pub_subscribes.end();
              ++it) {
             const auto& [key, sub_to_pub_handler] = *it;
-            const auto& [track_alias, conn_handle] = key;
+            const auto& [track_alias, pub_conn_handle] = key;
 
             if (track_alias != th.track_fullname_hash)
                 break;
 
-            sub_to_pub_handler->RemoveSubscriber(conn_handle);
+            sub_to_pub_handler->RemoveSubscriber(connection_handle);
         }
 
         auto& sub_active_list =
