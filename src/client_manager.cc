@@ -10,7 +10,10 @@
 #include "config.h"
 #include "fetch_handler.h"
 #include "publish_handler.h"
+#include "publish_namespace_handler.h"
 #include "subscribe_handler.h"
+
+#include <ranges>
 
 namespace laps {
     ClientManager::ClientManager(State& state,
@@ -64,13 +67,13 @@ namespace laps {
                 continue;
             }
 
-            for (auto sub_conn_handle : conns) {
+            for (auto conn_handle : std::views::keys(conns)) {
                 SPDLOG_DEBUG("Received publish namespace done matches prefix subscribed from connection handle: {} for "
                              "namespace hash: {}",
-                             sub_conn_handle,
+                             conn_handle,
                              th.track_namespace_hash);
 
-                sub_namespace_connections.emplace_back(sub_conn_handle);
+                sub_namespace_connections.emplace_back(conn_handle);
             }
         }
 
@@ -216,13 +219,13 @@ namespace laps {
                 continue;
             }
 
-            for (auto sub_conn_handle : conns) {
-                SPDLOG_DEBUG(
-                  "Received announce matches prefix subscribed from connection handle: {} for namespace hash: {}",
-                  sub_conn_handle,
-                  th.track_namespace_hash);
+            for (auto& [conn_handle, _] : conns) {
+                SPDLOG_DEBUG("Received publish namespace matches prefix subscribed namespace from connection handle: "
+                             "{} for namespace hash: {}",
+                             conn_handle,
+                             th.track_namespace_hash);
 
-                sub_annos_connections.emplace_back(sub_conn_handle);
+                sub_annos_connections.emplace_back(conn_handle);
             }
         }
 
@@ -257,21 +260,6 @@ namespace laps {
         attrs.forward = publish_attributes.forward;
         attrs.filter_type = publish_attributes.filter_type;
 
-        /*
-        if (state_.pub_subscribes.contains({ th.track_fullname_hash, connection_handle })) {
-            SPDLOG_INFO(
-              "Received duplicate publish from connection handle: {} using track alias: {} request_id: {}, keepalive",
-              connection_handle,
-              th.track_fullname_hash,
-              request_id);
-
-            ResolvePublish(
-              connection_handle, request_id, attrs, { .reason_code = quicr::PublishResponse::ReasonCode::kNotSupported
-        });
-
-            return;
-        }*/
-
         SPDLOG_LOGGER_INFO(LOGGER,
                            "Received publish from connection handle: {} using track alias: {} request_id: {}",
                            connection_handle,
@@ -281,16 +269,17 @@ namespace laps {
         quicr::PublishResponse publish_response;
         publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
 
-        // Add connection handles for subscribe namespace subscribers
-        for (const auto& [tn, conn_ids] : state_.subscribes_namespaces) {
+        // PublishTrack within publish namespace handler if matched
+        for (auto& [tn, conns] : state_.subscribes_namespaces) {
             if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
-
-                // Only add connection id if connection ID doesn't already have an active subscribe
-                for (const auto& conn_id : conn_ids) {
-                    if (auto s_it = state_.subscribes.find({ th.track_fullname_hash, conn_id });
-                        s_it == state_.subscribes.end()) {
-                        publish_response.namespace_subscribers.emplace_back(conn_id);
-                    }
+                for (auto& [_, pub_ns_h] : conns) {
+                    const auto handler = PublishTrackHandler::Create(publish_attributes.track_full_name,
+                                                                     quicr::TrackMode::kStream,
+                                                                     publish_attributes.priority,
+                                                                     publish_attributes.delivery_timeout.count(),
+                                                                     publish_attributes.start_location,
+                                                                     *this);
+                    pub_ns_h->PublishTrack(handler);
                 }
             }
         }
@@ -354,7 +343,11 @@ namespace laps {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
         auto [it, is_new] = state_.subscribes_namespaces.try_emplace(prefix_namespace);
-        it->second.insert(connection_handle);
+
+        auto handler = PublishNamespaceHandler::Create(prefix_namespace);
+        PublishNamespace(connection_handle, handler, true);
+
+        auto [pub_it, _] = it->second.emplace(connection_handle, handler);
 
         if (is_new) {
             SPDLOG_INFO("Subscribe namespace received connection handle: {} for namespace_hash: {}, adding to state",
@@ -363,7 +356,6 @@ namespace laps {
         }
 
         std::vector<quicr::TrackNamespace> matched_ns;
-        std::vector<quicr::SubscribeNamespaceResponse::AvailableTrack> matched_tracks;
 
         // TODO: Fix O(prefix namespaces) matching
         for (const auto& [key, _] : state_.pub_namespace_active) {
@@ -383,21 +375,26 @@ namespace laps {
             const auto& track_full_name = handler->GetFullTrackName();
             const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
             if (ns_matched) {
+
                 std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
-                quicr::messages::PublishAttributes publish_attributes;
-                publish_attributes.track_alias = ta_conn.first;
-                publish_attributes.priority = handler->GetPriority(); // Original priority?
-                publish_attributes.group_order = handler->GetGroupOrder();
-                publish_attributes.delivery_timeout =
-                  handler->GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl));
-                publish_attributes.filter_type = handler->GetFilterType();
-                publish_attributes.forward = true;
-                publish_attributes.new_group_request_id = std::nullopt;
-                publish_attributes.is_publisher_initiated = true;
-                matched_tracks.emplace_back(track_full_name, largest_location, publish_attributes);
+                /*
+                 * PublishTrack within the namespace handler determines if the track should be published or not
+                 * based on filters
+                 */
+                const auto pub_handler = PublishTrackHandler::Create(
+                  track_full_name,
+                  quicr::TrackMode::kStream,
+                  handler->GetPriority(),
+                  handler->GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
+                  largest_location.value_or(quicr::messages::Location{ 0, 0 }),
+                  *this);
 
-                SPDLOG_LOGGER_INFO(
+                pub_it->second->PublishTrack(pub_handler);
+
+                handler->AddSubscribeNamespace(pub_it->second);
+
+                SPDLOG_LOGGER_DEBUG(
                   LOGGER,
                   "Matched PUBLISH track for SUBSCRIBE_NAMESPACE: conn: {} track_alias: {} track_hash: {}",
                   connection_handle,
@@ -408,7 +405,6 @@ namespace laps {
 
         const quicr::SubscribeNamespaceResponse response = { .reason_code =
                                                                quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
-                                                             .tracks = std::move(matched_tracks),
                                                              .namespaces = std::move(matched_ns) };
         ResolveSubscribeNamespace(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
     }
@@ -427,7 +423,31 @@ namespace laps {
                     connection_handle,
                     th.track_namespace_hash);
 
-        state_.subscribes_namespaces.erase(it);
+        // Get the publish namespace handler by connection handle
+        auto pub_it = it->second.find(connection_handle);
+        if (pub_it == it->second.end() && it->second.empty()) {
+            state_.subscribes_namespaces.erase(it);
+            return;
+        }
+
+        // Loop through publishes and remove subscribe namespace
+        for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
+            if (ta_conn.second == connection_handle || !handler) {
+                continue;
+            }
+
+            const auto& track_full_name = handler->GetFullTrackName();
+            const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
+            if (ns_matched) {
+                handler->RemoveSubscribeNamespace(pub_it->second);
+            }
+        }
+
+        it->second.erase(pub_it);
+
+        if (it->second.empty()) {
+            state_.subscribes_namespaces.erase(it);
+        }
     }
 
     void ClientManager::ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status)

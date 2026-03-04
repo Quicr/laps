@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <mutex>
 #include <quicr/server.h>
 #include <set>
@@ -8,6 +7,7 @@
 namespace laps {
     class SubscribeTrackHandler;
     class PublishTrackHandler;
+    class PublishNamespaceHandler;
 
     struct State
     {
@@ -66,8 +66,14 @@ namespace laps {
         std::map<std::pair<uint64_t, quicr::ConnectionHandle>, std::shared_ptr<SubscribeTrackHandler>>
           pub_subscribes_by_req_id;
 
-        /// Subscriber connection handles by subscribe prefix namespace for subscribe namespace
-        std::map<quicr::TrackNamespace, std::set<quicr::ConnectionHandle>> subscribes_namespaces;
+        /**
+         * @brief Subscribe Namespace by connection to publish namespace handlers
+         * @details Subscribe namespaces by connection are added to this map. Each will have an associated
+         *      publish namespace handler. The publish namespace handler is used to establish publish tracks
+         *      to the subscriber of the namespace
+         */
+        std::map<quicr::TrackNamespace, std::map<quicr::ConnectionHandle, std::shared_ptr<PublishNamespaceHandler>>>
+          subscribes_namespaces;
 
         struct SubscribePublishHandlerInfo
         {

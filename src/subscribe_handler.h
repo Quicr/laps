@@ -62,6 +62,20 @@ namespace laps {
          */
         void RemoveSubscriber(quicr::ConnectionHandle conn_handle);
 
+        /**
+         * @brief Add subscribe namespace publish namespace handler
+         *
+         * @param handler               Publish namespace handler to use to send matching tracks
+         */
+        void AddSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler);
+
+        /**
+         * @brief Remove subscribe namespace publish namespace handler
+         *
+         * @param handler               Publish namespace handler used to send matching tracks
+         */
+        void RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler);
+
       private:
         void ForwardReceivedData(bool is_new_stream,
                                  uint64_t group_id,
@@ -74,12 +88,18 @@ namespace laps {
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
 
         /**
-         * @brief List of subscribers that have subscribed to this content
+         * @brief Map of subscribers that have subscribed to this content
          *
          * @details Fanout list of subscribe publish handlers.  On subscribe, this list is updated.
          *
          * @
          */
         std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> subscribers;
+
+        /**
+         * @brief Map of publish namespace handlers by subscribe namespace full track name hash and connection handle
+         */
+        std::map<quicr::TrackFullNameHash, std::map<quicr::ConnectionHandle, std::shared_ptr<PublishNamespaceHandler>>>
+          sub_namespaces;
     };
 } // namespace laps

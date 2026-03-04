@@ -4,6 +4,8 @@
 #include "subscribe_handler.h"
 #include "config.h"
 #include "publish_handler.h"
+#include "publish_namespace_handler.h"
+
 #include <quicr/server.h>
 #include <quicr/subscribe_track_handler.h>
 
@@ -27,6 +29,32 @@ namespace laps {
     {
         for (auto& [conn_handle, handler] : subscribers) {
             server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), handler);
+        }
+    }
+
+    void SubscribeTrackHandler::AddSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler)
+    {
+        auto th = quicr::TrackHash(handler->GetFullTrackName());
+        const auto it = sub_namespaces[th.track_fullname_hash].find(handler->GetConnectionId());
+        if (it != sub_namespaces[th.track_fullname_hash].end()) {
+            // Duplicate
+            return;
+        }
+
+        sub_namespaces[th.track_fullname_hash].emplace(handler->GetConnectionId(), handler);
+    }
+
+    void SubscribeTrackHandler::RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler)
+    {
+        auto th = quicr::TrackHash(handler->GetFullTrackName());
+
+        auto it = sub_namespaces.find(th.track_fullname_hash);
+        if (it != sub_namespaces.end()) {
+            it->second.erase(handler->GetConnectionId());
+
+            if (it->second.empty()) {
+                sub_namespaces.erase(it);
+            }
         }
     }
 
@@ -96,6 +124,13 @@ namespace laps {
         }
 
         try {
+            // Fanout object to subscribe namespaces
+            for (const auto [_, conn_subs] : sub_namespaces) {
+                for (const auto& [_, handler] : conn_subs) {
+                    handler->PublishObject(GetTrackAlias().value(), object_headers, data);
+                }
+            }
+
             // Fanout object to subscribers
             for (auto& [conn_handle, pub_handler] : subscribers) {
 
@@ -286,6 +321,13 @@ namespace laps {
                                                  GetDeliveryTimeout().value_or(std::chrono::milliseconds(0)).count(),
                                                  d_type,
                                                  data);
+        }
+
+        // Fanout object to subscribe namespaces
+        for (const auto [_, conn_subs] : sub_namespaces) {
+            for (const auto& [_, handler] : conn_subs) {
+                handler->ForwardPublishedData(GetTrackAlias().value(), is_new_stream, group_id, subgroup_id, data);
+            }
         }
 
         // Fanout object to subscribers
