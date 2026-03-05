@@ -76,6 +76,8 @@ namespace laps {
          */
         void RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler);
 
+        bool HasSubscribers() const { return !subscribers.empty() || !sub_namespaces.empty(); }
+
       private:
         void ForwardReceivedData(bool is_new_stream,
                                  uint64_t group_id,

@@ -64,7 +64,6 @@ namespace laps {
                                         const quicr::SubscribeNamespaceAttributes& attributes) override;
 
         void UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
-                                          quicr::DataContextId data_ctx_id,
                                           const quicr::TrackNamespace& prefix_namespace) override;
 
         std::vector<quicr::ConnectionHandle> PublishNamespaceDoneReceived(
@@ -122,7 +121,7 @@ namespace laps {
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                              bool new_group_request);
 
-        void RemoveOrPausePublisherSubscribe(const quicr::TrackHash& track_hash);
+        void RemoveOrPausePublisherSubscribe(quicr::TrackFullNameHash track_fullname_hash);
 
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;

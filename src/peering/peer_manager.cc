@@ -213,7 +213,7 @@ namespace laps::peering {
             }
 
             if (client_manager_ != nullptr) {
-                client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash);
+                client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash.track_fullname_hash);
             }
         }
 

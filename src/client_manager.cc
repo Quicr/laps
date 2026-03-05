@@ -311,11 +311,27 @@ namespace laps {
                  ++it) {
                 if (it->first.first == th.track_fullname_hash) {
                     has_subs = true;
-                    break;
+                    sub_track_handler->AddSubscriber(it->first.second,
+                                                     it->second.request_id,
+                                                     it->second.priority,
+                                                     std::chrono::milliseconds(it->second.object_ttl),
+                                                     it->second.start_location);
                 }
             }
 
-            if (not has_subs) {
+            if (!has_subs) {
+                for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
+                    if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
+                        has_subs = true;
+
+                        for (const auto& [conn_id, ns_handler] : conns) {
+                            sub_track_handler->AddSubscribeNamespace(ns_handler);
+                        }
+                    }
+                }
+            }
+
+            if (!has_subs) {
                 SPDLOG_LOGGER_INFO(LOGGER,
                                    "No subscribers, pause publish connection handle: {0} using track alias: {1}",
                                    connection_handle,
@@ -375,7 +391,6 @@ namespace laps {
             const auto& track_full_name = handler->GetFullTrackName();
             const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
             if (ns_matched) {
-
                 std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
                 /*
@@ -410,7 +425,6 @@ namespace laps {
     }
 
     void ClientManager::UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
-                                                     [[maybe_unused]] quicr::DataContextId data_ctx_id,
                                                      const quicr::TrackNamespace& prefix_namespace)
     {
         auto it = state_.subscribes_namespaces.find(prefix_namespace);
@@ -419,7 +433,7 @@ namespace laps {
         }
 
         auto th = quicr::TrackHash({ prefix_namespace, {} });
-        SPDLOG_INFO("Unsubscribe announces received connection handle: {} for namespace_hash: {}, removing",
+        SPDLOG_INFO("Unsubscribe namspace received connection handle: {} for namespace_hash: {}, removing",
                     connection_handle,
                     th.track_namespace_hash);
 
@@ -440,6 +454,8 @@ namespace laps {
             const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
             if (ns_matched) {
                 handler->RemoveSubscribeNamespace(pub_it->second);
+
+                RemoveOrPausePublisherSubscribe(ta_conn.first);
             }
         }
 
@@ -475,15 +491,12 @@ namespace laps {
         for (auto& [ns, conns] : state_.subscribes_namespaces) {
             auto it = conns.find(connection_handle);
             if (it != conns.end()) {
-                conns.erase(it);
-                if (conns.empty()) {
-                    remove_ns.emplace_back(ns);
-                }
+                remove_ns.emplace_back(ns);
             }
         }
 
         for (auto ns : remove_ns) {
-            state_.subscribes_namespaces.erase(ns);
+            UnsubscribeNamespaceReceived(connection_handle, ns);
         }
 
         // Clean up subscribe states
@@ -636,47 +649,46 @@ namespace laps {
 
         state_.subscribes.erase(sub_it);
 
-        RemoveOrPausePublisherSubscribe(th);
+        RemoveOrPausePublisherSubscribe(th.track_fullname_hash);
     }
 
-    void ClientManager::RemoveOrPausePublisherSubscribe(const quicr::TrackHash& track_hash)
+    void ClientManager::RemoveOrPausePublisherSubscribe(quicr::TrackFullNameHash track_fullname_hash)
     {
         // Do nothing if peering still has a subscriber
-        if (peer_manager_.HasSubscribers(track_hash.track_fullname_hash)) {
+        if (peer_manager_.HasSubscribers(track_fullname_hash)) {
             return;
         }
 
-        // Do nothing if there is still one direct client subscribe
-        for (auto it = state_.subscribes.lower_bound({ track_hash.track_fullname_hash, 0 });
-             it != state_.subscribes.end();
-             ++it) {
-            if (it->first.first == track_hash.track_fullname_hash) {
-                return;
-            }
-        }
-
-        peer_manager_.ClientUnsubscribe(track_hash.track_fullname_hash);
-
-        SPDLOG_LOGGER_INFO(
-          LOGGER, "No subscribers left, unsubscribe publisher track_alias: {0}", track_hash.track_fullname_hash);
+        bool has_subs{ false };
 
         std::vector<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>> remove_sub_pub;
-        for (auto it = state_.pub_subscribes.lower_bound({ track_hash.track_fullname_hash, 0 });
-             it != state_.pub_subscribes.end();
+        for (auto it = state_.pub_subscribes.lower_bound({ track_fullname_hash, 0 }); it != state_.pub_subscribes.end();
              ++it) {
             const auto& [key, sub_to_pub_handler] = *it;
 
-            if (key.first != track_hash.track_fullname_hash)
+            if (key.first != track_fullname_hash)
                 break;
 
-            SPDLOG_LOGGER_INFO(LOGGER,
-                               "Unsubscribe to announcer conn_id: {0} subscribe track_alias: {1}",
-                               key.second,
-                               track_hash.track_fullname_hash);
+            if (sub_to_pub_handler->HasSubscribers()) {
+                // Do not pause or remove handler if there are still some subscriber/subscribe namespaces
+                continue;
+            }
+
+            has_subs = true;
 
             if (sub_to_pub_handler->IsPublisherInitiated()) {
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "No subscribers left, pause publisher conn_id: {0} track_alias: {1}",
+                                   key.second,
+                                   track_fullname_hash);
+
                 sub_to_pub_handler->Pause();
             } else {
+                SPDLOG_LOGGER_INFO(LOGGER,
+                                   "No subscribers left, unsubscribe publisher conn_id: {0} track_alias: {1}",
+                                   key.second,
+                                   track_fullname_hash);
+
                 UnsubscribeTrack(key.second, sub_to_pub_handler);
                 remove_sub_pub.push_back(key);
             }
@@ -684,6 +696,10 @@ namespace laps {
 
         for (const auto& key : remove_sub_pub) {
             state_.pub_subscribes.erase(key);
+        }
+
+        if (!has_subs) {
+            peer_manager_.ClientUnsubscribe(track_fullname_hash);
         }
     }
 

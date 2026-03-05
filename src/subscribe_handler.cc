@@ -42,6 +42,8 @@ namespace laps {
         }
 
         sub_namespaces[th.track_fullname_hash].emplace(handler->GetConnectionId(), handler);
+
+        Resume();
     }
 
     void SubscribeTrackHandler::RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler)
@@ -84,6 +86,8 @@ namespace laps {
         server_.BindPublisherTrack(conn_handle, GetConnectionId(), request_id, pub_track_h, false);
 
         subscribers.emplace(conn_handle, pub_track_h);
+
+        Resume();
     }
 
     void SubscribeTrackHandler::RemoveSubscriber(quicr::ConnectionHandle conn_handle)
