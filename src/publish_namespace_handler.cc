@@ -33,6 +33,10 @@ laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full
 
         auto handler = dynamic_pointer_cast<PublishTrackHandler>(pub_it->second);
 
+        if (object_headers.track_mode.has_value()) {
+            handler->SetDefaultTrackMode(*object_headers.track_mode);
+        }
+
         // Use pipeline forwarding now that first object has been sent
         if (handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
             return quicr::PublishTrackHandler::PublishObjectStatus::kOk;
