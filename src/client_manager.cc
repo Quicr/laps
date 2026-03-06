@@ -845,15 +845,15 @@ namespace laps {
         if (!largest_location.has_value()) {
             // TODO: This changes to send an empty object instead of REQUEST_ERROR
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
-        }
-
-        if (start.group > end.group || largest_location.value().group < start.group) {
+        } else if (start.group > end.group || largest_location->group < start.group) {
             reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
         }
 
-        const auto& cache_entries = cache_entry_it->second.Get(start.group, end.group);
+        const auto& cache_entries = cache_entry_it != cache_.end()
+                                      ? cache_entry_it->second.Get(start.group, end.group)
+                                      : std::vector<std::shared_ptr<std::set<CacheObject>>>{};
 
-        if (cache_entries.empty()) {
+        if (cache_entries.empty() && reason_code == quicr::FetchResponse::ReasonCode::kOk) {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
         }
 
@@ -1027,14 +1027,26 @@ namespace laps {
                                              const quicr::FullTrackName& track_full_name,
                                              const quicr::messages::JoiningFetchAttributes& attributes)
     {
-        uint64_t joining_start = 0;
         std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
+        // No largest location is an error.
+        if (!largest_location.has_value()) {
+            ResolveFetch(connection_handle,
+                         request_id,
+                         attributes.priority,
+                         attributes.group_order,
+                         {
+                           quicr::FetchResponse::ReasonCode::kInvalidRange,
+                           "No objects available for joining fetch",
+                           std::nullopt,
+                         });
+            return;
+        }
+
+        uint64_t joining_start = 0;
         if (attributes.relative) {
-            if (largest_location.has_value()) {
-                if (largest_location->group > attributes.joining_start)
-                    joining_start = largest_location->group - attributes.joining_start;
-            }
+            if (largest_location->group > attributes.joining_start)
+                joining_start = largest_location->group - attributes.joining_start;
         } else {
             joining_start = attributes.joining_start;
         }
