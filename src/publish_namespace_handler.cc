@@ -38,6 +38,10 @@ laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full
             return quicr::PublishTrackHandler::PublishObjectStatus::kOk;
         }
 
+        if (object_headers.track_mode.has_value()) {
+            pub_it->second->SetDefaultTrackMode(object_headers.track_mode.value());
+        }
+
         // Not using pipeline forwarding, publish complete object
         return pub_it->second->PublishObject(object_headers, data);
     }
