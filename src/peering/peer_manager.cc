@@ -282,7 +282,7 @@ namespace laps::peering {
                 attrs.priority = 64;
                 attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
 
-                client_manager_->PublishReceived(0, 0, attrs);
+                client_manager_->PublishReceived(0, 0, attrs, {});
             } else {
                 // TODO: Signal to client manager that the publish is done
             }

@@ -245,20 +245,10 @@ namespace laps {
 
     void ClientManager::PublishReceived(quicr::ConnectionHandle connection_handle,
                                         uint64_t request_id,
-                                        const quicr::messages::PublishAttributes& publish_attributes)
+                                        const quicr::messages::PublishAttributes& publish_attributes,
+                                        [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
     {
         auto th = quicr::TrackHash(publish_attributes.track_full_name);
-
-        // Build list of connections that have matching subscribe namespace for publish to be sent
-        quicr::messages::PublishAttributes attrs;
-        attrs.is_publisher_initiated = false;
-        attrs.priority = publish_attributes.priority;
-        attrs.group_order = publish_attributes.group_order;
-        attrs.track_full_name = publish_attributes.track_full_name;
-        attrs.track_alias = publish_attributes.track_alias;
-        attrs.dynamic_groups = publish_attributes.dynamic_groups;
-        attrs.forward = publish_attributes.forward;
-        attrs.filter_type = publish_attributes.filter_type;
 
         SPDLOG_LOGGER_INFO(LOGGER,
                            "Received publish from connection handle: {} using track alias: {} request_id: {}",
@@ -288,10 +278,6 @@ namespace laps {
         auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
           publish_attributes.track_full_name, 0, quicr::messages::GroupOrder::kAscending, *this, true);
 
-        sub_track_handler->SetRequestId(request_id);
-        sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
-        sub_track_handler->SetPriority(publish_attributes.priority);
-
         if (publish_attributes.new_group_request_id.has_value()) {
             sub_track_handler->SupportNewGroupRequest(true);
         }
@@ -300,11 +286,9 @@ namespace laps {
         state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
 
         // Do this before pause to maintain MOQT message sequence order
-        ResolvePublish(connection_handle, request_id, attrs, publish_response);
+        ResolvePublish(connection_handle, request_id, publish_attributes, publish_response, sub_track_handler);
 
         if (connection_handle) {
-            SubscribeTrack(connection_handle, sub_track_handler);
-
             // Check if there are any subscribers
             bool has_subs{ false };
             for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
@@ -319,14 +303,12 @@ namespace laps {
                 }
             }
 
-            if (!has_subs) {
-                for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
-                    if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
-                        has_subs = true;
+            for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
+                if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
+                    has_subs = true;
 
-                        for (const auto& [conn_id, ns_handler] : conns) {
-                            sub_track_handler->AddSubscribeNamespace(ns_handler);
-                        }
+                    for (const auto& [conn_id, ns_handler] : conns) {
+                        sub_track_handler->AddSubscribeNamespace(ns_handler);
                     }
                 }
             }
