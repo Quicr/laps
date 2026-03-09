@@ -425,8 +425,10 @@ namespace laps {
 
         // Get the publish namespace handler by connection handle
         auto pub_it = it->second.find(connection_handle);
-        if (pub_it == it->second.end() && it->second.empty()) {
-            state_.subscribes_namespaces.erase(it);
+        if (pub_it == it->second.end()) {
+            if (it->second.empty()) {
+                state_.subscribes_namespaces.erase(it);
+            }
             return;
         }
 
@@ -537,34 +539,38 @@ namespace laps {
 
         auto th = quicr::TrackHash(s_it->second->GetFullTrackName());
 
-        // Find subscribers that match this publisher and unsubscribe if all publishers are gone
-        std::vector<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>> unsub_list;
-        for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
+        state_.pub_subscribes.erase({ th.track_fullname_hash, connection_handle });
+
+        bool have_publishers{ false };
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
              ++it) {
+
             if (it->first.first != th.track_fullname_hash) {
                 break;
             }
 
-            bool have_publishers{ false };
+            have_publishers = true;
+            break;
+        }
+
+        std::vector<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>> unsub_list;
+
+        if (!have_publishers) {
+            // Find subscribers that match this publisher and unsubscribe
             for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
                  ++it) {
-
                 if (it->first.first != th.track_fullname_hash) {
                     break;
                 }
 
-                have_publishers = true;
-                break;
-            }
-
-            if (!have_publishers) {
                 SPDLOG_LOGGER_INFO(LOGGER,
                                    "No publishers left, unsubscribe conn_id: {} track_alias: {} request_id: {}",
                                    it->first.second,
                                    it->second.track_alias,
                                    it->second.request_id);
 
-                unsub_list.emplace_back(connection_handle, request_id);
+                unsub_list.emplace_back(it->first.second, it->second.request_id);
             }
         }
 
@@ -579,7 +585,6 @@ namespace laps {
             lock.lock();
         }
 
-        state_.pub_subscribes.erase({ th.track_fullname_hash, connection_handle });
         state_.pub_subscribes_by_req_id.erase(s_it);
     }
 
@@ -658,10 +663,9 @@ namespace laps {
             if (sub_to_pub_handler->HasSubscribers()) {
                 has_subs = true;
                 // Do not pause or remove handler if there are still some subscriber/subscribe namespaces
+                has_subs = true;
                 continue;
             }
-
-            has_subs = true;
 
             if (sub_to_pub_handler->IsPublisherInitiated()) {
                 SPDLOG_LOGGER_INFO(LOGGER,
