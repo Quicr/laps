@@ -5,12 +5,23 @@
 
 namespace laps {
     class PublishTrackHandler;
+
     /**
      * @brief  Publish namespace handler
      */
     class PublishNamespaceHandler : public quicr::PublishNamespaceHandler
     {
       public:
+        /**
+         * @brief Tracked property value struct
+         * @details Structure of variables for tracked property values
+         */
+        struct TrackPropertyValue
+        {
+            uint64_t latest_value;                       // Latest value sampled
+            quicr::TickService::TickType latest_tick_ms; // Latest tick value when last sampled
+        };
+
         PublishNamespaceHandler(const quicr::TrackNamespace& prefix);
 
         quicr::PublishTrackHandler::PublishObjectStatus PublishObject(quicr::TrackFullNameHash track_full_name_hash,
