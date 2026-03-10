@@ -313,6 +313,7 @@ namespace laps {
 
                     for (const auto& [conn_id, ns_handler] : conns) {
                         sub_track_handler->AddSubscribeNamespace(ns_handler);
+                        sub_track_handler->SetTrackRanking(ns_handler->GetTrackRanking());
                     }
                 }
             }
@@ -357,6 +358,9 @@ namespace laps {
                         th.track_namespace_hash);
         }
 
+        auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());
+        handler->SetTrackRanking(ranks_it->second);
+
         std::vector<quicr::TrackNamespace> matched_ns;
 
         // TODO: Fix O(prefix namespaces) matching
@@ -394,6 +398,7 @@ namespace laps {
                 pub_it->second->PublishTrack(pub_handler);
 
                 handler->AddSubscribeNamespace(pub_it->second);
+                handler->SetTrackRanking(ranks_it->second);
 
                 SPDLOG_LOGGER_DEBUG(
                   LOGGER,

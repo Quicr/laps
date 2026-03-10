@@ -2,6 +2,7 @@
 
 #include "quicr/publish_namespace_handler.h"
 #include "quicr/track_name.h"
+#include "track_ranking.h"
 
 namespace laps {
     class PublishTrackHandler;
@@ -41,5 +42,11 @@ namespace laps {
         {
             return std::shared_ptr<PublishNamespaceHandler>(new PublishNamespaceHandler(prefix));
         }
+
+        void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
+        std::weak_ptr<TrackRanking> GetTrackRanking() { return track_ranking_; }
+
+      private:
+        std::weak_ptr<TrackRanking> track_ranking_;
     };
 } // namespace laps

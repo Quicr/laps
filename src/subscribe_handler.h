@@ -17,6 +17,8 @@ namespace laps {
     class SubscribeTrackHandler : public quicr::SubscribeTrackHandler
     {
       public:
+        static constexpr uint64_t kRefreshRankingIntervalMs = 1000;
+
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               quicr::messages::ObjectPriority priority,
                               quicr::messages::GroupOrder group_order,
@@ -78,6 +80,8 @@ namespace laps {
          */
         void RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler);
 
+        void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
+
         bool HasSubscribers() const { return !subscribers.empty() || !sub_namespaces_.empty(); }
 
       private:
@@ -115,5 +119,7 @@ namespace laps {
          * @details
          */
         std::map<uint64_t, PublishNamespaceHandler::TrackPropertyValue> tracked_properties_value_;
+
+        std::weak_ptr<TrackRanking> track_ranking_;
     };
 } // namespace laps
