@@ -456,6 +456,7 @@ namespace laps {
 
         if (it->second.empty()) {
             state_.subscribes_namespaces.erase(it);
+            track_rankings_.erase(th.track_namespace_hash);
         }
     }
 
