@@ -13,6 +13,7 @@ add_executable(lapsRelay
         subscribe_handler.cc
         publish_handler.cc
         fetch_handler.cc
+        publish_namespace_handler.cc
 
         peering/messages/connect.cc
         peering/messages/connect_response.cc

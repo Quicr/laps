@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <mutex>
 #include <quicr/server.h>
 #include <set>
@@ -8,6 +7,7 @@
 namespace laps {
     class SubscribeTrackHandler;
     class PublishTrackHandler;
+    class PublishNamespaceHandler;
 
     struct State
     {
@@ -48,7 +48,7 @@ namespace laps {
          *      track_alias_set = namespace_active[track_namespace_hash, connection_handle]
          */
         std::map<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
-          namespace_active;
+          pub_namespace_active;
 
         /**
          * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
@@ -66,8 +66,14 @@ namespace laps {
         std::map<std::pair<uint64_t, quicr::ConnectionHandle>, std::shared_ptr<SubscribeTrackHandler>>
           pub_subscribes_by_req_id;
 
-        /// Subscriber connection handles by subscribe prefix namespace for subscribe namespace
-        std::map<quicr::TrackNamespace, std::set<quicr::ConnectionHandle>> subscribes_namespaces;
+        /**
+         * @brief Subscribe Namespace by connection to publish namespace handlers
+         * @details Subscribe namespaces by connection are added to this map. Each will have an associated
+         *      publish namespace handler. The publish namespace handler is used to establish publish tracks
+         *      to the subscriber of the namespace
+         */
+        std::map<quicr::TrackNamespace, std::map<quicr::ConnectionHandle, std::shared_ptr<PublishNamespaceHandler>>>
+          subscribes_namespaces;
 
         struct SubscribePublishHandlerInfo
         {
@@ -77,7 +83,6 @@ namespace laps {
             uint8_t priority{ 0 };
             uint32_t object_ttl{ 0 };
             quicr::messages::GroupOrder group_order;
-            std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> publish_handlers;
             quicr::messages::Location start_location;
         };
 

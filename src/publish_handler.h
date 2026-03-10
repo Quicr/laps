@@ -1,9 +1,6 @@
 #pragma once
 
 #include "client_manager.h"
-#include "state.h"
-#include <quicr/common.h>
-#include <quicr/subscribe_track_handler.h>
 
 namespace laps {
     /**
@@ -17,6 +14,7 @@ namespace laps {
                             quicr::TrackMode track_mode,
                             uint8_t default_priority,
                             uint32_t default_ttl,
+                            quicr::messages::Location start_location,
                             ClientManager& server);
 
         void StatusChanged(Status status) override;
@@ -25,8 +23,25 @@ namespace laps {
         // note: pipelining starts after the first object
         bool SentFirstObject(uint32_t group_id, uint32_t subgroup_id);
 
+        static std::shared_ptr<PublishTrackHandler> Create(const quicr::FullTrackName& full_track_name,
+                                                           quicr::TrackMode track_mode,
+                                                           uint8_t default_priority,
+                                                           uint32_t default_ttl,
+                                                           quicr::messages::Location start_location,
+                                                           ClientManager& server)
+        {
+            return std::make_shared<PublishTrackHandler>(
+              full_track_name, track_mode, default_priority, default_ttl, start_location, server);
+        }
+
       private:
         ClientManager& server_;
+
+      public:
+        /*
+         * Filter related variables
+         */
+        quicr::messages::Location start_location_{ 0, 0 };
     };
 
 } // namespace laps

@@ -122,7 +122,7 @@ namespace laps::peering {
 
             // If no publish, then check announces
             if (not announce_matches) {
-                for (auto& [key, track_aliases] : state_.namespace_active) {
+                for (auto& [key, track_aliases] : state_.pub_namespace_active) {
                     if (!key.first.HasSamePrefix(sub.track_namespace)) {
                         continue;
                     }
@@ -213,7 +213,7 @@ namespace laps::peering {
             }
 
             if (client_manager_ != nullptr) {
-                client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash);
+                client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash.track_fullname_hash);
             }
         }
 
@@ -282,7 +282,7 @@ namespace laps::peering {
                 attrs.priority = 64;
                 attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
 
-                client_manager_->PublishReceived(0, 0, attrs);
+                client_manager_->PublishReceived(0, 0, attrs, {});
             } else {
                 // TODO: Signal to client manager that the publish is done
             }
