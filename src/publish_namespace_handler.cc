@@ -26,8 +26,12 @@ laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full
                                              const quicr::ObjectHeaders& object_headers,
                                              quicr::BytesSpan data)
 {
-    // TODO: Implement subscribe namespace level per track filters
-    //      Process incoming watched extensions to form Top-N
+    // Top-N filter: only forward tracks that are in the selected set
+    if (auto ranking = track_ranking_.lock()) {
+        if (!ranking->IsSelected(track_full_name_hash)) {
+            return quicr::PublishTrackHandler::PublishObjectStatus::kOk;
+        }
+    }
 
     if (const auto pub_it = handlers_.find(track_full_name_hash); pub_it != handlers_.end()) {
 
@@ -56,8 +60,12 @@ laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash tra
                                                     uint64_t subgroup_id,
                                                     std::shared_ptr<const std::vector<uint8_t>> data)
 {
-    // TODO: Implement subscribe namespace level per track filters
-    //      Process incoming watched extensions to form Top-N
+    // Top-N filter: only forward tracks that are in the selected set
+    if (auto ranking = track_ranking_.lock()) {
+        if (!ranking->IsSelected(track_full_name_hash)) {
+            return quicr::PublishTrackHandler::PublishObjectStatus::kOk;
+        }
+    }
 
     if (const auto pub_it = handlers_.find(track_full_name_hash); pub_it != handlers_.end()) {
 

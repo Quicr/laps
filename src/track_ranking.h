@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <span>
 #include <unordered_map>
@@ -33,8 +34,6 @@ namespace laps {
                                 t_it->second.latest_value,
                                 value,
                                 tick);
-
-                    // compute
                 } else if (t_it->second.latest_value > value) {
                     SPDLOG_INFO("Decrease in value TA: {} type: {} from: {} to: {} tick: {}",
                                 track_alias,
@@ -42,14 +41,14 @@ namespace laps {
                                 t_it->second.latest_value,
                                 value,
                                 tick);
-
-                    // compute
                 }
 
                 // Update
                 t_it->second.latest_value = value;
                 t_it->second.latest_tick_ms = tick;
             }
+
+            ComputeSelected();
         }
 
         /*
@@ -64,18 +63,72 @@ namespace laps {
         /**
          * @brief Get the selected (aka ordered by best) list of track aliases
          *
-         * @details Returns a list of track aliases and the age in milliseconds since the last
-         *      update. Limit is used to limit the result set.
+         * @details Returns a list of track aliases and the property value, ordered by highest
+         *      value first. Limit is used to limit the result set.
          *
          * @param limit           Limit the return set of selected, ordered by best first
          *
-         * @returns Returns a span of pairs <TrackAlias, ms_since_last_update>
+         * @returns Returns a span of pairs <TrackAlias, PropertyValue>
          */
-        constexpr std::span<const TrackSelectedEntry> GetSelected(uint64_t limit) { return {}; }
+        std::span<const TrackSelectedEntry> GetSelected(uint64_t limit)
+        {
+            if (limit == 0 || limit >= selected_tracks_.size()) {
+                return selected_tracks_;
+            }
+            return std::span<const TrackSelectedEntry>(selected_tracks_.data(), limit);
+        }
+
+        /**
+         * @brief Check if a track alias is in the top-N selected set
+         *
+         * @details Returns true if ranking data has not been populated yet (no filtering)
+         *          or if the track alias is within the top max_tracks_selected_ tracks.
+         */
+        bool IsSelected(TrackAlias track_alias) const
+        {
+            if (selected_tracks_.empty()) {
+                return true;
+            }
+
+            return std::any_of(selected_tracks_.begin(), selected_tracks_.end(),
+                               [track_alias](const auto& entry) { return entry.first == track_alias; });
+        }
 
       private:
-        uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
+        uint64_t max_tracks_selected_{ 1 }; // Max tracks to select as candidate top-n
         uint64_t inactive_age_ms_{ 5000 };   // Age in ms of a track that is considered stale/inactive
+
+        /**
+         * @brief Recompute the selected top-N tracks from current ranking data
+         */
+        void ComputeSelected()
+        {
+            // Collect best value per track alias across all property types
+            std::unordered_map<TrackAlias, PropertyValue> best_values;
+            for (const auto& [prop, tracks] : tracks_) {
+                for (const auto& [ta, info] : tracks) {
+                    auto [it, is_new] = best_values.try_emplace(ta, info.latest_value);
+                    if (!is_new && info.latest_value > it->second) {
+                        it->second = info.latest_value;
+                    }
+                }
+            }
+
+            selected_tracks_.clear();
+            selected_tracks_.reserve(best_values.size());
+            for (const auto& [ta, val] : best_values) {
+                selected_tracks_.emplace_back(ta, val);
+            }
+
+            // Sort by value descending (highest first)
+            std::sort(selected_tracks_.begin(), selected_tracks_.end(),
+                      [](const auto& a, const auto& b) { return a.second > b.second; });
+
+            // Trim to max selected
+            if (selected_tracks_.size() > max_tracks_selected_) {
+                selected_tracks_.resize(max_tracks_selected_);
+            }
+        }
 
         struct TrackInfo
         {
