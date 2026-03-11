@@ -3,7 +3,9 @@
 #include "quicr/publish_namespace_handler.h"
 #include "quicr/track_name.h"
 
+#include <deque>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace laps {
     class PublishTrackHandler;
@@ -62,10 +64,21 @@ namespace laps {
         constexpr void SetInactiveAge(const uint64_t age_ms) { inactive_age_ms_ = age_ms; }
         constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
+        constexpr void SetMaxDeselected(const uint64_t max) { max_tracks_deselected_ = max; }
+        constexpr uint64_t GetMaxDeselected() { return max_tracks_deselected_; }
+
       private:
-        uint64_t max_tracks_selected_{ 1 }; // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 3000 };  // Age in ms of a track that is considered stale/inactive
+        uint64_t max_tracks_selected_{ 1 };    // Max tracks to select as candidate top-n
+        uint64_t max_tracks_deselected_{ 0 };   // Max tracks to keep in deselected list before PUBLISH_DONE
+        uint64_t inactive_age_ms_{ 3000 };      // Age in ms of a track that is considered stale/inactive
+
+        // All known handlers — survives UnPublishTrack so tracks can be re-published
+        std::unordered_map<uint64_t, std::shared_ptr<quicr::PublishTrackHandler>> all_handlers_;
 
         std::map<quicr::TrackNamespaceHash, std::weak_ptr<quicr::PublishTrackHandler>> active_tracks_;
+
+        // Deselected list: tracks no longer active but still published. Ordered by deselection time (front = oldest).
+        std::deque<uint64_t> deselected_order_;
+        std::unordered_map<uint64_t, std::weak_ptr<quicr::PublishTrackHandler>> deselected_tracks_;
     };
 } // namespace laps

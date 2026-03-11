@@ -16,6 +16,7 @@ namespace laps {
 void
 laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler)
 {
+    all_handlers_.try_emplace(handler->GetTrackAlias().value(), handler);
     quicr::PublishNamespaceHandler::PublishTrack(handler);
     if (active_tracks_.size() < max_tracks_selected_) {
         active_tracks_.emplace(handler->GetTrackAlias().value(), handler);
@@ -100,6 +101,41 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
     std::unordered_set<uint64_t> new_active;
 
+    // Activate a track: move from deselected if present, otherwise from handlers_
+    auto activate_track = [&](uint64_t ta, uint64_t value) {
+        if (active_tracks_.contains(ta)) {
+            return true;
+        }
+
+        // Check deselected list first (no re-publish needed)
+        auto desel_it = deselected_tracks_.find(ta);
+        if (desel_it != deselected_tracks_.end()) {
+            SPDLOG_INFO("Update track ranking: reselecting track alias: {} value: {} from deselected", ta, value);
+            active_tracks_.try_emplace(ta, desel_it->second);
+            deselected_tracks_.erase(desel_it);
+            std::erase(deselected_order_, ta);
+            return true;
+        }
+
+        // Not in deselected — check all_handlers_ and re-publish if needed
+        auto track_it = all_handlers_.find(ta);
+        if (track_it == all_handlers_.end()) {
+            SPDLOG_INFO("Skipping track {} due to missing handler", ta);
+            return false;
+        }
+
+        // If not in base handlers_, track was dropped (PUBLISH_DONE sent) — re-publish
+        if (!handlers_.contains(ta)) {
+            SPDLOG_INFO("Update track ranking: re-publishing dropped track alias: {} value: {}", ta, value);
+            quicr::PublishNamespaceHandler::PublishTrack(track_it->second);
+        } else {
+            SPDLOG_INFO("Update track ranking: selecting new track alias: {} value: {}", ta, value);
+        }
+
+        active_tracks_.try_emplace(ta, track_it->second);
+        return true;
+    };
+
     // First pass: select all tracks strictly above cutoff, and retain incumbents at or above cutoff
     for (const auto& [ta, value] : ordered_tracks) {
         if (value < cutoff_value) {
@@ -108,15 +144,8 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
         if (value > cutoff_value) {
             // Strictly above cutoff — always selected
-            new_active.emplace(ta);
-            if (!active_tracks_.contains(ta)) {
-                auto track_it = handlers_.find(ta);
-                if (track_it != handlers_.end()) {
-                    SPDLOG_INFO("Update track ranking: selecting new track alias: {} value: {}", ta, value);
-                    active_tracks_.try_emplace(ta, track_it->second);
-                }
-            } else {
-                SPDLOG_INFO("Update track ranking: retaining track alias: {} value: {}", ta, value);
+            if (activate_track(ta, value)) {
+                new_active.emplace(ta);
             }
         } else if (active_tracks_.contains(ta)) {
             // At cutoff value — incumbent wins tie
@@ -142,27 +171,43 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                 continue;
             }
 
-            auto track_it = handlers_.find(ta);
-            if (track_it == handlers_.end()) {
-                SPDLOG_INFO("Skipping track {} due to missing handler", ta);
-                continue;
+            if (activate_track(ta, value)) {
+                new_active.emplace(ta);
             }
-
-            SPDLOG_INFO("Update track ranking: selecting new track alias: {} value: {}", ta, value);
-            new_active.emplace(ta);
-            active_tracks_.try_emplace(ta, track_it->second);
         }
     }
 
-    // Remove tracks no longer in the active set
+    // Move tracks leaving active into the deselected list
     std::vector<uint64_t> rm_tracks;
     for (auto& [ta, handler] : active_tracks_) {
         if (!new_active.contains(ta)) {
             rm_tracks.emplace_back(ta);
+            // Add to deselected list (still published, just not forwarding)
+            if (!deselected_tracks_.contains(ta)) {
+                SPDLOG_INFO("Update track ranking: deselecting track alias: {}", ta);
+                deselected_tracks_.emplace(ta, handler);
+                deselected_order_.push_back(ta);
+            }
         }
     }
 
     for (auto& ta : rm_tracks) {
         active_tracks_.erase(ta);
+    }
+
+    // Trim deselected list — drop oldest entries beyond max, sending PUBLISH_DONE
+    while (deselected_order_.size() > max_tracks_deselected_) {
+        auto oldest_ta = deselected_order_.front();
+        deselected_order_.pop_front();
+
+        auto it = deselected_tracks_.find(oldest_ta);
+        if (it != deselected_tracks_.end()) {
+            if (auto h = it->second.lock()) {
+                SPDLOG_INFO("Update track ranking: dropping track alias: {} from deselected list, sending PUBLISH_DONE",
+                            oldest_ta);
+                quicr::PublishNamespaceHandler::UnPublishTrack(h);
+            }
+            deselected_tracks_.erase(it);
+        }
     }
 }
