@@ -84,24 +84,19 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::pair<quicr::messages::TrackAlias, uint64_t>> ordered_tracks)
 {
     // ordered_tracks is sorted by property value descending. Each entry is (TrackAlias, PropertyValue).
-    // Incumbents (tracks already in active_tracks_) win ties: they can only be displaced by a track
-    // with a strictly higher value.
+    // A selected track stays selected unless:
+    //   1. A non-selected track has a strictly higher value, displacing it from the top N
+    //   2. MaxTimeSelected expires (handled upstream by excluding stale tracks from the list)
 
-    // Find the cutoff value: the value at position N in the ranked list.
-    // All tracks with value > cutoff are unconditionally selected.
-    // Tracks at the cutoff value are selected only if they are incumbents, or if slots remain.
-    uint64_t cutoff_value = 0;
-    uint64_t count = 0;
+    // Build a map of current values for active tracks from the ranked list
+    std::unordered_map<uint64_t, uint64_t> active_values; // ta -> value
     for (const auto& [ta, value] : ordered_tracks) {
-        cutoff_value = value;
-        if (++count >= max_tracks_selected_) {
-            break;
+        if (active_tracks_.contains(ta)) {
+            active_values.emplace(ta, value);
         }
     }
 
-    std::unordered_set<uint64_t> new_active;
-
-    // Activate a track: move from deselected if present, otherwise from handlers_
+    // Activate a track: move from deselected if present, otherwise from all_handlers_
     auto activate_track = [&](uint64_t ta, uint64_t value) {
         if (active_tracks_.contains(ta)) {
             return true;
@@ -136,55 +131,71 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
         return true;
     };
 
-    // First pass: select all tracks strictly above cutoff, and retain incumbents at or above cutoff
+    // Find the lowest value among active tracks
+    auto find_lowest_active = [&]() -> std::pair<uint64_t, uint64_t> { // (ta, value)
+        uint64_t lowest_ta = 0;
+        uint64_t lowest_value = UINT64_MAX;
+        for (const auto& [ta, value] : active_values) {
+            if (value < lowest_value) {
+                lowest_value = value;
+                lowest_ta = ta;
+            }
+        }
+        return { lowest_ta, lowest_value };
+    };
+
+    // Walk the ranked list (highest value first). Non-active tracks displace the
+    // lowest active track only if they have a strictly higher value.
     for (const auto& [ta, value] : ordered_tracks) {
-        if (value < cutoff_value) {
-            break;
+        if (active_tracks_.contains(ta)) {
+            continue; // Already active, skip
         }
 
-        if (value > cutoff_value) {
-            // Strictly above cutoff — always selected
+        if (active_values.size() < max_tracks_selected_) {
+            // Empty slots — fill without needing to displace
             if (activate_track(ta, value)) {
-                new_active.emplace(ta);
+                active_values.emplace(ta, value);
+                SPDLOG_INFO("Update track ranking: filled empty slot with track alias: {} value: {}", ta, value);
             }
-        } else if (active_tracks_.contains(ta)) {
-            // At cutoff value — incumbent wins tie
-            if (new_active.size() < max_tracks_selected_) {
-                SPDLOG_INFO("Update track ranking: retaining incumbent track alias: {} value: {}", ta, value);
-                new_active.emplace(ta);
+            continue;
+        }
+
+        auto [lowest_ta, lowest_value] = find_lowest_active();
+
+        if (value <= lowest_value) {
+            break; // No more displacements possible (list is sorted descending)
+        }
+
+        // Strictly higher value — displace the lowest active track
+        SPDLOG_INFO("Update track ranking: track alias: {} value: {} displaces track alias: {} value: {}",
+                     ta, value, lowest_ta, lowest_value);
+
+        // Deselect the displaced track
+        auto displaced_it = active_tracks_.find(lowest_ta);
+        if (displaced_it != active_tracks_.end()) {
+            if (!deselected_tracks_.contains(lowest_ta)) {
+                SPDLOG_INFO("Update track ranking: deselecting track alias: {}", lowest_ta);
+                deselected_tracks_.emplace(lowest_ta, displaced_it->second);
+                deselected_order_.push_back(lowest_ta);
             }
+            active_tracks_.erase(displaced_it);
+        }
+        active_values.erase(lowest_ta);
+
+        // Activate the new track
+        if (activate_track(ta, value)) {
+            active_values.emplace(ta, value);
         }
     }
 
-    // Second pass: fill remaining slots from tracks at cutoff value (non-incumbents)
-    if (new_active.size() < max_tracks_selected_) {
-        for (const auto& [ta, value] : ordered_tracks) {
-            if (new_active.size() >= max_tracks_selected_) {
-                break;
-            }
-
-            if (value < cutoff_value) {
-                break;
-            }
-
-            if (value > cutoff_value || new_active.contains(ta)) {
-                continue;
-            }
-
-            if (activate_track(ta, value)) {
-                new_active.emplace(ta);
-            }
-        }
-    }
-
-    // Move tracks leaving active into the deselected list
+    // Remove any active tracks that were excluded from the ranked list entirely
+    // (e.g. exceeded MaxTimeSelected)
     std::vector<uint64_t> rm_tracks;
     for (auto& [ta, handler] : active_tracks_) {
-        if (!new_active.contains(ta)) {
+        if (!active_values.contains(ta)) {
             rm_tracks.emplace_back(ta);
-            // Add to deselected list (still published, just not forwarding)
             if (!deselected_tracks_.contains(ta)) {
-                SPDLOG_INFO("Update track ranking: deselecting track alias: {}", ta);
+                SPDLOG_INFO("Update track ranking: deselecting stale track alias: {}", ta);
                 deselected_tracks_.emplace(ta, handler);
                 deselected_order_.push_back(ta);
             }
