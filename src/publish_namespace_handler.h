@@ -63,7 +63,7 @@ namespace laps {
         constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
       private:
-        uint64_t max_tracks_selected_{ 3 }; // Max tracks to select as candidate top-n
+        uint64_t max_tracks_selected_{ 1 }; // Max tracks to select as candidate top-n
         uint64_t inactive_age_ms_{ 3000 };  // Age in ms of a track that is considered stale/inactive
 
         std::map<quicr::TrackNamespaceHash, std::weak_ptr<quicr::PublishTrackHandler>> active_tracks_;

@@ -59,21 +59,8 @@ namespace laps {
                 for (auto it = rbegin; it != rend; ++it) {
                     auto& [key, entry] = *it;
 
-                    std::vector<std::pair<TrackAlias, uint64_t>> sort_tracks(entry.begin(), entry.end());
-                    std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
-                        if (a.second != b.second)
-                            return a.second < b.second; // by tick
-                        return a.first < b.first;       // tie-break
-                    });
-
-                    flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
-                }
-            } else {
-                // Update tick in flat_track_list_ in-place
-                for (auto& [alias, tick_val] : flat_track_list_) {
-                    if (alias == track_alias) {
-                        tick_val = tick;
-                        break;
+                    for (const auto& [ta, _tick] : entry) {
+                        flat_track_list_.emplace_back(ta, key.second); // (TrackAlias, PropertyValue)
                     }
                 }
             }
@@ -101,16 +88,14 @@ namespace laps {
         void AddNamespaceHandler(std::weak_ptr<PublishNamespaceHandler> handler)
         {
             if (auto h = handler.lock()) {
-                auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
-                ns_handlers_.try_emplace(th.track_namespace_hash, handler);
+                ns_handlers_.try_emplace(h->GetConnectionId(), handler);
             }
         }
 
         void RemoveNamespaceHandler(std::weak_ptr<PublishNamespaceHandler> handler)
         {
             if (auto h = handler.lock()) {
-                auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
-                ns_handlers_.erase(th.track_namespace_hash);
+                ns_handlers_.erase(h->GetConnectionId());
             }
         }
 
@@ -139,6 +124,6 @@ namespace laps {
         /**
          * @brief Publish namespace handlers that are related to this track ranking
          */
-        std::map<quicr::TrackNamespaceHash, std::weak_ptr<PublishNamespaceHandler>> ns_handlers_;
+        std::map<quicr::ConnectionHandle, std::weak_ptr<PublishNamespaceHandler>> ns_handlers_;
     };
 }

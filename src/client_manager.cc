@@ -386,7 +386,7 @@ namespace laps {
         // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
         //  subscribes
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.second == connection_handle || !handler) {
+            if (!handler) {
                 continue;
             }
 
@@ -455,7 +455,7 @@ namespace laps {
 
         // Loop through publishes and remove subscribe namespace
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.second == connection_handle || !handler) {
+            if (!handler) {
                 continue;
             }
 
