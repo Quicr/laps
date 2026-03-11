@@ -17,7 +17,7 @@ namespace laps {
         using PropertyType = uint64_t;
         using TrackAlias = uint64_t;
         using PropertyValue = uint64_t;
-        using TrackEntry = std::vector<std::pair<TrackAlias, uint64_t>>; // Value is the tick value of last update
+        using TrackEntry = std::unordered_map<TrackAlias, uint64_t>; // Value is the tick value of last update
 
         /**
          * @brief Update track ranking value for property type and track alias
@@ -29,31 +29,36 @@ namespace laps {
          */
         void UpdateValue(const TrackAlias track_alias, const uint64_t prop, const uint64_t value, const uint64_t tick)
         {
-            auto& prop_idx_map = track_entry_index_;
-            auto track_it = prop_idx_map.find(track_alias);
-            if (track_it != prop_idx_map.end()) {
-
-            }
-
             auto [prop_it, _] = ordered_tracks_.try_emplace({ prop, value });
-
-            auto entry = std::make_pair(track_alias, tick);
-            prop_it->second[track_alias] = tick;
+            prop_it->second.insert_or_assign(track_alias, tick);
 
             SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {}", track_alias, prop, value, tick);
 
-            // notify each subscribe namespace (aka publish namespace handler)
-            std::vector<quicr::TrackNamespaceHash> rm_handlers;
-            for (auto [ns_hash, handler] : ns_handlers_) {
-                if (auto h = handler.lock()) {
-                    h->UpdateTrackRanking(prop_it->second);
-                } else {
-                    rm_handlers.emplace_back(ns_hash);
-                }
+            flat_track_list_.clear();
+            for (auto it = ordered_tracks_.lower_bound({ prop, 0 }); it != ordered_tracks_.end(); ++it) {
+                auto& [key, entry] = *it;
+
+                if (key.first != prop)
+                    break;
+
+                std::vector<std::pair<TrackAlias, uint64_t>> sort_tracks(entry.begin(), entry.end());
+                std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
+                    if (a.second != b.second)
+                        return a.second < b.second; // by tick
+                    return a.first < b.first;       // tie-break
+                });
+
+                flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
             }
 
-            for (auto hash : rm_handlers) {
-                ns_handlers_.erase(hash);
+            // notify each subscribe namespace (aka publish namespace handler)
+            for (auto it = ns_handlers_.begin(); it != ns_handlers_.end();) {
+                if (auto h = it->second.lock()) {
+                    h->UpdateTrackRanking(flat_track_list_);
+                    ++it;
+                } else {
+                    it = ns_handlers_.erase(it); // returns next iterator
+                }
             }
         }
 
@@ -102,7 +107,7 @@ namespace laps {
          *
          */
         std::map<std::pair<PropertyType, PropertyValue>, TrackEntry> ordered_tracks_;
-        std::map<PropertyType, std::unordered_map<TrackAlias, std::size_t>> track_entry_index_;
+        std::vector<std::pair<TrackAlias, uint64_t>> flat_track_list_;
 
         /**
          * @brief Publish namespace handlers that are related to this track ranking
