@@ -29,26 +29,54 @@ namespace laps {
          */
         void UpdateValue(const TrackAlias track_alias, const uint64_t prop, const uint64_t value, const uint64_t tick)
         {
-            auto [prop_it, _] = ordered_tracks_.try_emplace({ prop, value });
+            // Check if track exists in a different value bucket
+            bool needs_rebuild = false;
+            for (auto it = ordered_tracks_.lower_bound({ prop, 0 });
+                 it != ordered_tracks_.end() && it->first.first == prop;
+                 ++it) {
+                if (it->first.second != value && it->second.contains(track_alias)) {
+                    it->second.erase(track_alias); // Remove from old bucket
+                    if (it->second.empty()) {
+                        it = ordered_tracks_.erase(it); // erase returns next iterator
+                    }
+                    needs_rebuild = true;
+                    break;
+                }
+            }
+
+            auto [prop_it, inserted] = ordered_tracks_.try_emplace({ prop, value });
             prop_it->second.insert_or_assign(track_alias, tick);
+
+            // Rebuild if track moved buckets or new bucket was created
+            needs_rebuild = needs_rebuild || inserted;
 
             SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {}", track_alias, prop, value, tick);
 
-            flat_track_list_.clear();
-            for (auto it = ordered_tracks_.lower_bound({ prop, 0 }); it != ordered_tracks_.end(); ++it) {
-                auto& [key, entry] = *it;
+            if (needs_rebuild) {
+                flat_track_list_.clear();
+                for (auto it = ordered_tracks_.lower_bound({ prop, 0 }); it != ordered_tracks_.end(); ++it) {
+                    auto& [key, entry] = *it;
 
-                if (key.first != prop)
-                    break;
+                    if (key.first != prop)
+                        break;
 
-                std::vector<std::pair<TrackAlias, uint64_t>> sort_tracks(entry.begin(), entry.end());
-                std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
-                    if (a.second != b.second)
-                        return a.second < b.second; // by tick
-                    return a.first < b.first;       // tie-break
-                });
+                    std::vector<std::pair<TrackAlias, uint64_t>> sort_tracks(entry.begin(), entry.end());
+                    std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
+                        if (a.second != b.second)
+                            return a.second < b.second; // by tick
+                        return a.first < b.first;       // tie-break
+                    });
 
-                flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
+                    flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
+                }
+            } else {
+                // Update tick in flat_track_list_ in-place
+                for (auto& [alias, tick_val] : flat_track_list_) {
+                    if (alias == track_alias) {
+                        tick_val = tick;
+                        break;
+                    }
+                }
             }
 
             // notify each subscribe namespace (aka publish namespace handler)
