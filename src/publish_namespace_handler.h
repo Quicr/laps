@@ -51,7 +51,7 @@ namespace laps {
          * @param ordered_tracks            Span of track proprtery values
          */
         virtual void UpdateTrackRanking(
-          const std::unordered_map<quicr::messages::TrackAlias, uint64_t>& ordered_tracks);
+          std::span<const std::pair<quicr::messages::TrackAlias, uint64_t>> ordered_tracks);
 
         /*
          * Getter/Setters

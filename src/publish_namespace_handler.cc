@@ -79,7 +79,7 @@ laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash tra
 
 void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
-  const std::unordered_map<quicr::messages::TrackAlias, uint64_t>& ordered_tracks)
+  std::span<const std::pair<quicr::messages::TrackAlias, uint64_t>>  ordered_tracks)
 {
     uint64_t i = 0;
     std::unordered_set<uint64_t> updated_tracks;
