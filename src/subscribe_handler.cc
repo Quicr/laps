@@ -107,7 +107,10 @@ namespace laps {
     void SubscribeTrackHandler::UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                                         std::optional<quicr::Extensions> immutable_extensions)
     {
-        auto update = [ta = GetTrackAlias().value(), ticks = tick_service_.lock(), ranking = track_ranking_.lock()](
+        auto update = [ta = GetTrackAlias().value(),
+                       conn_id = GetConnectionId(),
+                       ticks = tick_service_.lock(),
+                       ranking = track_ranking_.lock()](
                         uint64_t prop, PublishNamespaceHandler::TrackPropertyValue& value, uint64_t recv_value) {
             quicr::TickService::TickType cur_tick{ 0 };
             if (ticks != nullptr) {
@@ -119,7 +122,7 @@ namespace laps {
                 value.latest_tick_ms = cur_tick;
 
                 if (ranking) {
-                    ranking->UpdateValue(ta, prop, value.latest_value, value.latest_tick_ms);
+                    ranking->UpdateValue(ta, prop, value.latest_value, value.latest_tick_ms, conn_id);
                 }
             }
         };

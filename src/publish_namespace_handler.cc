@@ -18,7 +18,6 @@ namespace laps {
 void
 laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler)
 {
-    handlers_.try_emplace(handler->GetTrackAlias().value(), handler);
     if (active_tracks_.size() < max_tracks_selected_) {
         quicr::PublishNamespaceHandler::PublishTrack(handler);
 
@@ -86,35 +85,37 @@ laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash tra
 
 void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
-  std::span<const std::pair<quicr::messages::TrackAlias, uint64_t>> ordered_tracks)
+  std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t>> ordered_tracks)
 {
     uint64_t i = 0;
     std::unordered_map<uint64_t, uint64_t> updated_tracks;
 
-    for (const auto& [ta, tick] : ordered_tracks) {
+    for (const auto& [ta, tick, publisher_conn_id] : ordered_tracks) {
         if (i++ >= max_tracks_selected_) {
             break;
         }
 
-        SPDLOG_INFO("Update track tracking: Top track {} track alias: {}", i, ta);
+        // Filter out self-tracks
+        if (publisher_conn_id == GetConnectionId()) {
+            SPDLOG_INFO("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
+            continue;
+        }
+
+        SPDLOG_INFO("Update track tracking: Top track {} track alias: {} from conn {}", i, ta, publisher_conn_id);
 
         if (active_tracks_.contains(ta)) {
             continue;
         }
 
-        // TODO: Skip if tick from current time is greater than max time selected
-
         auto track_it = handlers_.find(ta);
         if (track_it == handlers_.end()) {
-            SPDLOG_INFO("Skipping track {} due to missing handler", ta);
-            continue;
-        }
+            PublishTrack(track_it->second);
+        } else {
+            auto [_, is_new] = active_tracks_.try_emplace(ta, ActiveTrack{ tick, track_it->second });
 
-        auto [it, is_new] = active_tracks_.try_emplace(ta, ActiveTrack{ tick, track_it->second });
-
-        if (is_new) {
-            SPDLOG_INFO("Publish track {} is new, sending Publish Track", ta);
-            quicr::PublishNamespaceHandler::PublishTrack(track_it->second);
+            if (is_new) {
+                SPDLOG_INFO("Publish track {} is newly selected", ta);
+            }
         }
 
         updated_tracks.emplace(ta, tick);
@@ -133,7 +134,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
             // Only remove tracks after delay/grace period
             if (auto tick_svc = tick_service_.lock();
-                tick_svc->Milliseconds() - track.latest_tick > delay_publish_done_ms) {
+                tick_svc->Milliseconds() - track.latest_tick > delay_publish_done_ms_) {
                 if (auto h = track.handler.lock()) {
                     quicr::PublishNamespaceHandler::UnPublishTrack(h);
                 }

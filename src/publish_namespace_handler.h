@@ -48,10 +48,10 @@ namespace laps {
          * @brief Updates the track ranking
          * @details TrackRanking instance calls this method for each namespace to update the top-n/ranked tracks
          *
-         * @param ordered_tracks            Span of track property values
+         * @param ordered_tracks            Span of track property values with connection IDs
          */
         virtual void UpdateTrackRanking(
-          std::span<const std::pair<quicr::messages::TrackAlias, uint64_t>> ordered_tracks);
+          std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t>> ordered_tracks);
 
         /*
          * Getter/Setters
@@ -63,9 +63,9 @@ namespace laps {
         constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
       private:
-        uint64_t max_tracks_selected_{ 3 };    // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 3000 };     // Age in ms of a track that is considered stale/inactive
-        uint64_t delay_publish_done_ms{ 500 }; // Delay sending publish done to allow publish to come back
+        uint64_t max_tracks_selected_{ 1 };     // Max tracks to select as candidate top-n
+        uint64_t inactive_age_ms_{ 3000 };      // Age in ms of a track that is considered stale/inactive
+        uint64_t delay_publish_done_ms_{ 500 }; // Delay sending publish done to allow publish to come back
 
         std::weak_ptr<quicr::TickService> tick_service_;
 

@@ -27,7 +27,11 @@ namespace laps {
          * @param value                 Value of the property
          * @param tick                  Current tick value
          */
-        void UpdateValue(const TrackAlias track_alias, const uint64_t prop, const uint64_t value, const uint64_t tick)
+        void UpdateValue(const TrackAlias track_alias,
+                         const uint64_t prop,
+                         const uint64_t value,
+                         const uint64_t tick,
+                         const uint64_t connection_id)
         {
             // Check if track exists in a different value bucket
             bool needs_rebuild = false;
@@ -47,10 +51,18 @@ namespace laps {
             auto [prop_it, inserted] = ordered_tracks_.try_emplace({ prop, value });
             prop_it->second.insert_or_assign(track_alias, tick);
 
+            // Store connection ID for this track
+            track_connections_[track_alias] = connection_id;
+
             // Rebuild if track moved buckets or new bucket was created
             needs_rebuild = needs_rebuild || inserted;
 
-            SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {}", track_alias, prop, value, tick);
+            SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
+                        track_alias,
+                        prop,
+                        value,
+                        tick,
+                        connection_id);
 
             if (needs_rebuild) {
                 flat_track_list_.clear();
@@ -61,11 +73,14 @@ namespace laps {
                 for (auto it = std::make_reverse_iterator(last); it != std::make_reverse_iterator(first); ++it) {
                     auto& [key, entry] = *it;
 
-                    std::vector<std::pair<TrackAlias, uint64_t>> sort_tracks(entry.begin(), entry.end());
+                    std::vector<std::tuple<TrackAlias, uint64_t, uint64_t>> sort_tracks;
+                    for (const auto& [ta, tick_val] : entry) {
+                        sort_tracks.emplace_back(ta, tick_val, track_connections_[ta]);
+                    }
                     std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
-                        if (a.second != b.second)
-                            return a.second < b.second; // ascending tick
-                        return a.first < b.first;
+                        if (std::get<1>(a) != std::get<1>(b))
+                            return std::get<1>(a) < std::get<1>(b); // ascending tick
+                        return std::get<0>(a) > std::get<0>(b);
                     });
 
                     flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
@@ -73,21 +88,31 @@ namespace laps {
 
             } else {
                 // Update tick in flat_track_list_ in-place
-                for (auto& [alias, tick_val] : flat_track_list_) {
+                for (auto& [alias, tick_val, conn_id] : flat_track_list_) {
                     if (alias == track_alias) {
                         tick_val = tick;
+                        conn_id = connection_id;
                         break;
                     }
                 }
             }
 
             // notify each subscribe namespace (aka publish namespace handler)
-            for (auto it = ns_handlers_.begin(); it != ns_handlers_.end();) {
-                if (auto h = it->second.lock()) {
-                    h->UpdateTrackRanking(flat_track_list_);
-                    ++it;
+            for (auto ns_it = ns_handlers_.begin(); ns_it != ns_handlers_.end();) {
+                auto& [ns_hash, conn_handlers] = *ns_it;
+                for (auto conn_it = conn_handlers.begin(); conn_it != conn_handlers.end();) {
+                    if (auto h = conn_it->second.lock()) {
+                        h->UpdateTrackRanking(flat_track_list_);
+                        ++conn_it;
+                    } else {
+                        conn_it = conn_handlers.erase(conn_it); // returns next iterator
+                    }
+                }
+                // Remove namespace entry if no handlers left
+                if (conn_handlers.empty()) {
+                    ns_it = ns_handlers_.erase(ns_it);
                 } else {
-                    it = ns_handlers_.erase(it); // returns next iterator
+                    ++ns_it;
                 }
             }
         }
@@ -105,7 +130,7 @@ namespace laps {
         {
             if (auto h = handler.lock()) {
                 auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
-                ns_handlers_.try_emplace(th.track_namespace_hash, handler);
+                ns_handlers_[th.track_namespace_hash].try_emplace(h->GetConnectionId(), handler);
             }
         }
 
@@ -113,7 +138,7 @@ namespace laps {
         {
             if (auto h = handler.lock()) {
                 auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
-                ns_handlers_.erase(th.track_namespace_hash);
+                ns_handlers_[th.track_namespace_hash].erase(h->GetConnectionId());
             }
         }
 
@@ -137,11 +162,13 @@ namespace laps {
          *
          */
         std::map<std::pair<PropertyType, PropertyValue>, TrackEntry> ordered_tracks_;
-        std::vector<std::pair<TrackAlias, uint64_t>> flat_track_list_;
+        std::vector<std::tuple<TrackAlias, uint64_t, uint64_t>> flat_track_list_; // <alias, tick, conn_id>
+        std::unordered_map<TrackAlias, uint64_t> track_connections_;              // Map track alias to connection ID
 
         /**
          * @brief Publish namespace handlers that are related to this track ranking
+         * @details Indexed by namespace hash, then by connection ID
          */
-        std::map<quicr::TrackNamespaceHash, std::weak_ptr<PublishNamespaceHandler>> ns_handlers_;
+        std::map<quicr::TrackNamespaceHash, std::map<uint64_t, std::weak_ptr<PublishNamespaceHandler>>> ns_handlers_;
     };
 }
