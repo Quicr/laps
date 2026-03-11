@@ -7,7 +7,8 @@
 #include <unordered_set>
 
 namespace laps {
-    PublishNamespaceHandler::PublishNamespaceHandler(const quicr::TrackNamespace& prefix)
+    PublishNamespaceHandler::PublishNamespaceHandler(const quicr::TrackNamespace& prefix,
+                                                     std::weak_ptr<quicr::TickService> tick_service)
       : quicr::PublishNamespaceHandler(prefix)
     {
     }
@@ -19,7 +20,12 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
     handlers_.try_emplace(handler->GetTrackAlias().value(), handler);
     if (active_tracks_.size() < max_tracks_selected_) {
         quicr::PublishNamespaceHandler::PublishTrack(handler);
-        active_tracks_.emplace(handler->GetTrackAlias().value(), handler);
+
+        quicr::TickService::TickType cur_ticks{ 0 };
+        if (auto tick_svc = tick_service_.lock()) {
+            cur_ticks = tick_svc->Milliseconds();
+        }
+        active_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
     }
 }
 
@@ -82,7 +88,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::pair<quicr::messages::TrackAlias, uint64_t>> ordered_tracks)
 {
     uint64_t i = 0;
-    std::unordered_set<uint64_t> updated_tracks;
+    std::unordered_map<uint64_t, uint64_t> updated_tracks;
 
     for (const auto& [ta, tick] : ordered_tracks) {
         if (i++ >= max_tracks_selected_) {
@@ -103,30 +109,36 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
             continue;
         }
 
-        auto [it, is_new] = active_tracks_.try_emplace(ta, track_it->second);
+        auto [it, is_new] = active_tracks_.try_emplace(ta, ActiveTrack{ tick, track_it->second });
 
         if (is_new) {
             SPDLOG_INFO("Publish track {} is new, sending Publish Track", ta);
             quicr::PublishNamespaceHandler::PublishTrack(track_it->second);
         }
 
-        updated_tracks.emplace(ta);
+        updated_tracks.emplace(ta, tick);
     }
 
     if (active_tracks_.size() > max_tracks_selected_) {
         // Cleanup old tracks
         std::vector<uint64_t> rm_tracks;
-        for (auto& [ta, handler] : active_tracks_) {
-            if (updated_tracks.contains(ta)) {
+        for (auto& [ta, track] : active_tracks_) {
+            auto up_it = updated_tracks.find(ta);
+            if (up_it != updated_tracks.end()) {
+                // Update the latest tick so that it stays current
+                track.latest_tick = up_it->second;
                 continue;
             }
 
-            // TODO: Change this to remove after some grace/deselected period
-            if (auto h = handler.lock()) {
-                quicr::PublishNamespaceHandler::UnPublishTrack(h);
-            }
+            // Only remove tracks after delay/grace period
+            if (auto tick_svc = tick_service_.lock();
+                tick_svc->Milliseconds() - track.latest_tick > delay_publish_done_ms) {
+                if (auto h = track.handler.lock()) {
+                    quicr::PublishNamespaceHandler::UnPublishTrack(h);
+                }
 
-            rm_tracks.emplace_back(ta);
+                rm_tracks.emplace_back(ta);
+            }
         }
 
         for (auto& ta : rm_tracks) {

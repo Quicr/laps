@@ -24,7 +24,7 @@ namespace laps {
             quicr::TickService::TickType latest_tick_ms; // Latest tick value when last sampled
         };
 
-        PublishNamespaceHandler(const quicr::TrackNamespace& prefix);
+        PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::TickService> tick_service);
 
         quicr::PublishTrackHandler::PublishObjectStatus PublishObject(quicr::TrackFullNameHash track_full_name_hash,
                                                                       const quicr::ObjectHeaders& object_headers,
@@ -39,9 +39,9 @@ namespace laps {
 
         void PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler) override;
 
-        static auto Create(const quicr::TrackNamespace& prefix)
+        static auto Create(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::TickService> tick_service)
         {
-            return std::shared_ptr<PublishNamespaceHandler>(new PublishNamespaceHandler(prefix));
+            return std::shared_ptr<PublishNamespaceHandler>(new PublishNamespaceHandler(prefix, tick_service));
         }
 
         /**
@@ -63,9 +63,18 @@ namespace laps {
         constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
       private:
-        uint64_t max_tracks_selected_{ 3 }; // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 3000 };  // Age in ms of a track that is considered stale/inactive
+        uint64_t max_tracks_selected_{ 3 };    // Max tracks to select as candidate top-n
+        uint64_t inactive_age_ms_{ 3000 };     // Age in ms of a track that is considered stale/inactive
+        uint64_t delay_publish_done_ms{ 500 }; // Delay sending publish done to allow publish to come back
 
-        std::map<quicr::TrackNamespaceHash, std::weak_ptr<quicr::PublishTrackHandler>> active_tracks_;
+        std::weak_ptr<quicr::TickService> tick_service_;
+
+        struct ActiveTrack
+        {
+            uint64_t latest_tick;
+            std::weak_ptr<quicr::PublishTrackHandler> handler;
+        };
+
+        std::map<quicr::TrackNamespaceHash, ActiveTrack> active_tracks_;
     };
 } // namespace laps

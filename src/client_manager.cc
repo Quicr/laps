@@ -359,7 +359,7 @@ namespace laps {
 
         auto [it, is_new] = state_.subscribes_namespaces.try_emplace(prefix_namespace);
 
-        auto handler = PublishNamespaceHandler::Create(prefix_namespace);
+        auto handler = PublishNamespaceHandler::Create(prefix_namespace, GetTickService());
         PublishNamespace(connection_handle, handler);
 
         auto [pub_it, _] = it->second.emplace(connection_handle, handler);

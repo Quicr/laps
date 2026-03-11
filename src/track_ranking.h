@@ -54,21 +54,23 @@ namespace laps {
 
             if (needs_rebuild) {
                 flat_track_list_.clear();
-                for (auto it = ordered_tracks_.lower_bound({ prop, 0 }); it != ordered_tracks_.end(); ++it) {
-                    auto& [key, entry] = *it;
 
-                    if (key.first != prop)
-                        break;
+                auto first = ordered_tracks_.lower_bound({ prop, 0 });
+                auto last = ordered_tracks_.upper_bound({ prop, std::numeric_limits<PropertyValue>::max() });
+
+                for (auto it = std::make_reverse_iterator(last); it != std::make_reverse_iterator(first); ++it) {
+                    auto& [key, entry] = *it;
 
                     std::vector<std::pair<TrackAlias, uint64_t>> sort_tracks(entry.begin(), entry.end());
                     std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
                         if (a.second != b.second)
-                            return a.second < b.second; // by tick
-                        return a.first < b.first;       // tie-break
+                            return a.second < b.second; // ascending tick
+                        return a.first < b.first;
                     });
 
                     flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
                 }
+
             } else {
                 // Update tick in flat_track_list_ in-place
                 for (auto& [alias, tick_val] : flat_track_list_) {
