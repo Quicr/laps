@@ -54,11 +54,10 @@ namespace laps {
 
             if (needs_rebuild) {
                 flat_track_list_.clear();
-                for (auto it = ordered_tracks_.lower_bound({ prop, 0 }); it != ordered_tracks_.end(); ++it) {
+                auto rbegin = std::make_reverse_iterator(ordered_tracks_.lower_bound({ prop + 1, 0 }));
+                auto rend = std::make_reverse_iterator(ordered_tracks_.lower_bound({ prop, 0 }));
+                for (auto it = rbegin; it != rend; ++it) {
                     auto& [key, entry] = *it;
-
-                    if (key.first != prop)
-                        break;
 
                     std::vector<std::pair<TrackAlias, uint64_t>> sort_tracks(entry.begin(), entry.end());
                     std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
