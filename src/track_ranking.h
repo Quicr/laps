@@ -85,15 +85,6 @@ namespace laps {
         };
 
         /**
-         * @brief Map of property type value and map of track information by track alias
-         *
-         * @example tracks_[property_type][track_alias] = TrackInfo
-         *
-         * TODO: Need to address multi-publisher. Connection id is limiting. Need to support peering as well.
-         */
-        std::map<PropertyType, std::unordered_map<TrackAlias, TrackInfo>> tracks_;
-
-        /**
          * @brief Ordered list of tracks.
          *
          * @details Key is a pair of PropertyType and PropertyValue. The value is a set of pairs. Each value pair

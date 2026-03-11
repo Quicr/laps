@@ -311,20 +311,23 @@ namespace laps {
                 }
             }
 
-            auto rank_it = track_rankings_.find(th.track_namespace_hash);
-
+            quicr::messages::TrackNamespace sub_ns;
             for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
                 if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
                     has_subs = true;
 
+                    sub_ns = ns_prefix;
+
                     for (const auto& [conn_id, ns_handler] : conns) {
                         sub_track_handler->AddSubscribeNamespace(ns_handler);
-
-                        if (rank_it != track_rankings_.end()) {
-                            sub_track_handler->SetTrackRanking(rank_it->second);
-                        }
                     }
                 }
+            }
+
+            auto ns_th = quicr::TrackHash({ sub_ns, {} });
+            auto rank_it = track_rankings_.find(ns_th.track_namespace_hash);
+            if (rank_it != track_rankings_.end()) {
+                sub_track_handler->SetTrackRanking(rank_it->second);
             }
 
             if (!has_subs) {

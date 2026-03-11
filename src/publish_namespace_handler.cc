@@ -113,24 +113,24 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
         updated_tracks.emplace(ta);
     }
 
-    /*
-    // Cleanup old tracks
-    std::vector<uint64_t> rm_tracks;
-    for (auto& [ta, handler]: active_tracks_) {
-        if (updated_tracks.contains(ta)) {
-            continue;
+    if (active_tracks_.size() > max_tracks_selected_) {
+        // Cleanup old tracks
+        std::vector<uint64_t> rm_tracks;
+        for (auto& [ta, handler] : active_tracks_) {
+            if (updated_tracks.contains(ta)) {
+                continue;
+            }
+
+            // TODO: Change this to remove after some grace/deselected period
+            if (auto h = handler.lock()) {
+                quicr::PublishNamespaceHandler::UnPublishTrack(h);
+            }
+
+            rm_tracks.emplace_back(ta);
         }
 
-        // TODO: Change this to remove after some grace/deselected period
-        if (auto h = handler.lock()) {
-            quicr::PublishNamespaceHandler::UnPublishTrack(h);
+        for (auto& ta : rm_tracks) {
+            active_tracks_.erase(ta);
         }
-
-        rm_tracks.emplace_back(ta);
     }
-
-    for (auto& ta: rm_tracks) {
-        active_tracks_.erase(ta);
-    }
-    */
 }
