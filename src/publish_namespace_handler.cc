@@ -10,6 +10,7 @@ namespace laps {
     PublishNamespaceHandler::PublishNamespaceHandler(const quicr::TrackNamespace& prefix,
                                                      std::weak_ptr<quicr::TickService> tick_service)
       : quicr::PublishNamespaceHandler(prefix)
+      , tick_service_(tick_service)
     {
     }
 }
