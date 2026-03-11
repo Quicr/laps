@@ -23,6 +23,8 @@ namespace laps {
         // note: pipelining starts after the first object
         bool SentFirstObject(uint32_t group_id, uint32_t subgroup_id);
 
+        void SetBaseTrackAlias(uint64_t track_alias) { track_alias_ = track_alias; }
+
         static std::shared_ptr<PublishTrackHandler> Create(const quicr::FullTrackName& full_track_name,
                                                            quicr::TrackMode track_mode,
                                                            uint8_t default_priority,

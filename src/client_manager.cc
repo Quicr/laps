@@ -269,6 +269,10 @@ namespace laps {
                                                                      publish_attributes.delivery_timeout.count(),
                                                                      publish_attributes.start_location,
                                                                      *this);
+                    if (!handler->GetTrackAlias().has_value()) {
+                        handler->SetTrackAlias(th.track_fullname_hash);
+                    }
+
                     pub_ns_h->PublishTrack(handler);
                 }
             }
@@ -307,13 +311,18 @@ namespace laps {
                 }
             }
 
+            auto rank_it = track_rankings_.find(th.track_namespace_hash);
+
             for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
                 if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
                     has_subs = true;
 
                     for (const auto& [conn_id, ns_handler] : conns) {
                         sub_track_handler->AddSubscribeNamespace(ns_handler);
-                        sub_track_handler->SetTrackRanking(ns_handler->GetTrackRanking());
+
+                        if (rank_it != track_rankings_.end()) {
+                            sub_track_handler->SetTrackRanking(rank_it->second);
+                        }
                     }
                 }
             }
@@ -348,7 +357,7 @@ namespace laps {
         auto [it, is_new] = state_.subscribes_namespaces.try_emplace(prefix_namespace);
 
         auto handler = PublishNamespaceHandler::Create(prefix_namespace);
-        PublishNamespace(connection_handle, handler, true);
+        PublishNamespace(connection_handle, handler);
 
         auto [pub_it, _] = it->second.emplace(connection_handle, handler);
 
@@ -359,7 +368,7 @@ namespace laps {
         }
 
         auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());
-        handler->SetTrackRanking(ranks_it->second);
+        ranks_it->second->AddNamespaceHandler(handler);
 
         std::vector<quicr::TrackNamespace> matched_ns;
 
@@ -395,6 +404,10 @@ namespace laps {
                   largest_location.value_or(quicr::messages::Location{ 0, 0 }),
                   *this);
 
+                if (!pub_handler->GetTrackAlias().has_value()) {
+                    auto pub_th = quicr::TrackHash(track_full_name);
+                    pub_handler->SetTrackAlias(pub_th.track_fullname_hash);
+                }
                 pub_it->second->PublishTrack(pub_handler);
 
                 handler->AddSubscribeNamespace(pub_it->second);
@@ -447,6 +460,7 @@ namespace laps {
             const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
             if (ns_matched) {
                 handler->RemoveSubscribeNamespace(pub_it->second);
+                track_rankings_[th.track_namespace_hash]->RemoveNamespaceHandler(pub_it->second);
 
                 RemoveOrPausePublisherSubscribe(ta_conn.first);
             }

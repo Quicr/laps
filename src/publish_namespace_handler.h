@@ -2,7 +2,8 @@
 
 #include "quicr/publish_namespace_handler.h"
 #include "quicr/track_name.h"
-#include "track_ranking.h"
+
+#include <unordered_map>
 
 namespace laps {
     class PublishTrackHandler;
@@ -43,10 +44,28 @@ namespace laps {
             return std::shared_ptr<PublishNamespaceHandler>(new PublishNamespaceHandler(prefix));
         }
 
-        void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
-        std::weak_ptr<TrackRanking> GetTrackRanking() { return track_ranking_; }
+        /**
+         * @brief Updates the track ranking
+         * @details TrackRanking instance calls this method for each namespace to update the top-n/ranked tracks
+         *
+         * @param ordered_tracks            Span of track proprtery values
+         */
+        virtual void UpdateTrackRanking(
+          const std::unordered_map<quicr::messages::TrackAlias, uint64_t>& ordered_tracks);
+
+        /*
+         * Getter/Setters
+         */
+        constexpr void SetMaxSelected(const uint64_t max) { max_tracks_selected_ = max; }
+        constexpr uint64_t GetMaxSelected() { return max_tracks_selected_; }
+
+        constexpr void SetInactiveAge(const uint64_t age_ms) { inactive_age_ms_ = age_ms; }
+        constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
       private:
-        std::weak_ptr<TrackRanking> track_ranking_;
+        uint64_t max_tracks_selected_{ 3 }; // Max tracks to select as candidate top-n
+        uint64_t inactive_age_ms_{ 3000 };  // Age in ms of a track that is considered stale/inactive
+
+        std::map<quicr::TrackNamespaceHash, std::weak_ptr<quicr::PublishTrackHandler>> active_tracks_;
     };
 } // namespace laps

@@ -4,6 +4,7 @@
 #include "publish_namespace_handler.h"
 
 #include "publish_handler.h"
+#include <unordered_set>
 
 namespace laps {
     PublishNamespaceHandler::PublishNamespaceHandler(const quicr::TrackNamespace& prefix)
@@ -15,10 +16,11 @@ namespace laps {
 void
 laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler)
 {
-    // TODO: Implement Top-N and other track level filters here
-
-    // If track is allowed, register the publish track
-    quicr::PublishNamespaceHandler::PublishTrack(dynamic_pointer_cast<PublishTrackHandler>(handler));
+    handlers_.try_emplace(handler->GetTrackAlias().value(), handler);
+    if (active_tracks_.size() < max_tracks_selected_) {
+        quicr::PublishNamespaceHandler::PublishTrack(handler);
+        active_tracks_.emplace(handler->GetTrackAlias().value(), handler);
+    }
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
@@ -73,4 +75,62 @@ laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash tra
     }
 
     return quicr::PublishTrackHandler::PublishObjectStatus::kOk;
+}
+
+void
+laps::PublishNamespaceHandler::UpdateTrackRanking(
+  const std::unordered_map<quicr::messages::TrackAlias, uint64_t>& ordered_tracks)
+{
+    uint64_t i = 0;
+    std::unordered_set<uint64_t> updated_tracks;
+
+    for (const auto& [ta, tick] : ordered_tracks) {
+        if (i++ >= max_tracks_selected_) {
+            break;
+        }
+
+        SPDLOG_INFO("Update track tracking: Top track {} track alias: {}", i, ta);
+
+        if (active_tracks_.contains(ta)) {
+            continue;
+        }
+
+        // TODO: Skip if tick from current time is greater than max time selected
+
+        auto track_it = handlers_.find(ta);
+        if (track_it == handlers_.end()) {
+            SPDLOG_INFO("Skipping track {} due to missing handler", ta);
+            continue;
+        }
+
+        auto [it, is_new] = active_tracks_.try_emplace(ta, track_it->second);
+
+        if (is_new) {
+            SPDLOG_INFO("Publish track {} is new, sending Publish Track", ta);
+            quicr::PublishNamespaceHandler::PublishTrack(track_it->second);
+        }
+
+        updated_tracks.emplace(ta);
+    }
+
+    /*
+    // Cleanup old tracks
+    std::vector<uint64_t> rm_tracks;
+    for (auto& [ta, handler]: active_tracks_) {
+        if (updated_tracks.contains(ta)) {
+            continue;
+        }
+
+        // TODO: Change this to remove after some grace/deselected period
+        if (auto h = handler.lock()) {
+            quicr::PublishNamespaceHandler::UnPublishTrack(h);
+        }
+
+        rm_tracks.emplace_back(ta);
+    }
+
+    for (auto& ta: rm_tracks) {
+        active_tracks_.erase(ta);
+    }
+    */
 }

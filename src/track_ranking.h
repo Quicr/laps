@@ -1,12 +1,13 @@
 #pragma once
 
+#include "publish_namespace_handler.h"
+
 #include <map>
-#include <span>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
 namespace laps {
-
     /**
      * @brief Track ranking by property type, track alias and value of track
      */
@@ -16,39 +17,35 @@ namespace laps {
         using PropertyType = uint64_t;
         using TrackAlias = uint64_t;
         using PropertyValue = uint64_t;
-        using TrackSelectedEntry = std::pair<TrackAlias, PropertyValue>;
+        using TrackEntry = std::unordered_map<TrackAlias, uint64_t>; // Value is the tick value of last update
 
+        /**
+         * @brief Update track ranking value for property type and track alias
+         *
+         * @param track_alias           Track alias to update
+         * @param prop                  Property type value
+         * @param value                 Value of the property
+         * @param tick                  Current tick value
+         */
         void UpdateValue(const TrackAlias track_alias, const uint64_t prop, const uint64_t value, const uint64_t tick)
         {
-            auto [prop_it, _] = tracks_.try_emplace(prop);
+            auto [prop_it, _] = ordered_tracks_.try_emplace({ prop, value });
+            prop_it->second[track_alias] = tick;
 
-            TrackInfo track_info{ .latest_value = value, .latest_tick_ms = tick };
-            auto [t_it, is_new] = prop_it->second.try_emplace(track_alias, std::move(track_info));
+            SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {}", track_alias, prop, value, tick);
 
-            if (!is_new) {
-                if (t_it->second.latest_value < value) {
-                    SPDLOG_INFO("Increase in value TA: {} type: {} from: {} to: {} tick: {}",
-                                track_alias,
-                                prop,
-                                t_it->second.latest_value,
-                                value,
-                                tick);
-
-                    // compute
-                } else if (t_it->second.latest_value > value) {
-                    SPDLOG_INFO("Decrease in value TA: {} type: {} from: {} to: {} tick: {}",
-                                track_alias,
-                                prop,
-                                t_it->second.latest_value,
-                                value,
-                                tick);
-
-                    // compute
+            // notify each subscribe namespace (aka publish namespace handler)
+            std::vector<quicr::TrackNamespaceHash> rm_handlers;
+            for (auto [ns_hash, handler] : ns_handlers_) {
+                if (auto h = handler.lock()) {
+                    h->UpdateTrackRanking(prop_it->second);
+                } else {
+                    rm_handlers.emplace_back(ns_hash);
                 }
+            }
 
-                // Update
-                t_it->second.latest_value = value;
-                t_it->second.latest_tick_ms = tick;
+            for (auto hash : rm_handlers) {
+                ns_handlers_.erase(hash);
             }
         }
 
@@ -61,17 +58,21 @@ namespace laps {
         constexpr void SetInactiveAge(const uint64_t age_ms) { inactive_age_ms_ = age_ms; }
         constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
-        /**
-         * @brief Get the selected (aka ordered by best) list of track aliases
-         *
-         * @details Returns a list of track aliases and the age in milliseconds since the last
-         *      update. Limit is used to limit the result set.
-         *
-         * @param limit           Limit the return set of selected, ordered by best first
-         *
-         * @returns Returns a span of pairs <TrackAlias, ms_since_last_update>
-         */
-        constexpr std::span<const TrackSelectedEntry> GetSelected(uint64_t limit) { return {}; }
+        void AddNamespaceHandler(std::weak_ptr<PublishNamespaceHandler> handler)
+        {
+            if (auto h = handler.lock()) {
+                auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
+                ns_handlers_.try_emplace(th.track_namespace_hash, handler);
+            }
+        }
+
+        void RemoveNamespaceHandler(std::weak_ptr<PublishNamespaceHandler> handler)
+        {
+            if (auto h = handler.lock()) {
+                auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
+                ns_handlers_.erase(th.track_namespace_hash);
+            }
+        }
 
       private:
         uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
@@ -93,10 +94,19 @@ namespace laps {
         std::map<PropertyType, std::unordered_map<TrackAlias, TrackInfo>> tracks_;
 
         /**
-         * @brief Selected ordered list of tracks.
+         * @brief Ordered list of tracks.
          *
-         * @details Value is a pair that indicates track alias and the age in milliseconds since last update
+         * @details Key is a pair of PropertyType and PropertyValue. The value is a set of pairs. Each value pair
+         *      conveys the latest tick value  and track alias.
+         *      Sorting is performed by sorting both the map and the set.  The sort order is by property type,
+         *      property value, and latest tick value.
+         *
          */
-        std::vector<TrackSelectedEntry> selected_tracks_;
+        std::map<std::pair<PropertyType, PropertyValue>, TrackEntry> ordered_tracks_;
+
+        /**
+         * @brief Publish namespace handlers that are related to this track ranking
+         */
+        std::map<quicr::TrackNamespaceHash, std::weak_ptr<PublishNamespaceHandler>> ns_handlers_;
     };
 }
