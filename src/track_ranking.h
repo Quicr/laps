@@ -52,16 +52,18 @@ namespace laps {
 
             SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {}", track_alias, prop, value, tick);
 
-            if (needs_rebuild) {
-                flat_track_list_.clear();
-                auto rbegin = std::make_reverse_iterator(ordered_tracks_.lower_bound({ prop + 1, 0 }));
-                auto rend = std::make_reverse_iterator(ordered_tracks_.lower_bound({ prop, 0 }));
-                for (auto it = rbegin; it != rend; ++it) {
-                    auto& [key, entry] = *it;
+            flat_track_list_.clear();
+            auto rbegin = std::make_reverse_iterator(ordered_tracks_.lower_bound({ prop + 1, 0 }));
+            auto rend = std::make_reverse_iterator(ordered_tracks_.lower_bound({ prop, 0 }));
+            for (auto it = rbegin; it != rend; ++it) {
+                auto& [key, entry] = *it;
 
-                    for (const auto& [ta, _tick] : entry) {
-                        flat_track_list_.emplace_back(ta, key.second); // (TrackAlias, PropertyValue)
+                for (const auto& [ta, t] : entry) {
+                    if (tick > t && (tick - t) > inactive_age_ms_) {
+                        SPDLOG_INFO("Track {} exceeded MaxTimeSelected (age: {} ms), excluding", ta, tick - t);
+                        continue;
                     }
+                    flat_track_list_.emplace_back(ta, key.second); // (TrackAlias, PropertyValue)
                 }
             }
 
