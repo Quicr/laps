@@ -40,7 +40,7 @@ TEST_CASE("Serialize Node Info")
 
     auto net_data = ni.Serialize();
 
-    CHECK_EQ(net_data.size(), 79);
+    CHECK_EQ(net_data.size(), 68);
 
     NodeInfo decoded_ni(net_data);
 

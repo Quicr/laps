@@ -18,7 +18,7 @@ TEST_CASE("Serialize Subscribe Info")
 
     subscribe_info.track_hash = track_hash;
 
-    auto net_data = subscribe_info.Serialize(false);
+    auto net_data = subscribe_info.Serialize(false, false, true);
 
     CHECK_EQ(net_data.size(), 38);
     CHECK_EQ(subscribe_info.seq, 1);
