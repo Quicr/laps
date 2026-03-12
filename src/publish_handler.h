@@ -25,6 +25,8 @@ namespace laps {
 
         void SetBaseTrackAlias(uint64_t track_alias) { track_alias_ = track_alias; }
 
+        void AbruptCloseAllSubgroups();
+
         static std::shared_ptr<PublishTrackHandler> Create(const quicr::FullTrackName& full_track_name,
                                                            quicr::TrackMode track_mode,
                                                            uint8_t default_priority,

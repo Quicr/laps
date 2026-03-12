@@ -91,4 +91,19 @@ namespace laps {
 
         return false;
     }
+
+    void PublishTrackHandler::AbruptCloseAllSubgroups()
+    {
+        std::vector<std::pair<uint64_t, uint64_t>> rm_subgroups;
+
+        for (auto group : stream_info_by_group_) {
+            for (auto& [subgroup, si] : group.second) {
+                rm_subgroups.emplace_back(group.first, subgroup);
+            }
+        }
+
+        for (auto& [group, subgroup] : rm_subgroups) {
+            EndSubgroup(group, subgroup, false);
+        }
+    }
 }

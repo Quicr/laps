@@ -18,15 +18,13 @@ namespace laps {
 void
 laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler)
 {
-    if (active_tracks_.size() < max_tracks_selected_) {
-        quicr::PublishNamespaceHandler::PublishTrack(handler);
+    quicr::PublishNamespaceHandler::PublishTrack(handler);
 
-        quicr::TickService::TickType cur_ticks{ 0 };
-        if (auto tick_svc = tick_service_.lock()) {
-            cur_ticks = tick_svc->Milliseconds();
-        }
-        active_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
+    quicr::TickService::TickType cur_ticks{ 0 };
+    if (auto tick_svc = tick_service_.lock()) {
+        cur_ticks = tick_svc->Milliseconds();
     }
+    published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
@@ -87,11 +85,13 @@ void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t>> ordered_tracks)
 {
-    std::unordered_map<uint64_t, uint64_t> updated_tracks;
+    for (auto& [ta, tick, conn_id] : ordered_tracks) {
+        SPDLOG_DEBUG("DEBUG: conn_id: {} ta: {} update_tick: {}", GetConnectionId(), ta, tick);
+    }
 
-    uint64_t i = 0;
+    std::unordered_map<uint64_t, uint64_t> active_tracks;
     for (const auto& [ta, tick, publisher_conn_id] : ordered_tracks) {
-        if (active_tracks_.size() >= max_tracks_selected_) {
+        if (active_tracks.size() >= max_tracks_selected_) {
             break;
         }
 
@@ -101,52 +101,60 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
             continue;
         }
 
-        ++i;
+        SPDLOG_INFO("Update track tracking: Top track {} track alias: {} from conn {}",
+                    active_tracks.size(),
+                    ta,
+                    publisher_conn_id);
 
-        SPDLOG_INFO("Update track tracking: Top track {} track alias: {} from conn {}", i, ta, publisher_conn_id);
-
-        if (active_tracks_.contains(ta)) {
+        auto pub_track_it = published_tracks_.find(ta);
+        if (pub_track_it == published_tracks_.end()) {
+            // Publish tracks should/must exists before this is call. They are managed by PublishTrack()
+            SPDLOG_WARN("Track {} missing from publish_tracks; track alias: {} from conn {}",
+                        active_tracks.size(),
+                        ta,
+                        publisher_conn_id);
             continue;
         }
 
-        auto track_it = handlers_.find(ta);
-        if (track_it == handlers_.end()) {
-            PublishTrack(track_it->second);
-        } else {
-            auto [_, is_new] = active_tracks_.try_emplace(ta, ActiveTrack{ tick, track_it->second });
+        if (auto h = pub_track_it->second.handler.lock(); h->GetStatus() == PublishTrackHandler::Status::kPaused) {
+            h->SetStatus(PublishTrackHandler::Status::kOk);
 
-            if (is_new) {
-                SPDLOG_INFO("Publish track {} is newly selected", ta);
+            auto track_it = handlers_.find(ta);
+            if (track_it == handlers_.end()) {
+                SPDLOG_INFO("Track {} is newly selected and will undergo PUBLISH flow track alias: {} conn_id: {}",
+                            active_tracks.size(),
+                            ta,
+                            publisher_conn_id);
+                PublishTrack(h);
+            } else {
+                pub_track_it->second.last_updated_tick = tick;
             }
         }
 
-        updated_tracks.emplace(ta, tick);
+        active_tracks.emplace(ta, tick);
     }
 
-    if (active_tracks_.size() > max_tracks_selected_) {
-        // Cleanup old tracks
-        std::vector<uint64_t> rm_tracks;
-        for (auto& [ta, track] : active_tracks_) {
-            auto up_it = updated_tracks.find(ta);
-            if (up_it != updated_tracks.end()) {
-                // Update the latest tick so that it stays current
-                track.latest_tick = up_it->second;
+    if (published_tracks_.size() > max_tracks_selected_) {
+        // Unpublish tracks that are too old
+        for (auto& [ta, track] : published_tracks_) {
+            if (active_tracks.contains(ta)) {
+                // Skip, track is active
                 continue;
             }
 
-            // Only remove tracks after delay/grace period
-            if (auto tick_svc = tick_service_.lock();
-                tick_svc->Milliseconds() - track.latest_tick > delay_publish_done_ms_) {
-                if (auto h = track.handler.lock()) {
-                    quicr::PublishNamespaceHandler::UnPublishTrack(h);
+            if (auto h = track.handler.lock()) {
+                h->SetStatus(PublishTrackHandler::Status::kPaused);
+                if (auto hh = std::dynamic_pointer_cast<PublishTrackHandler>(h)) {
+                    hh->AbruptCloseAllSubgroups();
                 }
 
-                rm_tracks.emplace_back(ta);
+                // Unpublish if grace period has elapsed
+                if (auto tick_svc = tick_service_.lock();
+                    tick_svc->Milliseconds() - track.last_updated_tick > delay_publish_done_ms_) {
+                    SPDLOG_INFO("Unpublish track, not in top-n track alias: {} conn_id: {}", ta, GetConnectionId());
+                    // UnPublishTrack(h);
+                }
             }
-        }
-
-        for (auto& ta : rm_tracks) {
-            active_tracks_.erase(ta);
         }
     }
 }

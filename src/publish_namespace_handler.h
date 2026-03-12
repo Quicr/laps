@@ -71,10 +71,10 @@ namespace laps {
 
         struct ActiveTrack
         {
-            uint64_t latest_tick;
+            uint64_t last_updated_tick;
             std::weak_ptr<quicr::PublishTrackHandler> handler;
         };
 
-        std::map<quicr::TrackNamespaceHash, ActiveTrack> active_tracks_;
+        std::map<quicr::TrackNamespaceHash, ActiveTrack> published_tracks_;
     };
 } // namespace laps
