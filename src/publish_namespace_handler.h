@@ -48,10 +48,11 @@ namespace laps {
          * @brief Updates the track ranking
          * @details TrackRanking instance calls this method for each namespace to update the top-n/ranked tracks
          *
-         * @param ordered_tracks            Span of track property values with connection IDs
+         * @param ordered_tracks            Span of track property values with sequence number, latest tick, and
+         * connection IDs
          */
         virtual void UpdateTrackRanking(
-          std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t>> ordered_tracks);
+          std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks);
 
         /*
          * Getter/Setters

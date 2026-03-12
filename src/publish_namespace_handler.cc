@@ -83,14 +83,18 @@ laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash tra
 
 void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
-  std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t>> ordered_tracks)
+  std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks)
 {
-    for (auto& [ta, tick, conn_id] : ordered_tracks) {
-        SPDLOG_DEBUG("DEBUG: conn_id: {} ta: {} update_tick: {}", GetConnectionId(), ta, tick);
+    for (auto& [ta, insert_seq_num, latest_tick, conn_id] : ordered_tracks) {
+        SPDLOG_DEBUG("DEBUG: conn_id: {} ta: {} insert_seq_num: {} latest_tick: {}",
+                     GetConnectionId(),
+                     ta,
+                     insert_seq_num,
+                     latest_tick);
     }
 
     std::unordered_map<uint64_t, uint64_t> active_tracks;
-    for (const auto& [ta, tick, publisher_conn_id] : ordered_tracks) {
+    for (const auto& [ta, insert_seq_num, latest_tick, publisher_conn_id] : ordered_tracks) {
         if (active_tracks.size() >= max_tracks_selected_) {
             break;
         }
@@ -127,11 +131,11 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                             publisher_conn_id);
                 PublishTrack(h);
             } else {
-                pub_track_it->second.last_updated_tick = tick;
+                pub_track_it->second.last_updated_tick = latest_tick;
             }
         }
 
-        active_tracks.emplace(ta, tick);
+        active_tracks.emplace(ta, latest_tick);
     }
 
     if (published_tracks_.size() > max_tracks_selected_) {

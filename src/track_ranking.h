@@ -44,16 +44,16 @@ namespace laps {
             // Check if track exists in a different value bucket
             bool needs_rebuild = false;
             for (auto it = ordered_tracks_.lower_bound({ prop, 0 });
-                 it != ordered_tracks_.end() && it->first.first == prop;
-                 ++it) {
+                 it != ordered_tracks_.end() && it->first.first == prop;) {
                 if (it->first.second != value && it->second.contains(track_alias)) {
                     it->second.erase(track_alias); // Remove from old bucket
                     if (it->second.empty()) {
                         it = ordered_tracks_.erase(it); // erase returns next iterator
+                        continue;
                     }
                     needs_rebuild = true;
-                    break;
                 }
+                ++it;
             }
 
             auto [prop_it, inserted] = ordered_tracks_.try_emplace({ prop, value });
@@ -110,9 +110,10 @@ namespace laps {
                 for (auto it = std::make_reverse_iterator(last); it != std::make_reverse_iterator(first); ++it) {
                     auto& [key, entry] = *it;
 
-                    std::vector<std::tuple<TrackAlias, uint64_t, uint64_t>> sort_tracks;
+                    std::vector<std::tuple<TrackAlias, uint64_t, uint64_t, uint64_t>> sort_tracks;
                     for (const auto& [ta, tick_info] : entry) {
-                        sort_tracks.emplace_back(ta, tick_info.insert_seq_num, track_connections_[ta]);
+                        sort_tracks.emplace_back(
+                          ta, tick_info.insert_seq_num, tick_info.latest_tick, track_connections_[ta]);
                     }
                     std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
                         if (std::get<1>(a) != std::get<1>(b))
@@ -125,7 +126,7 @@ namespace laps {
 
             } else {
                 // Update latest_tick in flat_track_list_ in-place
-                for (auto& [alias, latest_tick, conn_id] : flat_track_list_) {
+                for (auto& [alias, insert_seq_num, latest_tick, conn_id] : flat_track_list_) {
                     if (alias == track_alias) {
                         latest_tick = tick;
                         conn_id = connection_id;
@@ -181,7 +182,7 @@ namespace laps {
 
       private:
         uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 1000 };   // Age in ms of a track that is considered stale/inactive
+        uint64_t inactive_age_ms_{ 1500 };   // Age in ms of a track that is considered stale/inactive
         uint64_t update_value_seq_num_{ 0 }; // Track ranking update value sequence number
 
         struct TrackInfo
@@ -200,8 +201,9 @@ namespace laps {
          *
          */
         std::map<std::pair<PropertyType, PropertyValue>, TrackEntry> ordered_tracks_;
-        std::vector<std::tuple<TrackAlias, uint64_t, uint64_t>> flat_track_list_; // <alias, latest_tick, conn_id>
-        std::unordered_map<TrackAlias, uint64_t> track_connections_;              // Map track alias to connection ID
+        std::vector<std::tuple<TrackAlias, uint64_t, uint64_t, uint64_t>>
+          flat_track_list_;                                          // <alias, insert_seq_num, latest_tick, conn_id>
+        std::unordered_map<TrackAlias, uint64_t> track_connections_; // Map track alias to connection ID
 
         /**
          * @brief Publish namespace handlers that are related to this track ranking
