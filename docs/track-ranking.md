@@ -26,7 +26,7 @@ flowchart TB
 
     P1 & P2 & P3 & P4 -->|"Objects with property values"| TR
     TR -->|"Top-N ranked list"| PNH
-    PNH -->|"Only top 3 tracks"| S
+    PNH -->|"Only top-N tracks"| S
 ```
 
 ## Key Components
@@ -59,9 +59,9 @@ flowchart LR
 
 | Component | Responsibility |
 |-----------|-----------------|
-| **TrackRanking** | Aggregates property values from all matching tracks, maintains sorted order by (property_type, property_value), and notifies `PublishNamespaceHandler` instances when the top-N list changes. |
-| **PublishNamespaceHandler** | Receives the ranked track list, maintains `active_tracks_` (max N tracks), and promotes/demotes tracks by calling `PublishTrack` / `UnPublishTrack` on the underlying transport. |
-| **SubscribeTrackHandler** | Receives objects from publishers, extracts property values from extensions, pushes updates to `TrackRanking`, and fans out objects to subscribe namespaces. |
+| **TrackRanking** | Aggregates property values from all matching tracks (with connection ID), maintains sorted order by (property_type, property_value), removes inactive tracks, and notifies `PublishNamespaceHandler` instances when the top-N list changes. |
+| **PublishNamespaceHandler** | Receives the ranked track list, filters self-tracks, maintains `published_tracks_` (max N active), and promotes/demotes tracks via `PublishTrack` or `SetStatus(kPaused)`. |
+| **SubscribeTrackHandler** | Receives objects from publishers, extracts property values from extensions, pushes updates to `TrackRanking` (including connection ID), and fans out objects to subscribe namespaces. |
 
 ## Architecture Diagram
 
@@ -75,12 +75,12 @@ flowchart TB
 
     subgraph TrackRanking["TrackRanking (per subscribe namespace)"]
         OT["ordered_tracks_<br/>(prop, value) → TrackEntry"]
-        FL["flat_track_list_<br/>sorted track aliases"]
-        NH["ns_handlers_<br/>PublishNamespaceHandler refs"]
+        FL["flat_track_list_<br/>(alias, seq, tick, conn_id)"]
+        NH["ns_handlers_<br/>ns_hash → conn_id → handler"]
     end
 
     subgraph PublishNamespaceHandler["PublishNamespaceHandler (per subscriber conn)"]
-        AT["active_tracks_<br/>max N tracks"]
+        PT["published_tracks_<br/>track alias → ActiveTrack"]
         H["handlers_<br/>track alias → PublishTrackHandler"]
     end
 
@@ -89,16 +89,16 @@ flowchart TB
         SNS["sub_namespaces_<br/>fanout targets"]
     end
 
-    SubscribeTrackHandler -->|"UpdateValue(ta, prop, value, tick)"| TrackRanking
+    SubscribeTrackHandler -->|"UpdateValue(ta, prop, value, tick, conn_id)"| TrackRanking
     TrackRanking -->|"UpdateTrackRanking(flat_track_list)"| PublishNamespaceHandler
-    PublishNamespaceHandler -->|"PublishTrack / UnPublishTrack"| Transport
+    PublishNamespaceHandler -->|"PublishTrack / SetStatus(kPaused)"| Transport
     ClientManager --> TrackRanking
     ClientManager --> PublishNamespaceHandler
 ```
 
 ## Data Flow: Subscribe Namespace Received
 
-When a client sends `SUBSCRIBE_NAMESPACE` for a prefix:
+When a client sends `SUBSCRIBE_NAMESPACE` for a prefix, all matching published tracks are initially added to the handler via `PublishTrack`. Top-N selection occurs when `UpdateTrackRanking` runs (triggered by objects with property extensions).
 
 ```mermaid
 sequenceDiagram
@@ -136,16 +136,16 @@ sequenceDiagram
     Publisher->>SubscribeTrackHandler: ObjectReceived(extensions)
     SubscribeTrackHandler->>SubscribeTrackHandler: UpdateTrackedProperties(extensions)
     alt Property value changed or refresh interval elapsed
-        SubscribeTrackHandler->>TrackRanking: UpdateValue(ta, prop, value, tick)
-        TrackRanking->>TrackRanking: Update ordered_tracks_, flat_track_list_
-        loop For each ns_handler
+        SubscribeTrackHandler->>TrackRanking: UpdateValue(ta, prop, value, tick, conn_id)
+        TrackRanking->>TrackRanking: Update ordered_tracks_, flat_track_list_<br/>Remove inactive tracks
+        loop For each ns_handler (per connection)
             TrackRanking->>PublishNamespaceHandler: UpdateTrackRanking(flat_track_list)
-            PublishNamespaceHandler->>PublishNamespaceHandler: Update active_tracks_ (top-N)
-            alt New track in top-N
+            PublishNamespaceHandler->>PublishNamespaceHandler: Filter self-tracks, select top-N
+            alt New track in top-N (was paused)
                 PublishNamespaceHandler->>Transport: PublishTrack(handler)
             end
             alt Track dropped from top-N
-                PublishNamespaceHandler->>Transport: UnPublishTrack(handler)
+                PublishNamespaceHandler->>PublishNamespaceHandler: SetStatus(kPaused)
             end
         end
     end
@@ -161,58 +161,69 @@ sequenceDiagram
 
 - **ordered_tracks_**: `map<(PropertyType, PropertyValue), TrackEntry>`
   - Key: `(property_type, property_value)` — e.g., `(12, 2)` for property 12 with value 2
-  - Value: `TrackEntry` = `map<TrackAlias, tick>` — tracks in that bucket, with last update tick
-- **flat_track_list_**: Sorted list of `(TrackAlias, tick)` for the selected property
-  - Sorted by: property value **descending**, then tick **ascending** (newer updates rank higher within same value)
+  - Value: `TrackEntry` = `map<TrackAlias, TrackTickInfo>` where `TrackTickInfo` has `insert_seq_num` (update order) and `latest_tick`
+- **flat_track_list_**: Sorted list of `(TrackAlias, insert_seq_num, latest_tick, conn_id)` for the selected property
+  - Sorted by: property value **descending** (via reverse map iteration), then **ascending** `insert_seq_num` (earlier updates rank higher), then **descending** `track_alias` (tie breaker)
+- **track_connections_**: Maps each track alias to its publisher's connection ID (used for self-track filtering)
+- **ns_handlers_**: `map<namespace_hash, map<connection_id, PublishNamespaceHandler>>` — multiple handlers per namespace (one per subscriber connection)
 
 ### Sort Order
 
 ```mermaid
 flowchart LR
     subgraph Input["Incoming Updates"]
-        A["Track A: prop=12, value=2"]
+        A["Track A: prop=12, value=2\ninsert_seq=1"]
         B["Track B: prop=12, value=1"]
-        C["Track C: prop=12, value=2"]
+        C["Track C: prop=12, value=2\ninsert_seq=2"]
     end
 
-    subgraph Sorted["flat_track_list_ (desc value, asc tick)"]
-        R1["1. Track A (value=2)"]
-        R2["2. Track C (value=2)"]
+    subgraph Sorted["flat_track_list_ (desc value, asc insert_seq)"]
+        R1["1. Track A (value=2, seq=1)"]
+        R2["2. Track C (value=2, seq=2)"]
         R3["3. Track B (value=1)"]
     end
 
     Input --> Sorted
 ```
 
-Higher property values rank first. Within the same value, lower tick (older) comes first; the code uses reverse iteration so more recent ticks rank higher when values are equal.
+Higher property values rank first. Within the same value bucket, tracks are sorted by ascending `insert_seq_num` (earlier updates rank higher), then descending `track_alias` as a tie breaker.
 
 ### Top-N Selection
 
-**PublishNamespaceHandler** keeps at most `max_tracks_selected_` (default 3) tracks active:
+**PublishNamespaceHandler** keeps at most `max_tracks_selected_` (default 1) tracks active:
 
-- When `UpdateTrackRanking` is called with the new `flat_track_list_`, it takes the first N entries
-- Tracks not in the top-N are removed from `active_tracks_` after a grace period (`delay_publish_done_ms`)
-- New tracks entering the top-N trigger `PublishTrack`; demoted tracks trigger `UnPublishTrack`
+- When `UpdateTrackRanking` is called with the new `flat_track_list_`, it iterates the list and selects the first N entries
+- **Self-track filtering**: Tracks where `publisher_conn_id == GetConnectionId()` are skipped — a subscriber does not receive their own published tracks
+- Tracks must exist in `published_tracks_` (added via `PublishTrack`) before they can be selected
+- New tracks entering the top-N (previously paused) trigger `PublishTrack`; demoted tracks are set to `Status::kPaused`
+
+### Inactive Track Removal
+
+**TrackRanking** removes stale tracks from `ordered_tracks_` when `tick - latest_tick > inactive_age_ms_`. This prevents tracks that have stopped sending updates from occupying ranking slots.
 
 ## Lifecycle: Connection and Namespace Cleanup
 
 ```mermaid
 flowchart TB
-    A[UnsubscribeNamespaceReceived] --> B[Remove PublishNamespaceHandler from subscribe namespaces]
-    B --> C[track_rankings_->RemoveNamespaceHandler]
-    C --> D[SubscribeTrackHandler->RemoveSubscribeNamespace]
-    D --> E{Last subscriber for namespace?}
-    E -->|Yes| F[track_rankings_.erase]
-    E -->|No| G[Continue]
+    A[UnsubscribeNamespaceReceived] --> B[For each matching published track]
+    B --> C[SubscribeTrackHandler->RemoveSubscribeNamespace]
+    B --> D[TrackRanking->RemoveNamespaceHandler]
+    C --> E[Erase from subscribes_namespaces]
+    D --> E
+    E --> F{Last subscriber for namespace?}
+    F -->|Yes| G[track_rankings_.erase]
+    F -->|No| H[Continue]
 ```
 
 ## Configuration Parameters
 
 | Parameter | Component | Default | Description |
 |-----------|-----------|---------|-------------|
-| `max_tracks_selected_` | PublishNamespaceHandler | 3 | Maximum number of tracks to forward per subscribe namespace |
-| `inactive_age_ms_` | Both | 3000 / 5000 | Age (ms) after which a track is considered stale |
-| `delay_publish_done_ms` | PublishNamespaceHandler | 500 | Grace period before unpublishing a demoted track |
+| `max_tracks_selected_` | PublishNamespaceHandler | 1 | Maximum number of tracks to forward per subscribe namespace |
+| `max_tracks_selected_` | TrackRanking | 32 | Max tracks in candidate pool (used by ranking logic) |
+| `inactive_age_ms_` | TrackRanking | 1100 | Age (ms) after which a track is removed from ranking |
+| `inactive_age_ms_` | PublishNamespaceHandler | 3000 | Age (ms) for staleness checks |
+| `delay_publish_done_ms_` | PublishNamespaceHandler | 500 | Grace period before unpublishing a demoted track |
 | `kRefreshRankingIntervalMs` | SubscribeTrackHandler | 1000 | Minimum interval between ranking updates for the same track |
 
 ## Property Extraction
@@ -236,7 +247,7 @@ flowchart TB
         S4[Objects arrive with property extensions]
         S5[SubscribeTrackHandler → TrackRanking.UpdateValue]
         S6[TrackRanking → PublishNamespaceHandler.UpdateTrackRanking]
-        S7[PublishNamespaceHandler: Select top-N, PublishTrack/UnPublishTrack]
+        S7[PublishNamespaceHandler: Select top-N, PublishTrack/SetStatus(kPaused)]
         S8[Subscriber receives only top-N tracks]
     end
 
