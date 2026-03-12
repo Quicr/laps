@@ -87,11 +87,11 @@ void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t>> ordered_tracks)
 {
-    uint64_t i = 0;
     std::unordered_map<uint64_t, uint64_t> updated_tracks;
 
+    uint64_t i = 0;
     for (const auto& [ta, tick, publisher_conn_id] : ordered_tracks) {
-        if (i++ >= max_tracks_selected_) {
+        if (active_tracks_.size() >= max_tracks_selected_) {
             break;
         }
 
@@ -100,6 +100,8 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
             SPDLOG_INFO("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
             continue;
         }
+
+        ++i;
 
         SPDLOG_INFO("Update track tracking: Top track {} track alias: {} from conn {}", i, ta, publisher_conn_id);
 

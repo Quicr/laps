@@ -263,6 +263,11 @@ namespace laps {
         for (auto& [tn, conns] : state_.subscribes_namespaces) {
             if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
                 for (auto& [_, pub_ns_h] : conns) {
+                    if (pub_ns_h->GetConnectionId() == connection_handle) {
+                        // Initially do not mirror
+                        continue;
+                    }
+
                     const auto handler = PublishTrackHandler::Create(publish_attributes.track_full_name,
                                                                      quicr::TrackMode::kStream,
                                                                      publish_attributes.priority,
