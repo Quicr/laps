@@ -321,7 +321,9 @@ namespace laps {
                 if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
                     has_subs = true;
 
-                    sub_ns = ns_prefix;
+                    if (sub_ns.empty()) {
+                        sub_ns = ns_prefix;
+                    }
 
                     for (const auto& [conn_id, ns_handler] : conns) {
                         sub_track_handler->AddSubscribeNamespace(ns_handler);

@@ -76,6 +76,6 @@ namespace laps {
             std::weak_ptr<quicr::PublishTrackHandler> handler;
         };
 
-        std::map<quicr::TrackNamespaceHash, ActiveTrack> published_tracks_;
+        std::map<quicr::messages::TrackAlias, ActiveTrack> published_tracks_;
     };
 } // namespace laps
