@@ -182,7 +182,7 @@ namespace laps {
 
       private:
         uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 1500 };   // Age in ms of a track that is considered stale/inactive
+        uint64_t inactive_age_ms_{ 1100 };   // Age in ms of a track that is considered stale/inactive
         uint64_t update_value_seq_num_{ 0 }; // Track ranking update value sequence number
 
         struct TrackInfo
