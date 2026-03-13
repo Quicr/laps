@@ -315,7 +315,7 @@ flowchart TB
         S4[Objects arrive with property extensions]
         S5[SubscribeTrackHandler → TrackRanking.UpdateValue]
         S6[TrackRanking → PublishNamespaceHandler.UpdateTrackRanking]
-        S7[PublishNamespaceHandler: Select top-N, PublishTrack/SetStatus(kPaused)]
+        S7[PublishNamespaceHandler: Select top-N, PublishTrack/SetStatus to kPaused]
         S8[Subscriber receives only top-N tracks]
     end
 
