@@ -67,7 +67,7 @@ namespace laps {
             bool track_is_new = !prop_it->second.contains(track_alias);
 
             if (track_is_new) {
-                auto seq_num = value_decreased ? std::numeric_limits<uint64_t>::max() - update_value_seq_num_
+                auto seq_num = value_decreased ? (std::numeric_limits<uint64_t>::max() >> 1) - update_value_seq_num_
                                                : 1ULL << 63 | update_value_seq_num_;
                 prop_it->second[track_alias] = {
                     seq_num, tick
