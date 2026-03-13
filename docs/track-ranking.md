@@ -188,6 +188,20 @@ flowchart LR
 
 Higher property values rank first. Within the same value bucket, tracks are sorted by ascending `insert_seq_num` (earlier updates rank higher), then descending `track_alias` as a tie breaker.
 
+### Sequence Number Assignment
+
+When a track's property value **increases** (moves to a higher-value bucket), it receives a new sequence number calculated as:
+```
+seq_num = (1ULL << 63) | update_value_seq_num
+```
+
+When a track's property value **decreases** (moves to a lower-value bucket), it receives an inverted sequence number calculated as:
+```
+seq_num = std::numeric_limits<uint64_t>::max() - update_value_seq_num
+```
+
+This ensures that when a track improves (increases value), it ranks at the **top** of the new value bucket (lower sequence number = better rank). Conversely, when a track decreases in value, it ranks at the **bottom** of its new bucket, making room for other tracks with better values to be selected.
+
 ### Top-N Selection
 
 **PublishNamespaceHandler** keeps at most `max_tracks_selected_` (default 1) tracks active:
@@ -199,7 +213,9 @@ Higher property values rank first. Within the same value bucket, tracks are sort
 
 ### Inactive Track Removal
 
-**TrackRanking** removes stale tracks from `ordered_tracks_` when `tick - latest_tick > inactive_age_ms_`. This prevents tracks that have stopped sending updates from occupying ranking slots.
+**TrackRanking** removes stale tracks from `ordered_tracks_` during every `UpdateValue` call when `tick - latest_tick > inactive_age_ms_`. This prevents tracks that have stopped sending updates from occupying ranking slots.
+
+Stale track removal iterates through all property value buckets and removes any track entries whose latest tick exceeds the configured age threshold. The entire `flat_track_list_` is then rebuilt if any removals occur.
 
 ## Lifecycle: Connection and Namespace Cleanup
 
@@ -221,19 +237,71 @@ flowchart TB
 |-----------|-----------|---------|-------------|
 | `max_tracks_selected_` | PublishNamespaceHandler | 1 | Maximum number of tracks to forward per subscribe namespace |
 | `max_tracks_selected_` | TrackRanking | 32 | Max tracks in candidate pool (used by ranking logic) |
-| `inactive_age_ms_` | TrackRanking | 1100 | Age (ms) after which a track is removed from ranking |
+| `inactive_age_ms_` | TrackRanking | 1500 | Age (ms) after which a track is removed from ranking |
 | `inactive_age_ms_` | PublishNamespaceHandler | 3000 | Age (ms) for staleness checks |
-| `delay_publish_done_ms_` | PublishNamespaceHandler | 500 | Grace period before unpublishing a demoted track |
+| `delay_publish_done_ms_` | PublishNamespaceHandler | 900 | Grace period before unpublishing a demoted track |
 | `kRefreshRankingIntervalMs` | SubscribeTrackHandler | 1000 | Minimum interval between ranking updates for the same track |
 
-## Property Extraction
+## Implementation Details
 
-The **SubscribeTrackHandler** tracks property values from object extensions:
+### TrackRanking::UpdateValue Flow
 
-- Properties are read from `object_headers.extensions` and `object_headers.immutable_extensions`
-- Currently, property `12` is tracked (see `tracked_properties_value_.emplace(12, 0)` in constructor)
-- Only even-numbered properties are updated (see `prop % 2 != 0` check)
-- Updates are throttled by `kRefreshRankingIntervalMs` to avoid excessive ranking churn
+The `UpdateValue` method performs several steps in sequence:
+
+1. **Increment sequence counter**: Increments `update_value_seq_num_` for globally unique ordering
+2. **Check for bucket migration**: Scans existing property buckets to see if the track exists in a different value bucket
+3. **Mark bucket changes**: If track exists in a different bucket, it's removed and `value_decreased` flag tracks whether value went down
+4. **Assign sequence number**:
+   - If value increased: `seq_num = (1ULL << 63) | update_value_seq_num_` (high bit set for new values)
+   - If value decreased: `seq_num = std::numeric_limits<uint64_t>::max() - update_value_seq_num_` (inverted for demotion)
+5. **Insert/update track**: Adds track to new value bucket or updates `latest_tick` if already present
+6. **Store connection ID**: Records the publisher's connection ID for self-track filtering
+7. **Remove inactive tracks**: Scans all buckets and removes tracks with `tick - latest_tick > inactive_age_ms_`
+8. **Rebuild flat list**: If buckets changed, reconstructs `flat_track_list_` by iterating buckets in descending value order, then sorting by `insert_seq_num` (ascending) and `track_alias` (descending)
+9. **Notify handlers**: Updates all active `PublishNamespaceHandler` instances with the new ranked list
+
+### Weak Pointer Management
+
+The `ns_handlers_` map stores `std::weak_ptr<PublishNamespaceHandler>` to allow handlers to be garbage collected when subscribers disconnect. During each update:
+- Weak pointers are locked to check if the handler still exists
+- Dead handlers are automatically erased from the map
+- If all handlers for a namespace are removed, the namespace entry is deleted
+
+## Implementation: flat_track_list_ Optimization
+
+The `flat_track_list_` is built from `ordered_tracks_` to optimize lookups and top-N selection:
+
+```cpp
+// Iterate property value buckets in reverse order (highest value first)
+for (auto it = std::make_reverse_iterator(last);
+     it != std::make_reverse_iterator(first); ++it) {
+
+    // For each value bucket, collect all tracks
+    std::vector<std::tuple<TrackAlias, uint64_t, uint64_t, uint64_t>> sort_tracks;
+    for (const auto& [ta, tick_info] : entry) {
+        sort_tracks.emplace_back(
+          ta, tick_info.insert_seq_num, tick_info.latest_tick, track_connections_[ta]);
+    }
+
+    // Sort by insert_seq_num (ascending), then track_alias (descending)
+    std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
+        if (std::get<1>(a) != std::get<1>(b))
+            return std::get<1>(a) < std::get<1>(b);
+        return std::get<0>(a) > std::get<0>(b);
+    });
+
+    // Append sorted tracks to flat list
+    flat_track_list_.insert(flat_track_list_.end(),
+                            sort_tracks.begin(), sort_tracks.end());
+}
+```
+
+This results in a flat list where tracks are naturally ordered by:
+1. Property value (descending) — higher values first
+2. Sequence number within value (ascending) — earlier/better updates first
+3. Track alias (descending) — tie breaker
+
+When `flat_track_list_` is not rebuilt (simple tick updates for existing tracks), it's updated in-place by scanning for the track and updating its `latest_tick` and `connection_id`.
 
 ## Summary
 
