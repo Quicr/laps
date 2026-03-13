@@ -43,9 +43,14 @@ namespace laps {
 
             // Check if track exists in a different value bucket
             bool needs_rebuild = false;
+            bool value_decreased = false;
             for (auto it = ordered_tracks_.lower_bound({ prop, 0 });
                  it != ordered_tracks_.end() && it->first.first == prop;) {
                 if (it->first.second != value && it->second.contains(track_alias)) {
+                    if (it->first.second > value) {
+                        value_decreased = true;
+                    }
+
                     it->second.erase(track_alias); // Remove from old bucket
                     if (it->second.empty()) {
                         it = ordered_tracks_.erase(it); // erase returns next iterator
@@ -62,8 +67,10 @@ namespace laps {
             bool track_is_new = !prop_it->second.contains(track_alias);
 
             if (track_is_new) {
+                auto seq_num = value_decreased ? std::numeric_limits<uint64_t>::max() - update_value_seq_num_
+                                               : 1ULL << 63 | update_value_seq_num_;
                 prop_it->second[track_alias] = {
-                    update_value_seq_num_, tick
+                    seq_num, tick
                 }; // insert_seq_num is current sequence, latest_tick set to current tick
             } else {
                 prop_it->second[track_alias].latest_tick = tick; // Only update latest_tick for existing tracks
@@ -182,7 +189,7 @@ namespace laps {
 
       private:
         uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 1100 };   // Age in ms of a track that is considered stale/inactive
+        uint64_t inactive_age_ms_{ 1500 };   // Age in ms of a track that is considered stale/inactive
         uint64_t update_value_seq_num_{ 0 }; // Track ranking update value sequence number
 
         struct TrackInfo

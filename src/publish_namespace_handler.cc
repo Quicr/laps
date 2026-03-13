@@ -85,12 +85,18 @@ void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks)
 {
+    // Update latest tick for each publish track
     for (auto& [ta, insert_seq_num, latest_tick, conn_id] : ordered_tracks) {
         SPDLOG_DEBUG("DEBUG: conn_id: {} ta: {} insert_seq_num: {} latest_tick: {}",
                      GetConnectionId(),
                      ta,
                      insert_seq_num,
                      latest_tick);
+
+        auto pub_it = published_tracks_.find(ta);
+        if (pub_it != published_tracks_.end()) {
+            pub_it->second.last_updated_tick = latest_tick;
+        }
     }
 
     std::unordered_map<uint64_t, uint64_t> active_tracks;
@@ -146,16 +152,31 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                 continue;
             }
 
+            quicr::TickService::TickType cur_tick{ 0 };
+            if (auto tick_svc = tick_service_.lock()) {
+                cur_tick = tick_svc->Milliseconds();
+            }
+
             if (auto h = track.handler.lock()) {
-                h->SetStatus(PublishTrackHandler::Status::kPaused);
-                if (auto hh = std::dynamic_pointer_cast<PublishTrackHandler>(h)) {
-                    hh->AbruptCloseAllSubgroups();
+                if (h->GetStatus() == PublishTrackHandler::Status::kOk) {
+                    SPDLOG_INFO("Setting track to Paused, no longer in top-n alias: {} conn_id: {} ticks: {} < {}",
+                                ta,
+                                GetConnectionId(),
+                                track.last_updated_tick,
+                                cur_tick);
+
+                    if (auto hh = std::dynamic_pointer_cast<PublishTrackHandler>(h)) {
+                        hh->AbruptCloseAllSubgroups();
+                    }
+                    h->SetStatus(PublishTrackHandler::Status::kPaused);
                 }
 
-                // Unpublish if grace period has elapsed
-                if (auto tick_svc = tick_service_.lock();
-                    tick_svc->Milliseconds() - track.last_updated_tick > delay_publish_done_ms_) {
-                    SPDLOG_INFO("Unpublish track, not in top-n track alias: {} conn_id: {}", ta, GetConnectionId());
+                if (cur_tick - track.last_updated_tick > delay_publish_done_ms_) {
+                    SPDLOG_INFO("Unpublish track, not in top-n track alias: {} conn_id: {} ticks: {} < {}",
+                                ta,
+                                GetConnectionId(),
+                                track.last_updated_tick,
+                                cur_tick);
                     // UnPublishTrack(h);
                 }
             }
