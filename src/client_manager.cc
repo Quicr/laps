@@ -291,7 +291,7 @@ namespace laps {
                                                                          config_.tick_service_,
                                                                          true);
 
-        if (publish_attributes.new_group_request_id.has_value()) {
+        if (publish_attributes.dynamic_groups) {
             sub_track_handler->SupportNewGroupRequest(true);
         }
 
