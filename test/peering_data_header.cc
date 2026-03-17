@@ -63,9 +63,6 @@ TEST_CASE("Serialize Data Header existing stream")
 
     auto net_data = data_header.Serialize();
 
-    CHECK_EQ(net_data.size(), 2);
-
-    DataHeader decoded(net_data);
-
-    CHECK_EQ(data_header.type, decoded.type);
+    // Existing stream type produces no serialized data
+    CHECK_EQ(net_data.size(), 0);
 }

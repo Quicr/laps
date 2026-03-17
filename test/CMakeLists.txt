@@ -10,6 +10,7 @@ add_executable(laps_test
         peering_sns.cc
         peering_data_header.cc
         peering_info_base.cc
+        track_ranking.cc
 
         ../src/peering/messages/connect.cc
         ../src/peering/messages/connect_response.cc

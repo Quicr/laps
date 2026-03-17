@@ -14,6 +14,7 @@ namespace laps {
                                                  quicr::messages::ObjectPriority priority,
                                                  quicr::messages::GroupOrder group_order,
                                                  ClientManager& server,
+                                                 std::weak_ptr<quicr::TickService> tick_service,
                                                  bool is_publisher_initiated)
       : quicr::SubscribeTrackHandler(full_track_name,
                                      priority,
@@ -22,7 +23,9 @@ namespace laps {
                                      std::nullopt,
                                      is_publisher_initiated)
       , server_(server)
+      , tick_service_(std::move(tick_service))
     {
+        tracked_properties_value_.emplace(12, 0);
     }
 
     SubscribeTrackHandler::~SubscribeTrackHandler()
@@ -35,13 +38,13 @@ namespace laps {
     void SubscribeTrackHandler::AddSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler)
     {
         auto th = quicr::TrackHash(handler->GetFullTrackName());
-        const auto it = sub_namespaces[th.track_fullname_hash].find(handler->GetConnectionId());
-        if (it != sub_namespaces[th.track_fullname_hash].end()) {
+        const auto it = sub_namespaces_[th.track_fullname_hash].find(handler->GetConnectionId());
+        if (it != sub_namespaces_[th.track_fullname_hash].end()) {
             // Duplicate
             return;
         }
 
-        sub_namespaces[th.track_fullname_hash].emplace(handler->GetConnectionId(), handler);
+        sub_namespaces_[th.track_fullname_hash].emplace(handler->GetConnectionId(), handler);
 
         Resume();
     }
@@ -50,12 +53,12 @@ namespace laps {
     {
         auto th = quicr::TrackHash(handler->GetFullTrackName());
 
-        auto it = sub_namespaces.find(th.track_fullname_hash);
-        if (it != sub_namespaces.end()) {
+        auto it = sub_namespaces_.find(th.track_fullname_hash);
+        if (it != sub_namespaces_.end()) {
             it->second.erase(handler->GetConnectionId());
 
             if (it->second.empty()) {
-                sub_namespaces.erase(it);
+                sub_namespaces_.erase(it);
             }
         }
     }
@@ -101,6 +104,46 @@ namespace laps {
         subscribers.erase(conn_handle);
     }
 
+    void SubscribeTrackHandler::UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
+                                                        std::optional<quicr::Extensions> immutable_extensions)
+    {
+        auto update = [ta = GetTrackAlias().value(),
+                       conn_id = GetConnectionId(),
+                       ticks = tick_service_.lock(),
+                       ranking = track_ranking_.lock()](
+                        uint64_t prop, PublishNamespaceHandler::TrackPropertyValue& value, uint64_t recv_value) {
+            quicr::TickService::TickType cur_tick{ 0 };
+            if (ticks != nullptr) {
+                cur_tick = ticks->Milliseconds();
+            }
+
+            if (value.latest_value != recv_value || cur_tick - value.latest_tick_ms > kRefreshRankingIntervalMs) {
+                value.latest_value = recv_value;
+                value.latest_tick_ms = cur_tick;
+
+                if (ranking) {
+                    ranking->UpdateValue(ta, prop, value.latest_value, value.latest_tick_ms, conn_id);
+                }
+            }
+        };
+
+        if (extensions) {
+            for (auto& [prop, value] : tracked_properties_value_) {
+                if (prop % 2 != 0) {
+                    continue;
+                }
+
+                if (extensions->contains(prop)) {
+                    update(prop, value, uint64_t(quicr::UintVar(extensions->at(prop).front())));
+                    continue;
+                }
+                if (immutable_extensions.has_value() && immutable_extensions->contains(prop)) {
+                    update(prop, value, uint64_t(quicr::UintVar(immutable_extensions->at(prop).front())));
+                }
+            }
+        }
+    }
+
     void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
     {
         auto self_connection_handle = GetConnectionId();
@@ -111,6 +154,9 @@ namespace laps {
                                                  quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
                                                    server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
         }
+
+        // Update tracked properties
+        UpdateTrackedProperties(object_headers.extensions, object_headers.immutable_extensions);
 
         auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
 
@@ -129,7 +175,7 @@ namespace laps {
 
         try {
             // Fanout object to subscribe namespaces
-            for (const auto [_, conn_subs] : sub_namespaces) {
+            for (const auto [_, conn_subs] : sub_namespaces_) {
                 for (const auto& [_, handler] : conn_subs) {
                     handler->PublishObject(GetTrackAlias().value(), object_headers, data);
                 }
@@ -328,7 +374,7 @@ namespace laps {
         }
 
         // Fanout object to subscribe namespaces
-        for (const auto [_, conn_subs] : sub_namespaces) {
+        for (const auto [_, conn_subs] : sub_namespaces_) {
             for (const auto& [_, handler] : conn_subs) {
                 handler->ForwardPublishedData(GetTrackAlias().value(), is_new_stream, group_id, subgroup_id, data);
             }

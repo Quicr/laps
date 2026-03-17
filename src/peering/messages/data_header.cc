@@ -88,7 +88,7 @@ namespace laps::peering {
             }
         }
 
-        return false;
+        return true;
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const DataHeader& data_object)

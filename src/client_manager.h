@@ -2,6 +2,7 @@
 
 #include "state.h"
 
+#include "track_ranking.h"
 #include <peering/peer_manager.h>
 #include <quicr/cache.h>
 #include <quicr/server.h>
@@ -149,6 +150,8 @@ namespace laps {
 
         size_t cache_duration_ms_ = 0;
         std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
+
+        std::unordered_map<quicr::TrackNamespaceHash, std::shared_ptr<TrackRanking>> track_rankings_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

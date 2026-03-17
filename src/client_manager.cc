@@ -176,7 +176,7 @@ namespace laps {
 
                     // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
                     auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-                      sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this);
+                      sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this, config_.tick_service_);
 
                     SubscribeTrack(connection_handle, sub_track_handler);
                     state_.pub_subscribes[{ a_si.track_alias, connection_handle }] = sub_track_handler;
@@ -263,22 +263,35 @@ namespace laps {
         for (auto& [tn, conns] : state_.subscribes_namespaces) {
             if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
                 for (auto& [_, pub_ns_h] : conns) {
+                    if (pub_ns_h->GetConnectionId() == connection_handle) {
+                        // Initially do not mirror
+                        continue;
+                    }
+
                     const auto handler = PublishTrackHandler::Create(publish_attributes.track_full_name,
                                                                      quicr::TrackMode::kStream,
                                                                      publish_attributes.priority,
                                                                      publish_attributes.delivery_timeout.count(),
                                                                      publish_attributes.start_location,
                                                                      *this);
+                    if (!handler->GetTrackAlias().has_value()) {
+                        handler->SetTrackAlias(th.track_fullname_hash);
+                    }
+
                     pub_ns_h->PublishTrack(handler);
                 }
             }
         }
 
         // passively create the subscribe handler towards the publisher
-        auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-          publish_attributes.track_full_name, 0, quicr::messages::GroupOrder::kAscending, *this, true);
+        auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(publish_attributes.track_full_name,
+                                                                         0,
+                                                                         quicr::messages::GroupOrder::kAscending,
+                                                                         *this,
+                                                                         config_.tick_service_,
+                                                                         true);
 
-        if (publish_attributes.new_group_request_id.has_value()) {
+        if (publish_attributes.dynamic_groups) {
             sub_track_handler->SupportNewGroupRequest(true);
         }
 
@@ -303,14 +316,25 @@ namespace laps {
                 }
             }
 
+            quicr::messages::TrackNamespace sub_ns;
             for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
                 if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
                     has_subs = true;
+
+                    if (sub_ns.empty()) {
+                        sub_ns = ns_prefix;
+                    }
 
                     for (const auto& [conn_id, ns_handler] : conns) {
                         sub_track_handler->AddSubscribeNamespace(ns_handler);
                     }
                 }
+            }
+
+            auto ns_th = quicr::TrackHash({ sub_ns, {} });
+            auto rank_it = track_rankings_.find(ns_th.track_namespace_hash);
+            if (rank_it != track_rankings_.end()) {
+                sub_track_handler->SetTrackRanking(rank_it->second);
             }
 
             if (!has_subs) {
@@ -342,8 +366,8 @@ namespace laps {
 
         auto [it, is_new] = state_.subscribes_namespaces.try_emplace(prefix_namespace);
 
-        auto handler = PublishNamespaceHandler::Create(prefix_namespace);
-        PublishNamespace(connection_handle, handler, true);
+        auto handler = PublishNamespaceHandler::Create(prefix_namespace, GetTickService());
+        PublishNamespace(connection_handle, handler);
 
         auto [pub_it, _] = it->second.emplace(connection_handle, handler);
 
@@ -352,6 +376,9 @@ namespace laps {
                         connection_handle,
                         th.track_namespace_hash);
         }
+
+        auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());
+        ranks_it->second->AddNamespaceHandler(handler);
 
         std::vector<quicr::TrackNamespace> matched_ns;
 
@@ -387,9 +414,14 @@ namespace laps {
                   largest_location.value_or(quicr::messages::Location{ 0, 0 }),
                   *this);
 
+                if (!pub_handler->GetTrackAlias().has_value()) {
+                    auto pub_th = quicr::TrackHash(track_full_name);
+                    pub_handler->SetTrackAlias(pub_th.track_fullname_hash);
+                }
                 pub_it->second->PublishTrack(pub_handler);
 
                 handler->AddSubscribeNamespace(pub_it->second);
+                handler->SetTrackRanking(ranks_it->second);
 
                 SPDLOG_LOGGER_DEBUG(
                   LOGGER,
@@ -438,6 +470,7 @@ namespace laps {
             const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
             if (ns_matched) {
                 handler->RemoveSubscribeNamespace(pub_it->second);
+                track_rankings_[th.track_namespace_hash]->RemoveNamespaceHandler(pub_it->second);
 
                 RemoveOrPausePublisherSubscribe(ta_conn.first);
             }
@@ -447,6 +480,7 @@ namespace laps {
 
         if (it->second.empty()) {
             state_.subscribes_namespaces.erase(it);
+            track_rankings_.erase(th.track_namespace_hash);
         }
     }
 
@@ -657,6 +691,7 @@ namespace laps {
                 break;
 
             if (sub_to_pub_handler->HasSubscribers()) {
+                has_subs = true;
                 // Do not pause or remove handler if there are still some subscriber/subscribe namespaces
                 has_subs = true;
                 continue;
@@ -1247,7 +1282,8 @@ namespace laps {
                   std::make_shared<SubscribeTrackHandler>(track_full_name,
                                                           0 /* use zero to indicate to use publisher priority */,
                                                           quicr::messages::GroupOrder::kAscending,
-                                                          *this);
+                                                          *this,
+                                                          config_.tick_service_);
                 SubscribeTrack(key.second, sub_track_h);
 
                 sub_track_h->AddSubscriber(

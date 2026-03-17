@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client_manager.h"
+#include "publish_namespace_handler.h"
 
 #include <quicr/common.h>
 #include <quicr/object.h>
@@ -16,10 +17,13 @@ namespace laps {
     class SubscribeTrackHandler : public quicr::SubscribeTrackHandler
     {
       public:
+        static constexpr uint64_t kRefreshRankingIntervalMs = 500;
+
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               quicr::messages::ObjectPriority priority,
                               quicr::messages::GroupOrder group_order,
                               ClientManager& server,
+                              std::weak_ptr<quicr::TickService> tick_service,
                               bool is_publisher_initiated = false);
 
         ~SubscribeTrackHandler();
@@ -76,7 +80,9 @@ namespace laps {
          */
         void RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler);
 
-        bool HasSubscribers() const { return !subscribers.empty() || !sub_namespaces.empty(); }
+        void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
+
+        bool HasSubscribers() const { return !subscribers.empty() || !sub_namespaces_.empty(); }
 
       private:
         void ForwardReceivedData(bool is_new_stream,
@@ -84,7 +90,11 @@ namespace laps {
                                  uint64_t subgroup_id,
                                  std::shared_ptr<const std::vector<uint8_t>> data);
 
+        void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
+                                     std::optional<quicr::Extensions> immutable_extensions);
+
         ClientManager& server_;
+        std::weak_ptr<quicr::TickService> tick_service_;
 
         bool is_datagram_{ false };
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
@@ -102,6 +112,14 @@ namespace laps {
          * @brief Map of publish namespace handlers by subscribe namespace full track name hash and connection handle
          */
         std::map<quicr::TrackFullNameHash, std::map<quicr::ConnectionHandle, std::shared_ptr<PublishNamespaceHandler>>>
-          sub_namespaces;
+          sub_namespaces_;
+
+        /**
+         * @brief property values
+         * @details
+         */
+        std::map<uint64_t, PublishNamespaceHandler::TrackPropertyValue> tracked_properties_value_;
+
+        std::weak_ptr<TrackRanking> track_ranking_;
     };
 } // namespace laps

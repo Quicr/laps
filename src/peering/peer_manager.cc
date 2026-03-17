@@ -643,7 +643,8 @@ namespace laps::peering {
           std::make_shared<SubscribeTrackHandler>(tfn,
                                                   0 /* use zero to indicate to use publisher priority */,
                                                   quicr::messages::GroupOrder::kAscending,
-                                                  *client_manager_);
+                                                  *client_manager_,
+                                                  tick_service_);
 
         si.client_subscribe_handler->SetTrackAlias(si.track_hash.track_fullname_hash);
         si.client_subscribe_handler->SetRequestId(0);
