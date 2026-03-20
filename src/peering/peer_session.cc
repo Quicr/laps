@@ -177,9 +177,20 @@ namespace laps::peering {
         return { node_removed, sns_removed };
     }
 
+    uint64_t PeerSession::CreateStream(SubscribeNodeSetId sns_id, uint8_t priority) const
+    {
+        return transport_->CreateStream(t_conn_id_, sns_id, priority);
+    }
+
+    void PeerSession::CloseStream(SubscribeNodeSetId sns_id, uint64_t stream_id, quicr::StreamClosedFlag flag)
+    {
+        transport_->CloseStream(t_conn_id_, sns_id, stream_id, flag == quicr::StreamClosedFlag::kReset);
+    }
+
     void PeerSession::SendData(uint8_t priority,
                                uint32_t ttl,
                                SubscribeNodeSetId sns_id,
+                               uint64_t stream_id,
                                const quicr::ITransport::EnqueueFlags& eflags,
                                std::shared_ptr<const std::vector<uint8_t>> data)
     {
@@ -187,7 +198,7 @@ namespace laps::peering {
 
         if (status_ != StatusValue::kConnected)
             return;
-        transport_->Enqueue(t_conn_id_, sns_id, 0, data, priority, ttl, 0, eflags);
+        transport_->Enqueue(t_conn_id_, sns_id, stream_id, data, priority, ttl, 0, eflags);
     }
 
     void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw)
@@ -586,8 +597,23 @@ namespace laps::peering {
                                      std::shared_ptr<quicr::StreamRxContext> rx_context,
                                      quicr::StreamClosedFlag flag)
     {
-        SPDLOG_LOGGER_DEBUG(
-          LOGGER, "Peer conn_id {} stream id: {} flag: {}", connection_handle, stream_id, static_cast<int>(flag));
+        if (auto rx_ctx = transport_->GetStreamRxContext(connection_handle, stream_id)) {
+            auto& data_header = std::any_cast<DataHeader&>(rx_ctx->caller_any);
+
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Peer conn_id {} stream id: {} flag: {} track fullname hash: {}",
+                                connection_handle,
+                                stream_id,
+                                static_cast<int>(flag),
+                                data_header.track_full_name_hash);
+
+        } else {
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Peer conn_id {} stream id: {} flag: {} closed without having existing state",
+                                connection_handle,
+                                stream_id,
+                                static_cast<int>(flag));
+        }
     }
 
 }

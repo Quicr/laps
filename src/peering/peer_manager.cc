@@ -181,7 +181,7 @@ namespace laps::peering {
 
                         if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
                               { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
-                              InfoBase::FibEntry{ update_ref, 0, sns_id, bp_it->second });
+                              InfoBase::FibEntry{ update_ref, {}, sns_id, bp_it->second });
                             is_new) {
                             SPDLOG_LOGGER_INFO(LOGGER,
                                                "New subscribe fullname: {}, sending subscribe to client manager",
@@ -429,11 +429,6 @@ namespace laps::peering {
                     continue;
                 }
 
-                if (stream_id < entry.stream_id)
-                    continue; // Invalid, must be an old object
-
-                entry.stream_id = stream_id;
-
                 // Update SNS_ID if new stream header included or if datagram (both have sns_id)
                 if (is_new_stream || eflags.use_reliable == false) {
                     auto sns_id_bytes = BytesOf(entry.out_sns_id);
@@ -441,10 +436,25 @@ namespace laps::peering {
                 }
 
                 auto out_peer_sess = entry.peer_session.lock();
+
+                uint64_t out_stream_id{ 0 };
+                auto sid_it = entry.streams.find(stream_id);
+                if (sid_it == entry.streams.end()) {
+                    // TODO: Create egress stream and added it
+                    out_stream_id = out_peer_sess->CreateStream(entry.out_sns_id, data_header.priority);
+                    entry.streams.emplace(stream_id, out_stream_id);
+                } else {
+                    out_stream_id = sid_it->second;
+                }
+
                 auto data_out_shared = std::make_shared<std::vector<uint8_t>>();
                 data_out_shared->assign(data_out.begin(), data_out.end());
-                out_peer_sess->SendData(
-                  data_header.priority, data_header.ttl, entry.out_sns_id, eflags, std::move(data_out_shared));
+                out_peer_sess->SendData(data_header.priority,
+                                        data_header.ttl,
+                                        entry.out_sns_id,
+                                        out_stream_id,
+                                        eflags,
+                                        std::move(data_out_shared));
             }
         } else {
             SPDLOG_LOGGER_DEBUG(config_.logger_,
@@ -1254,8 +1264,33 @@ namespace laps::peering {
                                      std::shared_ptr<quicr::StreamRxContext> rx_context,
                                      quicr::StreamClosedFlag flag)
     {
-        SPDLOG_LOGGER_DEBUG(
-          LOGGER, "Peer conn_id {} stream id: {} flag: {}", connection_handle, stream_id, static_cast<int>(flag));
+        auto peer_iter = server_peer_sessions_.find(connection_handle);
+        if (peer_iter != server_peer_sessions_.end()) {
+            peer_iter->second->OnStreamClosed(connection_handle, stream_id, rx_context, flag);
+        }
+    }
+
+    void PeerManager::CloseStream(PeerSessionId peer_session_id,
+                                  SubscribeNodeSetId sns,
+                                  uint64_t stream_id,
+                                  quicr::StreamClosedFlag flag)
+    {
+        // Close all egress peer streams related to the ingress stream close
+        auto it = info_base_->peer_fib_.find({ peer_session_id, sns });
+        if (it != info_base_->peer_fib_.end()) {
+            std::lock_guard _(mutex_);
+
+            for (const auto& [out_peer_sess_id, entry] : it->second) {
+                auto stream_it = entry.streams.find(stream_id);
+                if (stream_it != entry.streams.end()) {
+                    if (auto out_peer_sess = entry.peer_session.lock()) {
+                        out_peer_sess->CloseStream(entry.out_sns_id, stream_it->second, flag);
+                    }
+                }
+            }
+        }
+
+        // Notify the client manager of closed stream
     }
 
 } // namespace laps

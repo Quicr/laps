@@ -129,6 +129,11 @@ namespace laps::peering {
 
         void SnsReceived(PeerSession& peer_session, const SubscribeNodeSet& sns, bool withdraw = false);
 
+        void CloseStream(PeerSessionId peer_session_id,
+                         SubscribeNodeSetId sns,
+                         uint64_t stream_id,
+                         quicr::StreamClosedFlag flag);
+
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
         // -------------------------------------------------------------------------------

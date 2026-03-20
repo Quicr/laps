@@ -81,6 +81,8 @@ namespace laps::peering {
          */
         PeerSessionId GetSessionId() const { return t_conn_id_; }
 
+        uint64_t CreateStream(SubscribeNodeSetId sns_id, uint8_t priority) const;
+        void CloseStream(SubscribeNodeSetId sns_id, uint64_t stream_id, quicr::StreamClosedFlag flag);
         void SendNodeInfo(const NodeInfo& node_info, bool withdraw = false);
         void SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw = false);
         void SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw = false);
@@ -88,6 +90,7 @@ namespace laps::peering {
         void SendData(uint8_t priority,
                       uint32_t ttl,
                       SubscribeNodeSetId sns_id,
+                      uint64_t stream_id,
                       const quicr::ITransport::EnqueueFlags& eflags,
                       std::shared_ptr<const std::vector<uint8_t>> data);
 

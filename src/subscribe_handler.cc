@@ -19,7 +19,7 @@ namespace laps {
       : quicr::SubscribeTrackHandler(full_track_name,
                                      priority,
                                      group_order,
-                                     quicr::messages::FilterType::kLargestObject,
+                                     std::monostate{},
                                      std::nullopt,
                                      is_publisher_initiated)
       , server_(server)

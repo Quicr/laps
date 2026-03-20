@@ -150,9 +150,9 @@ namespace laps::peering {
 
         struct FibEntry
         {
-            uint64_t update_ref{ 0 };      ///< Random reference number to detect if entry was updated or not
-            uint64_t stream_id{ 0 };       ///< Current stream ID
-            SubscribeNodeSetId out_sns_id; ///< Egress SNS ID
+            uint64_t update_ref{ 0 }; ///< Random reference number to detect if entry was updated or not
+            std::unordered_map<uint64_t, uint64_t> streams; ///< Key is ingress stream Id, value is egress stream id
+            SubscribeNodeSetId out_sns_id;                  ///< Egress SNS ID
             decltype(nodes_best_)::mapped_type peer_session;
         };
 
