@@ -178,6 +178,15 @@ namespace laps {
                     auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
                       sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this, config_.tick_service_);
 
+                    // Add subsribers to publisher subscribe handler
+                    for (const auto& sub_info: sub_tracks) {
+                        sub_track_handler->AddSubscriber(sub_info.connection_handle,
+                                                         sub_info.request_id,
+                                                         sub_info.priority,
+                                                         sub_info.delivery_timeout,
+                                                         sub_info.start_location);
+                    }
+
                     SubscribeTrack(connection_handle, sub_track_handler);
                     state_.pub_subscribes[{ a_si.track_alias, connection_handle }] = sub_track_handler;
                 }
@@ -1207,7 +1216,12 @@ namespace laps {
 
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
-              State::SubscribeInfo{ connection_handle, request_id, th.track_fullname_hash });
+              State::SubscribeInfo{ connection_handle,
+                                    request_id,
+                                    th.track_fullname_hash,
+                                    attrs.priority,
+                                    attrs.delivery_timeout,
+                                    attrs.start_location });
             state_.subscribe_alias_req_id[{ connection_handle, request_id }] = th.track_fullname_hash;
 
             auto [sub_it, _] = state_.subscribes.try_emplace(
