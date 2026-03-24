@@ -473,6 +473,8 @@ namespace laps::peering {
                                      uint8_t priority,
                                      uint32_t ttl,
                                      DataType type,
+                                     uint64_t group_id,
+                                     uint64_t subgroup_id,
                                      std::shared_ptr<const std::vector<uint8_t>> data)
     {
         DataHeader data_header;
@@ -501,10 +503,13 @@ namespace laps::peering {
                 break;
         }
 
+        // Client uses 48 bits for group and 16 for subgroup for fib streams key (in stream id)
+        uint64_t in_stream_id = group_id << 48 | static_cast<uint16_t>(subgroup_id);
+
         for (auto it = info_base_->client_fib_.lower_bound({ track_full_name_hash, 0 });
              it != info_base_->client_fib_.end();
              ++it) {
-            const auto& fib_entry = it->second;
+            auto& fib_entry = it->second;
 
             if (it->first.first != track_full_name_hash)
                 break;
@@ -520,9 +525,19 @@ namespace laps::peering {
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data->begin() + 2);
                 }
 
+                auto stream_it = fib_entry.streams.find(in_stream_id);
+                uint64_t out_stream_id{ 0 };
+                if (stream_it == fib_entry.streams.end()) {
+
+                    out_stream_id = peer_sess->CreateStream(fib_entry.out_sns_id, priority);
+                    fib_entry.streams.try_emplace(in_stream_id, out_stream_id);
+                } else {
+                    out_stream_id = stream_it->second;
+                }
+
                 // TODO(tievens): Remove the copy once transport has the option for mutable headers
                 auto net_data_copy = std::make_shared<std::vector<uint8_t>>(*net_data);
-                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, eflags, net_data_copy);
+                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, out_stream_id, eflags, net_data_copy);
             }
         }
     }
@@ -1291,6 +1306,21 @@ namespace laps::peering {
         }
 
         // Notify the client manager of closed stream
+        for (auto& [key, entry]: info_base_->client_fib_) {
+            if (key.second != peer_session_id) {
+                continue;
+            }
+
+            if (auto out_peer_sess = entry.peer_session.lock()) {
+                for (const auto& [in_stream_id, out_stream_id]: entry.streams) {
+                    if (out_stream_id == stream_id) {
+                        entry.streams.erase(out_stream_id);
+                        // TODO: Notify client manager of stream close
+                        break;
+                    }
+                }
+            }
+        }
     }
 
 } // namespace laps

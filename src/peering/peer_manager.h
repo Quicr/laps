@@ -53,6 +53,8 @@ namespace laps::peering {
                             uint8_t priority,
                             uint32_t ttl,
                             DataType type,
+                            uint64_t group_id,
+                            uint64_t subgroup_id,
                             std::shared_ptr<const std::vector<uint8_t>> data);
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,
