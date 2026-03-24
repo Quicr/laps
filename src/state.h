@@ -116,6 +116,9 @@ namespace laps {
             uint64_t connection_handle;
             uint64_t request_id;
             uint64_t track_alias;
+            uint8_t priority;
+            std::chrono::milliseconds delivery_timeout;
+            quicr::messages::Location start_location;
 
             bool operator<(const SubscribeInfo& other) const
             {
