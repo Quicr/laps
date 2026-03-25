@@ -178,6 +178,15 @@ namespace laps {
                     auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
                       sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this, config_.tick_service_);
 
+                    // Add subsribers to publisher subscribe handler
+                    for (const auto& sub_info: sub_tracks) {
+                        sub_track_handler->AddSubscriber(sub_info.connection_handle,
+                                                         sub_info.request_id,
+                                                         sub_info.priority,
+                                                         sub_info.delivery_timeout,
+                                                         sub_info.start_location);
+                    }
+
                     SubscribeTrack(connection_handle, sub_track_handler);
                     state_.pub_subscribes[{ a_si.track_alias, connection_handle }] = sub_track_handler;
                 }
@@ -360,7 +369,7 @@ namespace laps {
     void ClientManager::SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
                                                    quicr::DataContextId data_ctx_id,
                                                    const quicr::TrackNamespace& prefix_namespace,
-                                                   const quicr::SubscribeNamespaceAttributes& attributes)
+                                                   const quicr::messages::SubscribeNamespaceAttributes& attributes)
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
@@ -1102,7 +1111,7 @@ namespace laps {
                                               quicr::messages::GroupOrder::kAscending,
                                               std::chrono::milliseconds(kDefaultObjectTtl),
                                               std::chrono::milliseconds(0),
-                                              quicr::messages::FilterType::kLargestObject,
+                                              std::monostate{},
                                               1,
                                               true,
                                             });
@@ -1179,11 +1188,6 @@ namespace laps {
 
         auto start_location = attrs.start_location;
 
-        if (attrs.filter_type == quicr::messages::FilterType::kNextGroupStart && largest.has_value()) {
-            start_location.group = largest->group + 1;
-            start_location.object = 0;
-        }
-
         if (largest.has_value()) {
             SPDLOG_LOGGER_INFO(LOGGER, "Subscribe largest group: {} object: {}", largest->group, largest->object);
         }
@@ -1212,7 +1216,12 @@ namespace laps {
 
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
-              State::SubscribeInfo{ connection_handle, request_id, th.track_fullname_hash });
+              State::SubscribeInfo{ connection_handle,
+                                    request_id,
+                                    th.track_fullname_hash,
+                                    attrs.priority,
+                                    attrs.delivery_timeout,
+                                    attrs.start_location });
             state_.subscribe_alias_req_id[{ connection_handle, request_id }] = th.track_fullname_hash;
 
             auto [sub_it, _] = state_.subscribes.try_emplace(
@@ -1226,11 +1235,9 @@ namespace laps {
                                                   {} });
 
             // Always send updates to peers to support subscribe updates and refresh group support
-            auto params =
-              quicr::messages::Parameters{}
-                .Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority)
-                .Add(quicr::messages::ParameterType::kGroupOrder, attrs.group_order)
-                .Add(quicr::messages::ParameterType::kSubscriptionFilter, quicr::messages::FilterType::kLargestObject);
+            auto params = quicr::messages::Parameters{}
+                            .Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority)
+                            .Add(quicr::messages::ParameterType::kGroupOrder, attrs.group_order);
 
             quicr::messages::Subscribe sub(request_id, track_full_name.name_space, track_full_name.name, params);
 
