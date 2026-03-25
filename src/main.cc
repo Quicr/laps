@@ -48,6 +48,11 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
         cfg.detached_subs = true;
     }
 
+    if (cli_opts.count("echo") && cli_opts["echo"].as<bool>() == true) {
+        SPDLOG_LOGGER_INFO(cfg.logger_, "Enabling subscribe namespace echo");
+        cfg.echo = true;
+    }
+
     if (cli_opts.count("peer")) {
         for (auto& peer : cli_opts["peer"].as<std::vector<std::string>>()) {
             auto port_pos = peer.find(":");
@@ -148,7 +153,8 @@ main(int argc, char* argv[])
             "Duration of cache objects in milliseconds",
             cxxopts::value<size_t>()->default_value("60000"))
         ("cache_key", "Value of isCached extension key", cxxopts::value<std::uint64_t>())
-        ("l,detached_subs", "Enable support for detached subscribers");
+        ("l,detached_subs", "Enable support for detached subscribers")
+        ("echo", "Allow subscribe namespace self-subscriptions");
 
 
     options.add_options("Peering")
