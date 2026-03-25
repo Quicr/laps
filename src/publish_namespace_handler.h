@@ -63,9 +63,13 @@ namespace laps {
         constexpr void SetInactiveAge(const uint64_t age_ms) { inactive_age_ms_ = age_ms; }
         constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
+        constexpr void SetPropertyType(const uint64_t prop) { property_type_ = prop; }
+        constexpr uint64_t GetPropertyType() { return property_type_; }
+
       private:
         uint64_t max_tracks_selected_{ 1 };     // Max tracks to select as candidate top-n
         uint64_t inactive_age_ms_{ 3000 };      // Age in ms of a track that is considered stale/inactive
+        uint64_t property_type_{ 12 };          // Property type to rank by
         uint64_t delay_publish_done_ms_{ 900 }; // Delay sending publish done to allow publish to come back
 
         std::weak_ptr<quicr::TickService> tick_service_;

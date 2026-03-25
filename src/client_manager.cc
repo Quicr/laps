@@ -179,7 +179,7 @@ namespace laps {
                       sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this, config_.tick_service_);
 
                     // Add subsribers to publisher subscribe handler
-                    for (const auto& sub_info: sub_tracks) {
+                    for (const auto& sub_info : sub_tracks) {
                         sub_track_handler->AddSubscriber(sub_info.connection_handle,
                                                          sub_info.request_id,
                                                          sub_info.priority,
@@ -387,6 +387,19 @@ namespace laps {
         }
 
         auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());
+
+        if (const auto* tf = std::get_if<quicr::messages::TrackFilter>(&attributes.filter)) {
+            SPDLOG_INFO("Subscribe namespace track filter: property_type={} max_tracks={} timeout={}ms",
+                        tf->property_type,
+                        tf->max_tracks_selected,
+                        tf->max_time_selected);
+            handler->SetMaxSelected(tf->max_tracks_selected);
+            handler->SetInactiveAge(tf->max_time_selected);
+            handler->SetPropertyType(tf->property_type);
+        } else {
+            SPDLOG_INFO("Subscribe namespace has no track filter, using defaults");
+        }
+
         ranks_it->second->AddNamespaceHandler(handler);
 
         std::vector<quicr::TrackNamespace> matched_ns;
