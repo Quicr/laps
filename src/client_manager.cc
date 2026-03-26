@@ -270,7 +270,7 @@ namespace laps {
 
         // PublishTrack within publish namespace handler if matched
         for (auto& [tn, conns] : state_.subscribes_namespaces) {
-            if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
+            if (tn.IsPrefixOf(publish_attributes.track_full_name.name_space)) {
                 for (auto& [_, pub_ns_h] : conns) {
                     if (!config_.allow_self && pub_ns_h->GetConnectionId() == connection_handle) {
                         // Initially do not mirror
@@ -327,7 +327,7 @@ namespace laps {
 
             quicr::messages::TrackNamespace sub_ns;
             for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
-                if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
+                if (ns_prefix.IsPrefixOf(publish_attributes.track_full_name.name_space) && !conns.empty()) {
                     has_subs = true;
 
                     if (sub_ns.empty()) {
@@ -407,7 +407,7 @@ namespace laps {
         // TODO: Fix O(prefix namespaces) matching
         for (const auto& [key, _] : state_.pub_namespace_active) {
             // Add matching announced namespaces to vector without duplicates
-            if (key.first.HasSamePrefix(prefix_namespace) && (matched_ns.empty() || matched_ns.back() != key.first)) {
+            if (prefix_namespace.IsPrefixOf(key.first) && (matched_ns.empty() || matched_ns.back() != key.first)) {
                 matched_ns.push_back(key.first);
             }
         }
@@ -420,7 +420,7 @@ namespace laps {
             }
 
             const auto& track_full_name = handler->GetFullTrackName();
-            const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
+            const bool ns_matched = prefix_namespace.IsPrefixOf(track_full_name.name_space);
             if (ns_matched) {
                 std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
@@ -489,7 +489,7 @@ namespace laps {
             }
 
             const auto& track_full_name = handler->GetFullTrackName();
-            const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
+            const bool ns_matched = prefix_namespace.IsPrefixOf(track_full_name.name_space);
             if (ns_matched) {
                 handler->RemoveSubscribeNamespace(pub_it->second);
                 track_rankings_[th.track_namespace_hash]->RemoveNamespaceHandler(pub_it->second);
