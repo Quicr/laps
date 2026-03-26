@@ -2,6 +2,8 @@ if(BUILD_TESTING AND LAPS_BUILD_TESTS)
     add_subdirectory( doctest )
 endif()
 
+add_subdirectory(spdlog)
+
 if("${LAPS_MOQ_BACKEND}" STREQUAL "QUICR")
     add_subdirectory(libquicr)
 elseif("${LAPS_MOQ_BACKEND}" STREQUAL "MOXYGEN")

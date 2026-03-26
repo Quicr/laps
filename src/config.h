@@ -3,7 +3,6 @@
 #include "peering/messages/node_info.h"
 #include "version_config.h"
 
-#include <quicr/detail/tick_service.h>
 #include <spdlog/sinks/stdout_color_sinks-inl.h>
 #include <spdlog/spdlog.h>
 
@@ -47,7 +46,6 @@ namespace laps {
 
         peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
 
-        std::shared_ptr<quicr::ThreadedTickService> tick_service_;
         std::optional<std::uint64_t> cache_key = std::nullopt;
         std::size_t cache_duration_ms = 60000;
 

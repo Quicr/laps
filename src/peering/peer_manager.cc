@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
+
 #include "peer_manager.h"
 #include "client_manager.h"
 #include "fetch_handler.h"
+#include "peering/messages/data_header.h"
 #include "state.h"
 #include "subscribe_handler.h"
-#include <peering/messages/data_header.h>
 
-#include "subscribe_handler.h"
+#include <quicr/detail/tick_service.h>
+
 #include <chrono>
 #include <sstream>
 
@@ -836,7 +838,6 @@ namespace laps::peering {
 
     PeerManager::PeerManager(const Config& cfg, State& state, std::shared_ptr<InfoBase> info_base)
       : info_base_(info_base)
-      , tick_service_(cfg.tick_service_)
       , config_(cfg)
       , state_(state)
     {

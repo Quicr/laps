@@ -21,7 +21,7 @@ namespace laps {
                                            const quicr::ServerConfig& cfg,
                                            peering::PeerManager& peer_manager)
       : ClientManager(state, config, peer_manager)
-      , quicr::Server(cfg, config.tick_service_)
+      , quicr::Server(cfg, peer_manager.GetTickService())
       , cache_duration_ms_(config.cache_duration_ms)
     {
     }
@@ -172,8 +172,12 @@ namespace laps {
                     const auto& sub_ftn = sub_info_it->second.track_full_name;
 
                     // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
-                    auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-                      sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this, config_.tick_service_);
+                    auto sub_track_handler =
+                      std::make_shared<SubscribeTrackHandler>(sub_ftn,
+                                                              0,
+                                                              quicr::messages::GroupOrder::kOriginalPublisherOrder,
+                                                              *this,
+                                                              peer_manager_.GetTickService());
 
                     // Add subsribers to publisher subscribe handler
                     for (const auto& sub_info : sub_tracks) {
@@ -295,7 +299,7 @@ namespace laps {
                                                                          0,
                                                                          quicr::messages::GroupOrder::kAscending,
                                                                          *this,
-                                                                         config_.tick_service_,
+                                                                         peer_manager_.GetTickService(),
                                                                          true);
 
         if (publish_attributes.dynamic_groups) {
@@ -1303,7 +1307,7 @@ namespace laps {
                                                           0 /* use zero to indicate to use publisher priority */,
                                                           quicr::messages::GroupOrder::kAscending,
                                                           *this,
-                                                          config_.tick_service_);
+                                                          peer_manager_.GetTickService());
                 SubscribeTrack(key.second, sub_track_h);
 
                 sub_track_h->AddSubscriber(

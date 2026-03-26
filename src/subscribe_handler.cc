@@ -158,7 +158,7 @@ namespace laps {
         if (server_.cache_.count(GetTrackAlias().value()) == 0) {
             server_.cache_.insert(std::make_pair(GetTrackAlias().value(),
                                                  quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                                                   server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
+                                                   server_.cache_duration_ms_, 1000, tick_service_.lock() }));
         }
 
         // Update tracked properties
