@@ -5,8 +5,7 @@ if(CLANG_TIDY_EXE)
   set_target_properties(quicr PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
 endif()
 
-
-add_executable(lapsRelay
+set(LAPS_SOURCES
         main.cc
         config.cc
         client_manager.cc
@@ -28,18 +27,31 @@ add_executable(lapsRelay
         peering/info_base.cc
 )
 
-target_link_libraries(lapsRelay PRIVATE quicr)
-target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/oss )
+if (${LAPS_MOQ_BACKEND} STREQUAL "QUICR")
+        list(APPEND LAPS_SOURCES quicr_client_manager.cc)
+elseif (${LAPS_MOQ_BACKEND} STREQUAL "MOXYGEN")
+        list(APPEND LAPS_SOURCES moxygen_client_manager.cc)
+endif()
+
+add_executable(lapsRelay ${LAPS_SOURCES})
+target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/oss)
 
 target_compile_options(lapsRelay
         PRIVATE
         $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
-        $<$<CXX_COMPILER_ID:MSVC>: >)
+        $<$<CXX_COMPILER_ID:MSVC>: >
+)
 
-set_target_properties(lapsRelay
-        PROPERTIES
+set_target_properties(lapsRelay PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
-        CXX_EXTENSIONS ON)
+        CXX_EXTENSIONS ON
+)
 
 target_compile_definitions(lapsRelay PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+if (${LAPS_MOQ_BACKEND} STREQUAL "QUICR")
+        target_link_libraries(lapsRelay PRIVATE quicr)
+        target_compile_definitions(lapsRelay PRIVATE WITH_QUICR)
+elseif (${LAPS_MOQ_BACKEND} STREQUAL "MOXYGEN")
+        target_compile_definitions(lapsRelay PRIVATE WITH_MOXYGEN)
+endif()

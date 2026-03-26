@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client_manager.h"
+#include "quicr_client_manager.h"
 
 namespace laps {
     /**
@@ -15,7 +15,7 @@ namespace laps {
                             uint8_t default_priority,
                             uint32_t default_ttl,
                             quicr::messages::Location start_location,
-                            ClientManager& server);
+                            QuicrClientManager& server);
 
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
@@ -32,14 +32,14 @@ namespace laps {
                                                            uint8_t default_priority,
                                                            uint32_t default_ttl,
                                                            quicr::messages::Location start_location,
-                                                           ClientManager& server)
+                                                           QuicrClientManager& server)
         {
             return std::make_shared<PublishTrackHandler>(
               full_track_name, track_mode, default_priority, default_ttl, start_location, server);
         }
 
       private:
-        ClientManager& server_;
+        QuicrClientManager& server_;
 
       public:
         /*

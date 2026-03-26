@@ -1,16 +1,18 @@
 #pragma once
 
 #include "peering/messages/node_info.h"
-#include "spdlog/sinks/stdout_color_sinks-inl.h"
 #include "version_config.h"
 
-#include <list>
-#include <quicr/config.h>
-#include <quicr/detail/tick_service.h>
+#include <spdlog/sinks/stdout_color_sinks-inl.h>
 #include <spdlog/spdlog.h>
+
+#include <cstdint>
+#include <list>
+#include <optional>
 
 namespace laps {
 #define LOGGER config_.logger_
+
     constexpr uint16_t kDefaultClientPort = 33435;
     constexpr uint16_t kDefaultPeerPort = 33434;
     constexpr uint64_t kDefaultPeerCheckIntervalMs = 5'000;
@@ -27,7 +29,8 @@ namespace laps {
       public:
         std::shared_ptr<spdlog::logger> logger_ = spdlog::stderr_color_mt("LAPS");
 
-        quicr::ServerConfig server_config;
+        std::string bind_ip;
+        std::uint16_t port;
 
         bool debug{ false }; /// Debug logging/code
         bool use_reset_wait_strategy{ false };
@@ -43,8 +46,8 @@ namespace laps {
 
         peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
 
-        std::shared_ptr<quicr::ThreadedTickService> tick_service_;
         std::optional<std::uint64_t> cache_key = std::nullopt;
+        std::size_t cache_duration_ms = 60000;
 
         struct Peering
         {

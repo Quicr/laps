@@ -1,7 +1,7 @@
 #pragma once
 
-#include "client_manager.h"
 #include "publish_namespace_handler.h"
+#include "quicr_client_manager.h"
 
 #include <quicr/common.h>
 #include <quicr/object.h>
@@ -22,7 +22,7 @@ namespace laps {
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               quicr::messages::ObjectPriority priority,
                               quicr::messages::GroupOrder group_order,
-                              ClientManager& server,
+                              QuicrClientManager& server,
                               std::weak_ptr<quicr::TickService> tick_service,
                               bool is_publisher_initiated = false);
 
@@ -93,7 +93,7 @@ namespace laps {
         void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                      std::optional<quicr::Extensions> immutable_extensions);
 
-        ClientManager& server_;
+        QuicrClientManager& server_;
         std::weak_ptr<quicr::TickService> tick_service_;
 
         bool is_datagram_{ false };
