@@ -34,8 +34,7 @@ elseif (${LAPS_MOQ_BACKEND} STREQUAL "MOXYGEN")
 endif()
 
 add_executable(lapsRelay ${LAPS_SOURCES})
-target_link_libraries(lapsRelay PRIVATE quicr)
-target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/include/laps ${PROJECT_SOURCE_DIR}/dependencies/oss)
+target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/oss)
 
 target_compile_options(lapsRelay
         PRIVATE
@@ -51,6 +50,7 @@ set_target_properties(lapsRelay PROPERTIES
 
 target_compile_definitions(lapsRelay PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 if (${LAPS_MOQ_BACKEND} STREQUAL "QUICR")
+        target_link_libraries(lapsRelay PRIVATE quicr)
         target_compile_definitions(lapsRelay PRIVATE WITH_QUICR)
 elseif (${LAPS_MOQ_BACKEND} STREQUAL "MOXYGEN")
         target_compile_definitions(lapsRelay PRIVATE WITH_MOXYGEN)

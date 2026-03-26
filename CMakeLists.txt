@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.16)
 
 option(LAPS_INSTALL "Install the laps Components" ON)
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
-option(LAPS_MOQ_BACKEND "MOQ backend to use (QUICR|MOXYGEN)" "QUICR")
+set(LAPS_MOQ_BACKEND "QUICR")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
