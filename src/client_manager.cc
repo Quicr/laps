@@ -272,7 +272,7 @@ namespace laps {
         for (auto& [tn, conns] : state_.subscribes_namespaces) {
             if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
                 for (auto& [_, pub_ns_h] : conns) {
-                    if (pub_ns_h->GetConnectionId() == connection_handle) {
+                    if (!config_.allow_self && pub_ns_h->GetConnectionId() == connection_handle) {
                         // Initially do not mirror
                         continue;
                     }
@@ -415,7 +415,7 @@ namespace laps {
         // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
         //  subscribes
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.second == connection_handle || !handler) {
+            if (!handler || (!config_.allow_self && ta_conn.second == connection_handle)) {
                 continue;
             }
 
@@ -484,7 +484,7 @@ namespace laps {
 
         // Loop through publishes and remove subscribe namespace
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.second == connection_handle || !handler) {
+            if (!handler || (!config_.allow_self && ta_conn.second == connection_handle)) {
                 continue;
             }
 
