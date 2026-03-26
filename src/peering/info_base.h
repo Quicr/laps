@@ -154,6 +154,7 @@ namespace laps::peering {
             std::unordered_map<uint64_t, uint64_t> streams; ///< Key is ingress stream Id, value is egress stream id
             SubscribeNodeSetId out_sns_id;                  ///< Egress SNS ID
             decltype(nodes_best_)::mapped_type peer_session;
+            uint64_t track_fullname_hash{ 0 };
         };
 
         /**

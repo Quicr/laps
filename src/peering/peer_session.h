@@ -171,6 +171,7 @@ namespace laps::peering {
         void OnStreamClosed(const quicr::TransportConnId& connection_handle,
                             std::uint64_t stream_id,
                             std::shared_ptr<quicr::StreamRxContext> rx_context,
+                            std::optional<uint64_t> request_id,
                             quicr::StreamClosedFlag flag) override;
 
         // ---------------------------------------
@@ -219,6 +220,7 @@ namespace laps::peering {
 
         quicr::TransportConnId t_conn_id_;         /// Transport connection context ID (aka peer session id)
         quicr::DataContextId control_data_ctx_id_; /// Control data context ID
+        uint64_t control_stream_id_{ 0 };          /// control bidir stream
         std::vector<uint8_t> controL_msg_buffer_;  /// Working buffer of control message being processed
 
         std::shared_ptr<quicr::ITransport> transport_; /// Transport used for the peering connection

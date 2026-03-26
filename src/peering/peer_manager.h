@@ -153,6 +153,7 @@ namespace laps::peering {
         void OnStreamClosed(const quicr::TransportConnId& connection_handle,
                             std::uint64_t stream_id,
                             std::shared_ptr<quicr::StreamRxContext> rx_context,
+                            std::optional<uint64_t> request_id,
                             quicr::StreamClosedFlag flag) override;
 
         // -------------------------------------------------------------------------------

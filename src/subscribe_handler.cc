@@ -69,26 +69,29 @@ namespace laps {
                                               std::chrono::milliseconds delivery_timeout,
                                               quicr::messages::Location start_location)
     {
-
         if (subscribers.contains(conn_handle)) {
             // Duplicate
             return;
         }
 
-        auto pub_track_h = std::make_shared<PublishTrackHandler>(
-          GetFullTrackName(),
-          is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream,
-          priority == 0 ? GetPriority() : priority,
-          delivery_timeout.count() == 0
-            ? GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count()
-            : delivery_timeout.count(),
-          start_location,
-          server_);
+        if (conn_handle) {
+            auto pub_track_h = std::make_shared<PublishTrackHandler>(
+              GetFullTrackName(),
+              is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream,
+              priority == 0 ? GetPriority() : priority,
+              delivery_timeout.count() == 0
+                ? GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count()
+                : delivery_timeout.count(),
+              start_location,
+              server_);
 
-        // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-        server_.BindPublisherTrack(conn_handle, GetConnectionId(), request_id, pub_track_h, false);
+            // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
+            server_.BindPublisherTrack(conn_handle, GetConnectionId(), request_id, pub_track_h, false);
 
-        subscribers.emplace(conn_handle, pub_track_h);
+            subscribers.emplace(conn_handle, pub_track_h);
+        } else {
+            subscribers.emplace(conn_handle, nullptr);
+        }
 
         Resume();
     }
@@ -183,6 +186,9 @@ namespace laps {
 
             // Fanout object to subscribers
             for (auto& [conn_handle, pub_handler] : subscribers) {
+                if (conn_handle == 0) {
+                    continue;
+                }
 
                 if (pub_handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
                     // pipeline this connection/subscriber via forward data method instead
@@ -365,14 +371,6 @@ namespace laps {
             }
         }
 
-        if (not is_from_peer_) {
-            server_.peer_manager_.ClientDataRecv(*track_alias,
-                                                 GetPriority(),
-                                                 GetDeliveryTimeout().value_or(std::chrono::milliseconds(0)).count(),
-                                                 d_type,
-                                                 data);
-        }
-
         // Fanout object to subscribe namespaces
         for (const auto [_, conn_subs] : sub_namespaces_) {
             for (const auto& [_, handler] : conn_subs) {
@@ -382,6 +380,18 @@ namespace laps {
 
         // Fanout object to subscribers
         for (auto& [conn_handle, pub_handler] : subscribers) {
+
+            if (conn_handle == 0) { // from peer
+                server_.peer_manager_.ClientDataRecv(
+                  *track_alias,
+                  GetPriority(),
+                  GetDeliveryTimeout().value_or(std::chrono::milliseconds(0)).count(),
+                  d_type,
+                  group_id,
+                  subgroup_id,
+                  data);
+                continue;
+            }
 
             if (!pub_handler->SentFirstObject(group_id, subgroup_id)) {
                 // Pipeline not enabled, use full object forwarding instead

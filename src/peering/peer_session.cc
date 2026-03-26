@@ -71,6 +71,7 @@ namespace laps::peering {
 
         // Create the control data context
         control_data_ctx_id_ = transport_->CreateDataContext(t_conn_id_, true, 0, true);
+        control_stream_id_ = transport_->CreateStream(t_conn_id_, control_data_ctx_id_, 0);
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
@@ -210,7 +211,7 @@ namespace laps::peering {
 
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,
-                            0,
+                            control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(sns.Serialize(true, withdraw)),
                             0,
                             1000);
@@ -227,7 +228,7 @@ namespace laps::peering {
                             withdraw);
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,
-                            0,
+                            control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(announce_info.Serialize(true, withdraw)),
                             0,
                             1000);
@@ -246,7 +247,7 @@ namespace laps::peering {
 
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,
-                            0,
+                            control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(
                               subscribe_info.Serialize(true, withdraw, node_info_.id == subscribe_info.source_node_id)),
                             0,
@@ -260,7 +261,7 @@ namespace laps::peering {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending node info id: {}", NodeId().Value(node_info.id));
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,
-                            0,
+                            control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(node_info.Serialize(true, withdraw)),
                             0,
                             1000);
@@ -275,8 +276,12 @@ namespace laps::peering {
         peer_sns_.clear();
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect length: {}", connect.Serialize().size());
-        transport_->Enqueue(
-          t_conn_id_, control_data_ctx_id_, 0, std::make_shared<std::vector<uint8_t>>(connect.Serialize()), 0, 1000);
+        transport_->Enqueue(t_conn_id_,
+                            control_data_ctx_id_,
+                            control_stream_id_,
+                            std::make_shared<std::vector<uint8_t>>(connect.Serialize()),
+                            0,
+                            1000);
     }
 
     void PeerSession::SendConnectOk()
@@ -288,7 +293,7 @@ namespace laps::peering {
 
         transport_->Enqueue(t_conn_id_,
                             control_data_ctx_id_,
-                            0,
+                            control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(connect_resp.Serialize()),
                             0,
                             1000);
@@ -594,7 +599,8 @@ namespace laps::peering {
 
     void PeerSession::OnStreamClosed(const quicr::TransportConnId& connection_handle,
                                      std::uint64_t stream_id,
-                                     std::shared_ptr<quicr::StreamRxContext> rx_context,
+                                     [[maybe_unused]] std::shared_ptr<quicr::StreamRxContext> rx_context,
+                                     [[maybe_unused]] std::optional<uint64_t> request_id,
                                      quicr::StreamClosedFlag flag)
     {
         if (auto rx_ctx = transport_->GetStreamRxContext(connection_handle, stream_id)) {
