@@ -73,9 +73,9 @@ namespace laps::peering {
 
         void ClientUnsubscribe(uint64_t track_fullname_hash);
 
-        void SetClientManager(std::shared_ptr<ClientManager> client_manager)
+        void SetClientManager(const std::shared_ptr<ClientManager>& client_manager)
         {
-            client_manager_ = std::move(client_manager);
+            client_manager_ = client_manager;
         }
 
         enum class NodeChannelStatus : uint8_t
@@ -176,7 +176,7 @@ namespace laps::peering {
         std::mutex mutex_;
         std::shared_ptr<InfoBase> info_base_;
         std::shared_ptr<quicr::TickService> tick_service_;
-        std::shared_ptr<ClientManager> client_manager_;
+        std::weak_ptr<ClientManager> client_manager_;
         const Config& config_;
         State& state_;
         NodeInfo node_info_;
