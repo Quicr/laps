@@ -270,7 +270,7 @@ namespace laps {
         for (auto& [tn, conns] : state_.subscribes_namespaces) {
             if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
                 for (auto& [_, pub_ns_h] : conns) {
-                    if (pub_ns_h->GetConnectionId() == connection_handle) {
+                    if (!config_.allow_self && pub_ns_h->GetConnectionId() == connection_handle) {
                         // Initially do not mirror
                         continue;
                     }
@@ -385,6 +385,19 @@ namespace laps {
         }
 
         auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());
+
+        if (const auto* tf = std::get_if<quicr::messages::TrackFilter>(&attributes.filter)) {
+            SPDLOG_INFO("Subscribe namespace track filter: property_type={} max_tracks={} timeout={}ms",
+                        tf->property_type,
+                        tf->max_tracks_selected,
+                        tf->max_time_selected);
+            handler->SetMaxSelected(tf->max_tracks_selected);
+            handler->SetInactiveAge(tf->max_time_selected);
+            handler->SetPropertyType(tf->property_type);
+        } else {
+            SPDLOG_INFO("Subscribe namespace has no track filter, using defaults");
+        }
+
         ranks_it->second->AddNamespaceHandler(handler);
 
         std::vector<quicr::TrackNamespace> matched_ns;
@@ -400,7 +413,7 @@ namespace laps {
         // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
         //  subscribes
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.second == connection_handle || !handler) {
+            if (!handler || (!config_.allow_self && ta_conn.second == connection_handle)) {
                 continue;
             }
 
@@ -469,7 +482,7 @@ namespace laps {
 
         // Loop through publishes and remove subscribe namespace
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.second == connection_handle || !handler) {
+            if (!handler || (!config_.allow_self && ta_conn.second == connection_handle)) {
                 continue;
             }
 
