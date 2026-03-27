@@ -46,6 +46,12 @@ namespace laps {
 
         sub_namespaces_[th.track_fullname_hash].emplace(handler->GetConnectionId(), handler);
 
+        auto prop = handler->GetPropertyType();
+        if (!tracked_properties_value_.contains(prop)) {
+            SPDLOG_INFO("Subscribe handler tracking property_type={} from namespace handler", prop);
+            tracked_properties_value_.emplace(prop, PublishNamespaceHandler::TrackPropertyValue{});
+        }
+
         Resume();
     }
 
