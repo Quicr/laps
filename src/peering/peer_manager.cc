@@ -208,6 +208,7 @@ namespace laps::peering {
                         SPDLOG_LOGGER_INFO(LOGGER,
                                            "No peers left for subscribe fullname: {}, removing client subscribe state",
                                            subscribe_info.track_hash.track_fullname_hash);
+                        client_manager_->PeerUnsubscribeTrack(subscribe_info.track_hash.track_fullname_hash);
                     }
                 }
             }
@@ -466,6 +467,41 @@ namespace laps::peering {
     std::set<NodeIdValueType> PeerManager::GetOriginNodeId(quicr::FullTrackName full_name)
     {
         return info_base_->GetAnnounceIds(full_name.name_space, full_name.name, false);
+    }
+
+    void PeerManager::EndSubgroup(quicr::TrackFullNameHash track_full_name_hash,
+                                  uint64_t group_id,
+                                  uint64_t subgroup_id,
+                                  bool reset)
+    {
+        // Client uses 48 bits for group and 16 for subgroup for fib streams key (in stream id)
+        uint64_t in_stream_id = group_id << 48 | static_cast<uint16_t>(subgroup_id);
+
+        for (auto it = info_base_->client_fib_.lower_bound({ track_full_name_hash, 0 });
+             it != info_base_->client_fib_.end();
+             ++it) {
+            auto& fib_entry = it->second;
+
+            if (it->first.first != track_full_name_hash)
+                break;
+
+            if (const auto peer_sess = fib_entry.peer_session.lock()) {
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Client end group: {} subgroup: {}, peer_session: {} egress SNS_ID: {}",
+                                    group_id,
+                                    subgroup_id,
+                                    peer_sess->GetSessionId(),
+                                    fib_entry.out_sns_id);
+
+                auto stream_it = fib_entry.streams.find(in_stream_id);
+                if (stream_it != fib_entry.streams.end()) {
+                    peer_sess->CloseStream(fib_entry.out_sns_id,
+                                           stream_it->second,
+                                           reset ? quicr::StreamClosedFlag::kReset : quicr::StreamClosedFlag::kFin);
+                    fib_entry.streams.erase(stream_it);
+                }
+            }
+        }
     }
 
     void PeerManager::ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,

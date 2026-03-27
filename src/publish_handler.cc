@@ -106,4 +106,15 @@ namespace laps {
             EndSubgroup(group, subgroup, false);
         }
     }
+
+    void PublishTrackHandler::EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed)
+    {
+        // Call base class end subgroup to clean up handler state
+        quicr::PublishTrackHandler::EndSubgroup(group_id, subgroup_id, completed);
+
+        // Notify peering manager
+        if (GetTrackAlias().has_value()) {
+            server_.peer_manager_.EndSubgroup(GetTrackAlias().value(), group_id, subgroup_id, !completed);
+        }
+    }
 }

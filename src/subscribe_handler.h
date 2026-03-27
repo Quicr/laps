@@ -82,7 +82,7 @@ namespace laps {
 
         void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
 
-        bool HasSubscribers() const { return !subscribers.empty() || !sub_namespaces_.empty(); }
+        bool HasSubscribers() const { return !subscribers_.empty() || !sub_namespaces_.empty(); }
 
       private:
         void ForwardReceivedData(bool is_new_stream,
@@ -106,7 +106,7 @@ namespace laps {
          *
          * @
          */
-        std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> subscribers;
+        std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> subscribers_;
 
         /**
          * @brief Map of publish namespace handlers by subscribe namespace full track name hash and connection handle

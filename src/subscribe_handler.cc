@@ -30,7 +30,7 @@ namespace laps {
 
     SubscribeTrackHandler::~SubscribeTrackHandler()
     {
-        for (auto& [conn_handle, handler] : subscribers) {
+        for (auto& [conn_handle, handler] : subscribers_) {
             server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), handler);
         }
     }
@@ -69,7 +69,7 @@ namespace laps {
                                               std::chrono::milliseconds delivery_timeout,
                                               quicr::messages::Location start_location)
     {
-        if (subscribers.contains(conn_handle)) {
+        if (subscribers_.contains(conn_handle)) {
             // Duplicate
             return;
         }
@@ -88,9 +88,9 @@ namespace laps {
             // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
             server_.BindPublisherTrack(conn_handle, GetConnectionId(), request_id, pub_track_h, false);
 
-            subscribers.emplace(conn_handle, pub_track_h);
+            subscribers_.emplace(conn_handle, pub_track_h);
         } else {
-            subscribers.emplace(conn_handle, nullptr);
+            subscribers_.emplace(conn_handle, nullptr);
         }
 
         Resume();
@@ -98,13 +98,18 @@ namespace laps {
 
     void SubscribeTrackHandler::RemoveSubscriber(quicr::ConnectionHandle conn_handle)
     {
-        auto it = subscribers.find(conn_handle);
-        if (it == subscribers.end()) {
-            return;
+        auto it = subscribers_.find(conn_handle);
+        if (it != subscribers_.end()) {
+            if (it->second) {
+                server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), it->second);
+            }
+
+            subscribers_.erase(conn_handle);
         }
 
-        server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), it->second);
-        subscribers.erase(conn_handle);
+        if (subscribers_.empty() && sub_namespaces_.empty()) {
+            Pause();
+        }
     }
 
     void SubscribeTrackHandler::UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
@@ -185,7 +190,7 @@ namespace laps {
             }
 
             // Fanout object to subscribers
-            for (auto& [conn_handle, pub_handler] : subscribers) {
+            for (auto& [conn_handle, pub_handler] : subscribers_) {
                 if (conn_handle == 0) {
                     continue;
                 }
@@ -379,7 +384,7 @@ namespace laps {
         }
 
         // Fanout object to subscribers
-        for (auto& [conn_handle, pub_handler] : subscribers) {
+        for (auto& [conn_handle, pub_handler] : subscribers_) {
 
             if (conn_handle == 0) { // from peer
                 server_.peer_manager_.ClientDataRecv(

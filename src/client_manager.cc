@@ -271,7 +271,9 @@ namespace laps {
 
         // PublishTrack within publish namespace handler if matched
         for (auto& [tn, conns] : state_.subscribes_namespaces) {
-            if (tn.HasSamePrefix(publish_attributes.track_full_name.name_space)) {
+            const auto prefix_match = tn.IsPrefixOf(publish_attributes.track_full_name.name_space);
+
+            if (prefix_match == std::partial_ordering::less || prefix_match == std::partial_ordering::equivalent) {
                 for (auto& [_, pub_ns_h] : conns) {
                     if (pub_ns_h->GetConnectionId() == connection_handle) {
                         // Initially do not mirror
@@ -399,7 +401,9 @@ namespace laps {
         // TODO: Fix O(prefix namespaces) matching
         for (const auto& [key, _] : state_.pub_namespace_active) {
             // Add matching announced namespaces to vector without duplicates
-            if (key.first.HasSamePrefix(prefix_namespace) && (matched_ns.empty() || matched_ns.back() != key.first)) {
+            const auto prefix_match = prefix_namespace.IsPrefixOf(key.first);
+            if ((prefix_match == std::partial_ordering::less || prefix_match == std::partial_ordering::equivalent) &&
+                (matched_ns.empty() || matched_ns.back() != key.first)) {
                 matched_ns.push_back(key.first);
             }
         }
@@ -412,8 +416,8 @@ namespace laps {
             }
 
             const auto& track_full_name = handler->GetFullTrackName();
-            const bool ns_matched = prefix_namespace.HasSamePrefix(track_full_name.name_space);
-            if (ns_matched) {
+            const auto prefix_match = prefix_namespace.IsPrefixOf(track_full_name.name_space);
+            if (prefix_match == std::partial_ordering::greater || prefix_match == std::partial_ordering::equivalent) {
                 std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
                 /*
@@ -1314,6 +1318,19 @@ namespace laps {
                     DampenOrUpdateTrackSubscription(pub_handler_it->second, attrs.new_group_request_id.has_value());
                 }
             }
+        }
+    }
+
+    void ClientManager::PeerUnsubscribeTrack(quicr::TrackFullNameHash track_full_name_hash)
+    {
+        for (auto it = state_.pub_subscribes.lower_bound({ track_full_name_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+            if (it->first.first != track_full_name_hash) {
+                break;
+            }
+
+            it->second->RemoveSubscriber(0);
         }
     }
 

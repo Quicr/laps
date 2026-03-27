@@ -136,6 +136,23 @@ namespace laps::peering {
                          uint64_t stream_id,
                          quicr::StreamClosedFlag flag);
 
+        /**
+         * @brief Ends the subgroup as completed or not.
+         *
+         * @details APP MUST call this to end subgroups, otherwise they will linger. If
+         *      completed is true, the subgroups will be closed after last message has
+         *      been delivered.
+         *
+         * @param track_full_name_hash  Track full name hash (aka track alias)
+         * @param group_id              Group ID of the subgroup
+         * @param subgroup_id           Subgroup Id to close
+         * @param reset                 Use reset to close the stream, if false use fin
+         */
+        void EndSubgroup(quicr::TrackFullNameHash track_full_name_hash,
+                         uint64_t group_id,
+                         uint64_t subgroup_id,
+                         bool reset = false);
+
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
         // -------------------------------------------------------------------------------
