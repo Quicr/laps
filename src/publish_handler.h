@@ -27,6 +27,8 @@ namespace laps {
 
         void AbruptCloseAllSubgroups();
 
+        void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed) override;
+
         static std::shared_ptr<PublishTrackHandler> Create(const quicr::FullTrackName& full_track_name,
                                                            quicr::TrackMode track_mode,
                                                            uint8_t default_priority,

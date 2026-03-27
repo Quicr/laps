@@ -53,6 +53,8 @@ namespace laps::peering {
                             uint8_t priority,
                             uint32_t ttl,
                             DataType type,
+                            uint64_t group_id,
+                            uint64_t subgroup_id,
                             std::shared_ptr<const std::vector<uint8_t>> data);
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,
@@ -129,6 +131,28 @@ namespace laps::peering {
 
         void SnsReceived(PeerSession& peer_session, const SubscribeNodeSet& sns, bool withdraw = false);
 
+        void CloseStream(PeerSessionId peer_session_id,
+                         SubscribeNodeSetId sns,
+                         uint64_t stream_id,
+                         quicr::StreamClosedFlag flag);
+
+        /**
+         * @brief Ends the subgroup as completed or not.
+         *
+         * @details APP MUST call this to end subgroups, otherwise they will linger. If
+         *      completed is true, the subgroups will be closed after last message has
+         *      been delivered.
+         *
+         * @param track_full_name_hash  Track full name hash (aka track alias)
+         * @param group_id              Group ID of the subgroup
+         * @param subgroup_id           Subgroup Id to close
+         * @param reset                 Use reset to close the stream, if false use fin
+         */
+        void EndSubgroup(quicr::TrackFullNameHash track_full_name_hash,
+                         uint64_t group_id,
+                         uint64_t subgroup_id,
+                         bool reset = false);
+
         // -------------------------------------------------------------------------------
         // QUIC Transport callbacks
         // -------------------------------------------------------------------------------
@@ -146,6 +170,7 @@ namespace laps::peering {
         void OnStreamClosed(const quicr::TransportConnId& connection_handle,
                             std::uint64_t stream_id,
                             std::shared_ptr<quicr::StreamRxContext> rx_context,
+                            std::optional<uint64_t> request_id,
                             quicr::StreamClosedFlag flag) override;
 
         // -------------------------------------------------------------------------------
