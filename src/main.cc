@@ -27,10 +27,11 @@ using namespace laps;
  * Main program
  * -------------------------------------------------------------------------------------------------
  */
-quicr::ServerConfig
+void
 InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
 {
-    quicr::ServerConfig config;
+    cfg.bind_ip = cli_opts["bind_ip"].as<std::string>();
+    cfg.port = cli_opts["port"].as<uint16_t>();
 
     std::string qlog_path;
     if (cli_opts.count("qlog")) {
@@ -107,21 +108,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
         cfg.cache_key = cli_opts["cache_key"].as<std::uint64_t>();
     }
 
-    config.endpoint_id = cfg.relay_id_;
-    config.server_bind_ip = cli_opts["bind_ip"].as<std::string>();
-    config.server_port = cli_opts["port"].as<uint16_t>();
-
-    config.transport_config.debug = cfg.debug;
-    config.transport_config.tls_cert_filename = cfg.tls_cert_filename_;
-    config.transport_config.tls_key_filename = cfg.tls_key_filename_;
-    config.transport_config.use_reset_wait_strategy = false;
-    config.transport_config.quic_qlog_path = qlog_path;
-    config.transport_config.idle_timeout_ms = 10000;
-    config.transport_config.time_queue_rx_size = 10'000;
-    config.transport_config.time_queue_max_duration = cfg.object_ttl_ * 2;
-    config.transport_config.max_connections = 5000;
-
-    return config;
+    cfg.cache_duration_ms = cli_opts["cache_duration"].as<std::size_t>();
 }
 
 int
@@ -179,17 +166,16 @@ main(int argc, char* argv[])
     // Lock the mutex so that main can then wait on it
     std::unique_lock<std::mutex> lock(gvars::main_mutex);
 
-    quicr::ServerConfig server_config = InitConfig(result, laps_config);
+    InitConfig(result, laps_config);
 
     std::shared_ptr<peering::InfoBase> forwarding_info = std::make_shared<peering::InfoBase>();
     peering::PeerManager peer_manager(laps_config, state, forwarding_info);
 
     try {
-        auto server = std::make_shared<ClientManager>(
-          state, laps_config, server_config, peer_manager, result["cache_duration"].as<size_t>());
-        peer_manager.SetClientManager(server); // Set pointer to client manager (e.g., server) after construct
+        auto server = laps::MakeClientManager(state, laps_config, peer_manager);
+        peer_manager.SetClientManager(server);
 
-        if (server->Start() != quicr::Transport::Status::kReady) {
+        if (!server->Start()) {
             SPDLOG_ERROR("Server failed to start");
             exit(-2);
         }

@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Option to control component installation
-option(LAPS_INSTALL "Install the laps Components" ON)
+###
+### Options
+###
 
+option(LAPS_INSTALL "Install the laps Components" ON)
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
+option(LAPS_WITH_MOXYGEN ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +38,7 @@ if(CLANG_TIDY)
         message(WARNING "clang-tidy requested, but not found")
     endif()
 endif()
+
 
 ###
 ### Dependencies

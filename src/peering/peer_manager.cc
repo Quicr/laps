@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
+
 #include "peer_manager.h"
 #include "client_manager.h"
 #include "fetch_handler.h"
+#include "peering/messages/data_header.h"
 #include "state.h"
 #include "subscribe_handler.h"
-#include <peering/messages/data_header.h>
 
-#include "subscribe_handler.h"
+#include <quicr/detail/tick_service.h>
+
 #include <chrono>
 #include <sstream>
 
@@ -136,7 +138,7 @@ namespace laps::peering {
                                    "Matched publish or announce for subscribe fullname: {}",
                                    subscribe_info.track_hash.track_fullname_hash);
 
-                if (client_manager_ != nullptr) {
+                if (auto cm = client_manager_.lock()) {
                     quicr::messages::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
 
@@ -153,8 +155,14 @@ namespace laps::peering {
                                        s_attrs.new_group_request_id.has_value() ? s_attrs.new_group_request_id.value()
                                                                                 : -1);
 
-                    client_manager_->ProcessSubscribe(
-                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs, std::nullopt);
+                    if (auto qcm = std::dynamic_pointer_cast<QuicrClientManager>(cm)) {
+                        qcm->ProcessSubscribe(0,
+                                              0,
+                                              subscribe_info.track_hash,
+                                              { sub.track_namespace, sub.track_name },
+                                              s_attrs,
+                                              std::nullopt);
+                    }
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
@@ -212,9 +220,17 @@ namespace laps::peering {
                 }
             }
 
-            if (client_manager_ != nullptr) {
-                client_manager_->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash.track_fullname_hash);
+            auto cm = client_manager_.lock();
+            if (!cm) {
+                return;
             }
+
+            auto qcm = std::dynamic_pointer_cast<QuicrClientManager>(cm);
+            if (!qcm) {
+                throw std::runtime_error("Client manager MUST be QuicrClientManager");
+            }
+
+            qcm->RemoveOrPausePublisherSubscribe(subscribe_info.track_hash.track_fullname_hash);
         }
 
     } catch (const std::exception& e) {
@@ -258,16 +274,25 @@ namespace laps::peering {
                 sess.second->SendAnnounceInfo(announce_info, withdraw);
         }
 
+        auto cm = client_manager_.lock();
+        if (!cm) {
+            return;
+        }
+
+        auto qcm = std::dynamic_pointer_cast<QuicrClientManager>(cm);
+        if (!qcm) {
+            throw std::runtime_error("Client manager MUST be QuicrClientManager");
+        }
+
         /*
          * TODO: Track namespace as request ID works internally between peering and client managers to support
          *       stateless tracking of namespaces to request IDs. Might need to revisit this
          */
         if (!announce_info.name.size()) { // PUBLISH_NAMESPACE
             if (!withdraw) {
-                client_manager_->PublishNamespaceReceived(
-                  0, announce_info.name_space, { .request_id = th.track_namespace_hash });
+                qcm->PublishNamespaceReceived(0, announce_info.name_space, { .request_id = th.track_namespace_hash });
             } else {
-                client_manager_->PublishNamespaceDoneReceived(0, th.track_namespace_hash);
+                qcm->PublishNamespaceDoneReceived(0, th.track_namespace_hash);
             }
         } else { // PUBLISH
             if (!withdraw) {
@@ -282,7 +307,7 @@ namespace laps::peering {
                 attrs.priority = 64;
                 attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
 
-                client_manager_->PublishReceived(0, 0, attrs, {});
+                qcm->PublishReceived(0, 0, attrs, {});
             } else {
                 // TODO: Signal to client manager that the publish is done
             }
@@ -639,12 +664,12 @@ namespace laps::peering {
         si.subscribe_data.assign(subscribe_data.begin(), subscribe_data.end());
         si.source_node_id = node_info_.id;
 
-        si.client_subscribe_handler =
-          std::make_shared<SubscribeTrackHandler>(tfn,
-                                                  0 /* use zero to indicate to use publisher priority */,
-                                                  quicr::messages::GroupOrder::kAscending,
-                                                  *client_manager_,
-                                                  tick_service_);
+        si.client_subscribe_handler = std::make_shared<SubscribeTrackHandler>(
+          tfn,
+          0 /* use zero to indicate to use publisher priority */,
+          quicr::messages::GroupOrder::kAscending,
+          *std::dynamic_pointer_cast<QuicrClientManager>(client_manager_.lock()),
+          tick_service_);
 
         si.client_subscribe_handler->SetTrackAlias(si.track_hash.track_fullname_hash);
         si.client_subscribe_handler->SetRequestId(0);
@@ -742,7 +767,7 @@ namespace laps::peering {
                         if (sub_info.source_node_id == node_info_.id)
                             continue;
 
-                        if (auto cm = client_manager_) {
+                        if (auto cm = client_manager_.lock()) {
                             quicr::messages::SubscribeAttributes s_attrs;
                             s_attrs.priority = 10;
 
@@ -757,12 +782,14 @@ namespace laps::peering {
                                                "Subscribe to client manager track alias: {}",
                                                sub_info.track_hash.track_fullname_hash);
 
-                            cm->ProcessSubscribe(0,
-                                                 0,
-                                                 sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name },
-                                                 s_attrs,
-                                                 std::nullopt);
+                            if (auto qcm = std::dynamic_pointer_cast<QuicrClientManager>(cm)) {
+                                qcm->ProcessSubscribe(0,
+                                                      0,
+                                                      sub_info.track_hash,
+                                                      { sub.track_namespace, sub.track_name },
+                                                      s_attrs,
+                                                      std::nullopt);
+                            }
                         }
 
                         auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);
@@ -811,7 +838,6 @@ namespace laps::peering {
 
     PeerManager::PeerManager(const Config& cfg, State& state, std::shared_ptr<InfoBase> info_base)
       : info_base_(info_base)
-      , tick_service_(cfg.tick_service_)
       , config_(cfg)
       , state_(state)
     {
