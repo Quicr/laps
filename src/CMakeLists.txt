@@ -13,6 +13,7 @@ set(LAPS_SOURCES
         publish_handler.cc
         fetch_handler.cc
         publish_namespace_handler.cc
+        quicr_client_manager.cc
 
         peering/messages/connect.cc
         peering/messages/connect_response.cc
@@ -27,9 +28,7 @@ set(LAPS_SOURCES
         peering/info_base.cc
 )
 
-if (${LAPS_MOQ_BACKEND} STREQUAL "QUICR")
-        list(APPEND LAPS_SOURCES quicr_client_manager.cc)
-elseif (${LAPS_MOQ_BACKEND} STREQUAL "MOXYGEN")
+if (LAPS_WITH_MOXYGEN)
         list(APPEND LAPS_SOURCES moxygen_client_manager.cc)
 endif()
 
@@ -49,9 +48,15 @@ set_target_properties(lapsRelay PROPERTIES
 )
 
 target_compile_definitions(lapsRelay PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-if (${LAPS_MOQ_BACKEND} STREQUAL "QUICR")
-        target_link_libraries(lapsRelay PRIVATE quicr)
-        target_compile_definitions(lapsRelay PRIVATE WITH_QUICR)
-elseif (${LAPS_MOQ_BACKEND} STREQUAL "MOXYGEN")
+target_link_libraries(lapsRelay PRIVATE quicr)
+
+if (LAPS_WITH_MOXYGEN)
         target_compile_definitions(lapsRelay PRIVATE WITH_MOXYGEN)
+        target_link_libraries(lapsRelay PRIVATE
+                moxygen_moq_server
+                moxygen_moq_relay_session
+                moxygen_relay_moq_relay
+        )
+else()
+        target_compile_definitions(lapsRelay PRIVATE WITH_QUICR)
 endif()

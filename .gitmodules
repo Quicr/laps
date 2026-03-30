@@ -7,3 +7,6 @@
 [submodule "dependencies/spdlog"]
 	path = dependencies/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "dependencies/moxygen"]
+	path = dependencies/moxygen
+	url = https://github.com/openmoq/moxygen

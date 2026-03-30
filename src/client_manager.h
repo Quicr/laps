@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include "peering/peer_manager.h"
 #include "state.h"
 #include "track_ranking.h"
@@ -10,7 +11,7 @@
 #include <memory>
 
 namespace laps {
-    class ClientManager : public std::enable_shared_from_this<ClientManager>
+    class ClientManager
     {
       public:
         ClientManager(State& state, const Config& config, peering::PeerManager& peer_manager);

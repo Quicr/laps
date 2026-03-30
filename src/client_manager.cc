@@ -11,7 +11,6 @@ laps::ClientManager::ClientManager(State& state, const Config& config, peering::
   , config_(config)
   , peer_manager_(peer_manager)
 {
-    peer_manager_.SetClientManager(shared_from_this());
 }
 
 std::shared_ptr<laps::ClientManager>
@@ -36,7 +35,7 @@ laps::MakeClientManager(State& state, const Config& config, peering::PeerManager
 
     return std::make_shared<QuicrClientManager>(state, config, cfg, peer_manager);
 #elif defined(WITH_MOXYGEN)
-#error "Moxygen Unimplemented"
+    return std::make_shared<MoxygenClientManager>(state, config, peer_manager);
 #else
 #error "Backend unsupported"
 #endif

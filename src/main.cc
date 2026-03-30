@@ -173,6 +173,7 @@ main(int argc, char* argv[])
 
     try {
         auto server = laps::MakeClientManager(state, laps_config, peer_manager);
+        peer_manager.SetClientManager(server);
 
         if (!server->Start()) {
             SPDLOG_ERROR("Server failed to start");
