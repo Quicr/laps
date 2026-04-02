@@ -135,6 +135,7 @@ namespace laps::peering {
         void CloseStream(PeerSessionId peer_session_id,
                          SubscribeNodeSetId sns,
                          uint64_t stream_id,
+                         uint64_t track_fullname_hash,
                          quicr::StreamClosedFlag flag);
 
         /**

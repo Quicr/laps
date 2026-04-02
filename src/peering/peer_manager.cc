@@ -1341,6 +1341,7 @@ namespace laps::peering {
     void PeerManager::CloseStream(PeerSessionId peer_session_id,
                                   SubscribeNodeSetId sns,
                                   uint64_t stream_id,
+                                  uint64_t track_fullname_hash,
                                   quicr::StreamClosedFlag flag)
     {
         // Close all egress peer streams related to the ingress stream close
@@ -1348,11 +1349,19 @@ namespace laps::peering {
         if (it != info_base_->peer_fib_.end()) {
             std::lock_guard _(mutex_);
 
-            for (const auto& [out_peer_sess_id, entry] : it->second) {
+            for (auto& [out_peer_sess_id, entry] : it->second) {
+                if (out_peer_sess_id == 0) {
+                    // Client manager
+                    client_manager_->PeerStreamClosed(
+                      track_fullname_hash, stream_id, flag == quicr::StreamClosedFlag::kReset);
+
+                    continue;
+                }
                 auto stream_it = entry.streams.find(stream_id);
                 if (stream_it != entry.streams.end()) {
                     if (auto out_peer_sess = entry.peer_session.lock()) {
                         out_peer_sess->CloseStream(entry.out_sns_id, stream_it->second, flag);
+                        entry.streams.erase(stream_it);
                     }
                 }
             }

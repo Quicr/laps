@@ -468,8 +468,18 @@ namespace laps {
         }
 
         for (auto& [conn_handle, pub_handler] : subscribers_) {
-            pub_handler->EndSubgroup(
-              stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
+            if (conn_handle == 0) {
+                // Notify peering manager
+                if (GetTrackAlias().has_value()) {
+                    server_.peer_manager_.EndSubgroup(GetTrackAlias().value(),
+                                                      stream_it->second.current_group_id,
+                                                      stream_it->second.current_subgroup_id,
+                                                      use_reset);
+                }
+            } else {
+                pub_handler->EndSubgroup(
+                  stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
+            }
         }
 
         for (const auto [_, conn_subs] : sub_namespaces_) {

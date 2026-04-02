@@ -602,11 +602,13 @@ namespace laps::peering {
             auto& data_header = std::any_cast<DataHeader&>(rx_ctx->caller_any);
 
             SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Peer conn_id {} stream id: {} flag: {} track fullname hash: {}",
+                                "Peer stream closed conn_id {} stream id: {} flag: {} track fullname hash: {}",
                                 connection_handle,
                                 stream_id,
                                 static_cast<int>(flag),
                                 data_header.track_full_name_hash);
+            manager_.CloseStream(
+              connection_handle, data_header.sns_id, stream_id, data_header.track_full_name_hash, flag);
 
         } else {
             SPDLOG_LOGGER_DEBUG(LOGGER,
