@@ -26,6 +26,8 @@ namespace laps {
 
         PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::TickService> tick_service);
 
+        void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed);
+
         quicr::PublishTrackHandler::PublishObjectStatus PublishObject(quicr::TrackFullNameHash track_full_name_hash,
                                                                       const quicr::ObjectHeaders& object_headers,
                                                                       quicr::BytesSpan data) override;

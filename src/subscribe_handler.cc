@@ -189,20 +189,17 @@ namespace laps {
 
         try {
             // Fanout object to subscribe namespaces
-            for (const auto [_, conn_subs] : sub_namespaces_) {
-                for (const auto& [_, handler] : conn_subs) {
-                    handler->PublishObject(GetTrackAlias().value(), object_headers, data);
-                }
-            }
+            // TODO: This can cause duplicate data upon new stream.  This is here to support mid group join, which needs
+            // to be looked at for (const auto [_, conn_subs] : sub_namespaces_) {
+            //     for (const auto& [_, handler] : conn_subs) {
+            //         handler->PublishObject(GetTrackAlias().value(), object_headers, data);
+            //     }
+            // }
 
             // Fanout object to subscribers
             for (auto& [conn_handle, pub_handler] : subscribers_) {
-                if (conn_handle == 0) {
-                    continue;
-                }
-
-                if (pub_handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
-                    // pipeline this connection/subscriber via forward data method instead
+                if (conn_handle == 0 ||
+                    pub_handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
                     continue;
                 }
 
@@ -243,7 +240,7 @@ namespace laps {
             }
 
             // Adapt publisher track alias to normalized track alias uses by subscribers
-            if (GetReceivedTrackAlias().value() != GetTrackAlias().value()) {
+            if (GetReceivedTrackAlias().value_or(0) != GetTrackAlias().value()) {
                 s_hdr.track_alias = GetTrackAlias().value();
                 quicr::Bytes updated_s_hdr;
 
@@ -396,16 +393,11 @@ namespace laps {
                 server_.peer_manager_.ClientDataRecv(
                   *track_alias,
                   GetPriority(),
-                  GetDeliveryTimeout().value_or(std::chrono::milliseconds(0)).count(),
+                  GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   d_type,
                   group_id,
                   subgroup_id,
                   data);
-                continue;
-            }
-
-            if (!pub_handler->SentFirstObject(group_id, subgroup_id)) {
-                // Pipeline not enabled, use full object forwarding instead
                 continue;
             }
 
@@ -466,6 +458,28 @@ namespace laps {
                          reason,
                          static_cast<int>(status));
         }
+    }
+
+    void SubscribeTrackHandler::StreamClosed(std::uint64_t stream_id, bool use_reset)
+    {
+        auto stream_it = streams_.find(stream_id);
+        if (stream_it == streams_.end()) {
+            return;
+        }
+
+        for (auto& [conn_handle, pub_handler] : subscribers_) {
+            pub_handler->EndSubgroup(
+              stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
+        }
+
+        for (const auto [_, conn_subs] : sub_namespaces_) {
+            for (const auto& [_, handler] : conn_subs) {
+                handler->EndSubgroup(
+                  stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
+            }
+        }
+
+        streams_.erase(stream_it);
     }
 
     void SubscribeTrackHandler::SetFromPeer()

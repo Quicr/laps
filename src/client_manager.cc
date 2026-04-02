@@ -60,6 +60,8 @@ namespace laps {
         auto& track_namespace = std::any_cast<quicr::TrackNamespace&>(it->second.related_data);
         auto th = quicr::TrackHash({ track_namespace, {} });
 
+        peer_manager_.ClientAnnounce({ track_namespace, {} }, {}, true, true);
+
         // TODO: Fix O(prefix namespaces) matching
         std::vector<quicr::ConnectionHandle> sub_namespace_connections;
         for (const auto& [ns, conns] : state_.subscribes_namespaces) {
@@ -248,7 +250,7 @@ namespace laps {
              * Always send announcements to peer manager so new clients can trigger subscribe matching and data
              * forwarding path creation. This needs to be done last to all other client work.
              */
-            peer_manager_.ClientAnnounce({ track_namespace, {} }, attrs, false);
+            peer_manager_.ClientAnnounce({ track_namespace, {} }, attrs, false, true);
         }
     }
 

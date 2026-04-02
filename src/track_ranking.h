@@ -82,12 +82,12 @@ namespace laps {
             // Rebuild if track moved buckets or new bucket was created
             needs_rebuild = needs_rebuild || inserted;
 
-            SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
-                        track_alias,
-                        prop,
-                        value,
-                        tick,
-                        connection_id);
+            SPDLOG_DEBUG("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
+                         track_alias,
+                         prop,
+                         value,
+                         tick,
+                         connection_id);
 
             // Remove inactive tracks from ordered_tracks_
             for (auto it = ordered_tracks_.begin(); it != ordered_tracks_.end();) {

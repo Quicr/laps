@@ -107,14 +107,14 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
         // Filter out self-tracks
         if (publisher_conn_id == GetConnectionId()) {
-            SPDLOG_INFO("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
+            SPDLOG_DEBUG("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
             continue;
         }
 
-        SPDLOG_INFO("Update track tracking: Top track {} track alias: {} from conn {}",
-                    active_tracks.size(),
-                    ta,
-                    publisher_conn_id);
+        SPDLOG_DEBUG("Update track tracking: Top track {} track alias: {} from conn {}",
+                     active_tracks.size(),
+                     ta,
+                     publisher_conn_id);
 
         auto pub_track_it = published_tracks_.find(ta);
         if (pub_track_it == published_tracks_.end()) {
@@ -131,10 +131,10 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
             auto track_it = handlers_.find(ta);
             if (track_it == handlers_.end()) {
-                SPDLOG_INFO("Track {} is newly selected and will undergo PUBLISH flow track alias: {} conn_id: {}",
-                            active_tracks.size(),
-                            ta,
-                            publisher_conn_id);
+                SPDLOG_DEBUG("Track {} is newly selected and will undergo PUBLISH flow track alias: {} conn_id: {}",
+                             active_tracks.size(),
+                             ta,
+                             publisher_conn_id);
                 PublishTrack(h);
             } else {
                 pub_track_it->second.last_updated_tick = latest_tick;
@@ -180,6 +180,16 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                     // UnPublishTrack(h);
                 }
             }
+        }
+    }
+}
+
+void
+laps::PublishNamespaceHandler::EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed)
+{
+    for (auto& [ta, track] : published_tracks_) {
+        if (auto handler = track.handler.lock()) {
+            handler->EndSubgroup(group_id, subgroup_id, completed);
         }
     }
 }

@@ -59,7 +59,8 @@ namespace laps::peering {
 
         void ClientAnnounce(const quicr::FullTrackName& full_track_name,
                             const quicr::PublishNamespaceAttributes&,
-                            bool withdraw = false);
+                            bool withdraw = false,
+                            bool publish_namespace = false);
 
         void ClientUnannounce(const quicr::FullTrackName& full_track_name)
         {

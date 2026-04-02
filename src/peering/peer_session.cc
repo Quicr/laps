@@ -492,7 +492,7 @@ namespace laps::peering {
         eflags.use_reliable = stream_id.has_value(); // If stream isn't set, it's datagram
 
         // NEW STREAM - parse start of stream headers
-        if (not ctx.has_value()) {
+        if (!ctx.has_value()) {
             ctx.emplace<DataHeader>();
 
             auto cursor_it = data->begin();
@@ -508,15 +508,10 @@ namespace laps::peering {
                 return false; // Not enough bytes to parse the headers, wait till more arrives
             }
 
-            SPDLOG_LOGGER_TRACE(LOGGER,
-                                "Received new data object stream id: {}, init data object",
-                                stream_id.has_value() ? *stream_id : 0);
-
             auto& data_header = std::any_cast<DataHeader&>(ctx);
-
             data_header.Deserialize(*data);
 
-            // Pipeline forward to other peers. Not all data may have been popped, so only forward popped data
+            // Pipeline forward to other peers.
             manager_.ForwardPeerData(
               GetSessionId(), true, stream_id.has_value() ? *stream_id : 0, data_header, data, hdr_len, eflags);
 

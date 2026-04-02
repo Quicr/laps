@@ -32,9 +32,9 @@ namespace laps::peering {
     {
       public:
         // @note: Header variables vary by type
-        uint8_t header_len{ 0 };        ///< Size of header length in bytes (up to start of payload bytes)
-        DataType type;                  ///< Type of the data object
-        SubscribeNodeSetId sns_id{ 0 }; ///< SNS ID used by the peer
+        uint8_t header_len{ 0 };               ///< Size of header length in bytes (up to start of payload bytes)
+        DataType type{ DataType::kNewStream }; ///< Type of the data object
+        SubscribeNodeSetId sns_id{ 0 };        ///< SNS ID used by the peer
         quicr::TrackFullNameHash track_full_name_hash{ 0 }; ///< Full Track name (aka track alias)
 
         uint8_t priority{ 1 }; ///< Stream only; Priority for new stream

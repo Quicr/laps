@@ -230,13 +230,14 @@ namespace laps::peering {
         auto th = quicr::TrackHash({ announce_info.name_space, announce_info.name });
         SPDLOG_LOGGER_INFO(LOGGER,
                            "Announce info received peer_session_id: {} namespace hash: {} name hash: {} fullname hash: "
-                           "{} == {} withdraw: {}",
+                           "{} == {} withdraw: {} flags: {}",
                            peer_session_id,
                            th.track_namespace_hash,
                            th.track_name_hash,
                            th.track_fullname_hash,
                            announce_info.fullname_hash,
-                           withdraw);
+                           withdraw,
+                           static_cast<int>(announce_info.flags));
 
         auto peer_session = GetPeerSession(peer_session_id);
         if (not withdraw && !info_base_->AddAnnounce(announce_info)) {
@@ -263,7 +264,7 @@ namespace laps::peering {
          * TODO: Track namespace as request ID works internally between peering and client managers to support
          *       stateless tracking of namespaces to request IDs. Might need to revisit this
          */
-        if (!announce_info.name.size()) { // PUBLISH_NAMESPACE
+        if (announce_info.flags & 1) { // PUBLISH_NAMESPACE
             if (!withdraw) {
                 client_manager_->PublishNamespaceReceived(
                   0, announce_info.name_space, { .request_id = th.track_namespace_hash });
@@ -438,13 +439,19 @@ namespace laps::peering {
                 auto out_peer_sess = entry.peer_session.lock();
 
                 uint64_t out_stream_id{ 0 };
-                auto sid_it = entry.streams.find(stream_id);
-                if (sid_it == entry.streams.end()) {
-                    // TODO: Create egress stream and added it
-                    out_stream_id = out_peer_sess->CreateStream(entry.out_sns_id, data_header.priority);
-                    entry.streams.emplace(stream_id, out_stream_id);
-                } else {
-                    out_stream_id = sid_it->second;
+                if (eflags.use_reliable) {
+                    auto sid_it = entry.streams.find(stream_id);
+                    if (sid_it == entry.streams.end()) {
+
+                        if (!is_new_stream) {
+                            continue; // Ignore existing data and wait for start of new stream
+                        }
+
+                        out_stream_id = out_peer_sess->CreateStream(entry.out_sns_id, data_header.priority);
+                        entry.streams.emplace(stream_id, out_stream_id);
+                    } else {
+                        out_stream_id = sid_it->second;
+                    }
                 }
 
                 auto data_out_shared = std::make_shared<std::vector<uint8_t>>();
@@ -474,8 +481,7 @@ namespace laps::peering {
                                   uint64_t subgroup_id,
                                   bool reset)
     {
-        // Client uses 48 bits for group and 16 for subgroup for fib streams key (in stream id)
-        uint64_t in_stream_id = group_id << 48 | static_cast<uint16_t>(subgroup_id);
+        uint64_t in_stream_id = group_id << 16 | static_cast<uint16_t>(subgroup_id);
 
         for (auto it = info_base_->client_fib_.lower_bound({ track_full_name_hash, 0 });
              it != info_base_->client_fib_.end();
@@ -538,9 +544,6 @@ namespace laps::peering {
                 break;
         }
 
-        // Client uses 48 bits for group and 16 for subgroup for fib streams key (in stream id)
-        uint64_t in_stream_id = group_id << 48 | static_cast<uint16_t>(subgroup_id);
-
         for (auto it = info_base_->client_fib_.lower_bound({ track_full_name_hash, 0 });
              it != info_base_->client_fib_.end();
              ++it) {
@@ -555,24 +558,47 @@ namespace laps::peering {
                                     peer_sess->GetSessionId(),
                                     fib_entry.out_sns_id,
                                     track_full_name_hash);
+
+                auto send_data = net_data;
                 if (set_sns_id) {
+                    send_data = std::make_shared<std::vector<uint8_t>>(*net_data);
                     auto sns_id_bytes = BytesOf(fib_entry.out_sns_id);
-                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), net_data->begin() + 2);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), send_data->begin() + 2);
                 }
 
-                auto stream_it = fib_entry.streams.find(in_stream_id);
                 uint64_t out_stream_id{ 0 };
-                if (stream_it == fib_entry.streams.end()) {
 
-                    out_stream_id = peer_sess->CreateStream(fib_entry.out_sns_id, priority);
-                    fib_entry.streams.try_emplace(in_stream_id, out_stream_id);
-                } else {
-                    out_stream_id = stream_it->second;
+                if (eflags.use_reliable) {
+                    uint64_t in_stream_id = group_id << 16 | static_cast<uint16_t>(subgroup_id);
+
+                    auto stream_it = fib_entry.streams.find(in_stream_id);
+                    if (stream_it == fib_entry.streams.end()) {
+                        if (data_header.type != DataType::kNewStream) {
+                            return;
+                        }
+
+                        out_stream_id = peer_sess->CreateStream(fib_entry.out_sns_id, priority);
+                        fib_entry.streams.try_emplace(in_stream_id, out_stream_id);
+                    } else {
+                        out_stream_id = stream_it->second;
+                    }
+
+                    SPDLOG_LOGGER_DEBUG(
+                      LOGGER,
+                      "Data object send, peer_session: {} egress SNS_ID: {} in stream_id: {} out "
+                      "stream_id: {} tfn_hash: {} group_id: {} subgroup_id: {} streams: {} data len: {}",
+                      peer_sess->GetSessionId(),
+                      fib_entry.out_sns_id,
+                      in_stream_id,
+                      out_stream_id,
+                      track_full_name_hash,
+                      group_id,
+                      subgroup_id,
+                      fib_entry.streams.size(),
+                      net_data->size());
                 }
 
-                // TODO(tievens): Remove the copy once transport has the option for mutable headers
-                auto net_data_copy = std::make_shared<std::vector<uint8_t>>(*net_data);
-                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, out_stream_id, eflags, net_data_copy);
+                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, out_stream_id, eflags, send_data);
             }
         }
     }
@@ -720,13 +746,15 @@ namespace laps::peering {
 
     void PeerManager::ClientAnnounce(const quicr::FullTrackName& track_full_name,
                                      const quicr::PublishNamespaceAttributes&,
-                                     bool withdraw)
+                                     bool withdraw,
+                                     bool publish_namespace)
     {
         AnnounceInfo ai;
 
         ai.name_space = track_full_name.name_space;
         ai.name = track_full_name.name;
         ai.source_node_id = node_info_.id;
+        ai.flags = publish_namespace ? 1 : 0;
 
         auto th = quicr::TrackHash(track_full_name);
         ai.fullname_hash = th.track_fullname_hash;

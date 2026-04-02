@@ -28,6 +28,8 @@ namespace laps {
 
         ~SubscribeTrackHandler();
 
+        void StreamClosed(std::uint64_t stream_id, bool use_reset) override;
+
         void StreamDataRecv(bool is_start,
                             uint64_t stream_id,
                             std::shared_ptr<const std::vector<uint8_t>> data) override;
