@@ -109,6 +109,20 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     }
 
     cfg.cache_duration_ms = cli_opts["cache_duration"].as<std::size_t>();
+
+#if defined(LAPS_HAVE_DUAL_MOQ_BACKENDS)
+    {
+        const std::string v = cli_opts["moq-backend"].as<std::string>();
+        if (v == "libquicr") {
+            cfg.moq_transport_backend = MoqTransportBackend::kLibquicr;
+        } else if (v == "moxygen") {
+            cfg.moq_transport_backend = MoqTransportBackend::kMoxygen;
+        } else {
+            SPDLOG_LOGGER_ERROR(cfg.logger_, "Invalid --moq-backend '{}'; use libquicr or moxygen", v);
+            exit(EXIT_FAILURE);
+        }
+    }
+#endif
 }
 
 int
@@ -141,8 +155,13 @@ main(int argc, char* argv[])
             cxxopts::value<size_t>()->default_value("60000"))
         ("cache_key", "Value of isCached extension key", cxxopts::value<std::uint64_t>())
         ("l,detached_subs", "Enable support for detached subscribers")
-        ("allow_self", "Allow subscribe namespace self-subscriptions");
-
+        ("allow_self", "Allow subscribe namespace self-subscriptions")
+#if defined(LAPS_HAVE_DUAL_MOQ_BACKENDS)
+        ("moq-backend",
+            "MoQ wire stack (dual-backend build only): libquicr | moxygen",
+            cxxopts::value<std::string>()->default_value("moxygen"))
+#endif
+        ;
 
     options.add_options("Peering")
         ("peer_port", "Listening port for peering connections",
@@ -167,6 +186,12 @@ main(int argc, char* argv[])
     std::unique_lock<std::mutex> lock(gvars::main_mutex);
 
     InitConfig(result, laps_config);
+
+#if defined(LAPS_HAVE_DUAL_MOQ_BACKENDS)
+    SPDLOG_LOGGER_INFO(laps_config.logger_,
+                       "MoQ transport backend: {}",
+                       laps_config.moq_transport_backend == MoqTransportBackend::kLibquicr ? "libquicr" : "moxygen");
+#endif
 
     std::shared_ptr<peering::InfoBase> forwarding_info = std::make_shared<peering::InfoBase>();
     peering::PeerManager peer_manager(laps_config, state, forwarding_info);

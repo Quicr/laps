@@ -22,6 +22,14 @@ namespace laps {
         gethostname(relay_id, sizeof(relay_id));
         relay_id_ = relay_id;
         object_ttl_ = kDefaultObjectTtl;
+
+#if defined(LAPS_HAVE_DUAL_MOQ_BACKENDS)
+        moq_transport_backend = MoqTransportBackend::kMoxygen;
+#elif defined(WITH_MOXYGEN)
+        moq_transport_backend = MoqTransportBackend::kMoxygen;
+#else
+        moq_transport_backend = MoqTransportBackend::kLibquicr;
+#endif
     }
 
     void Config::InitLogger()

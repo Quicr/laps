@@ -2,6 +2,8 @@
 
 #include "client_manager.h"
 #include "peering/peer_manager.h"
+#include "quicr_moq_server_port.h"
+#include "relay_core.h"
 #include "state.h"
 #include "track_ranking.h"
 
@@ -10,17 +12,6 @@
 
 #include <functional>
 #include <set>
-
-namespace laps {
-    /**
-     * @brief Defines an object received from an announcer that lives in the cache.
-     */
-    struct CacheObject
-    {
-        quicr::ObjectHeaders headers;
-        quicr::Bytes data;
-    };
-}
 
 /**
  * @brief Specialization of std::less for sorting CacheObjects by object ID.
@@ -31,15 +22,6 @@ struct std::less<quicr::TrackHash>
     constexpr bool operator()(const quicr::TrackHash& lhs, const quicr::TrackHash& rhs) const noexcept
     {
         return lhs.track_fullname_hash < rhs.track_fullname_hash;
-    }
-};
-
-template<>
-struct std::less<laps::CacheObject>
-{
-    constexpr bool operator()(const laps::CacheObject& lhs, const laps::CacheObject& rhs) const noexcept
-    {
-        return lhs.headers.object_id < rhs.headers.object_id;
     }
 };
 
@@ -122,12 +104,35 @@ namespace laps {
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
                               const quicr::messages::SubscribeAttributes&,
-                              std::optional<quicr::messages::Location>);
+                              std::optional<quicr::messages::Location>) override;
 
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                              bool new_group_request);
 
-        void RemoveOrPausePublisherSubscribe(quicr::TrackFullNameHash track_fullname_hash);
+        void RemoveOrPausePublisherSubscribe(quicr::TrackFullNameHash track_fullname_hash) override;
+
+        void ApplyPeerAnnouncePublishNamespace(quicr::ConnectionHandle connection_handle,
+                                               const quicr::TrackNamespace& track_namespace,
+                                               const quicr::PublishNamespaceAttributes& attributes) override;
+
+        void ApplyPeerAnnouncePublishNamespaceDone(quicr::ConnectionHandle connection_handle,
+                                                   quicr::messages::RequestID request_id) override;
+
+        void ApplyPeerAnnouncePublish(quicr::ConnectionHandle connection_handle,
+                                      uint64_t request_id,
+                                      const quicr::messages::PublishAttributes& publish_attributes,
+                                      std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler) override;
+
+        void RelayBindPublisherTrack(quicr::ConnectionHandle connection_handle,
+                                     quicr::ConnectionHandle src_id,
+                                     uint64_t request_id,
+                                     const std::shared_ptr<quicr::PublishTrackHandler>& track_handler,
+                                     bool ephemeral) override;
+
+        void RelayUnbindPublisherTrack(quicr::ConnectionHandle connection_handle,
+                                       quicr::ConnectionHandle src_id,
+                                       const std::shared_ptr<quicr::PublishTrackHandler>& track_handler,
+                                       bool send_publish_done) override;
 
         void MetricsSampled(const quicr::ConnectionHandle connection_handle,
                             const quicr::ConnectionMetrics& metrics) override;
@@ -143,11 +148,9 @@ namespace laps {
                            quicr::messages::Location start,
                            quicr::messages::FetchEndLocation end);
 
-        size_t cache_duration_ms_ = 0;
-        std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
+        std::shared_ptr<moq::shim::QuicrMoqServerPort> quicr_moq_port_;
+        moq::shim::RelayCore relay_core_;
 
-        friend class SubscribeTrackHandler;
-        friend class PublishTrackHandler;
         friend class FetchTrackHandler;
     };
 } // namespace laps

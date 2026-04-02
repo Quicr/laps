@@ -9,9 +9,11 @@ set(LAPS_SOURCES
         main.cc
         config.cc
         client_manager.cc
+        moq/shim/relay_core.cc
         subscribe_handler.cc
         publish_handler.cc
         fetch_handler.cc
+        publish_fetch_handler.cc
         publish_namespace_handler.cc
         quicr_client_manager.cc
 
@@ -28,8 +30,24 @@ set(LAPS_SOURCES
         peering/info_base.cc
 )
 
-if (LAPS_WITH_MOXYGEN)
-        list(APPEND LAPS_SOURCES moxygen_client_manager.cc)
+if (LAPS_MOQ_DUAL_BACKEND)
+        list(APPEND LAPS_SOURCES
+                moxygen_client_manager.cc
+                moxygen_relay_with_policy.cc
+                moq/shim/laps_moq_relay_session.cc
+                moq/shim/moxygen_moq_server_port.cc
+                moq/shim/moxygen_quicr_subscribe_track_consumer.cc
+                moq/shim/moxygen_subscribe_to_relay.cc
+        )
+elseif (LAPS_WITH_MOXYGEN)
+        list(APPEND LAPS_SOURCES
+                moxygen_client_manager.cc
+                moxygen_relay_with_policy.cc
+                moq/shim/laps_moq_relay_session.cc
+                moq/shim/moxygen_moq_server_port.cc
+                moq/shim/moxygen_quicr_subscribe_track_consumer.cc
+                moq/shim/moxygen_subscribe_to_relay.cc
+        )
 endif()
 
 add_executable(lapsRelay ${LAPS_SOURCES})
@@ -50,13 +68,22 @@ set_target_properties(lapsRelay PROPERTIES
 target_compile_definitions(lapsRelay PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 target_link_libraries(lapsRelay PRIVATE quicr)
 
-if (LAPS_WITH_MOXYGEN)
+if (LAPS_MOQ_DUAL_BACKEND)
+        target_compile_definitions(lapsRelay PRIVATE WITH_QUICR WITH_MOXYGEN LAPS_HAVE_DUAL_MOQ_BACKENDS)
+        target_link_libraries(lapsRelay PRIVATE
+                openmoq_pico_server_transport
+                moxygen_moq_relay_session
+                moxygen_relay_moq_relay
+        )
+elseif (LAPS_WITH_MOXYGEN)
         target_compile_definitions(lapsRelay PRIVATE WITH_MOXYGEN)
         target_link_libraries(lapsRelay PRIVATE
-                moxygen_moq_server
+                openmoq_pico_server_transport
                 moxygen_moq_relay_session
                 moxygen_relay_moq_relay
         )
 else()
         target_compile_definitions(lapsRelay PRIVATE WITH_QUICR)
 endif()
+
+target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/src/moq/shim)

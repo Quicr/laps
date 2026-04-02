@@ -1,6 +1,6 @@
 #pragma once
 
-#include "quicr_client_manager.h"
+#include "client_manager.h"
 
 namespace laps {
     /**
@@ -15,10 +15,18 @@ namespace laps {
                             uint8_t default_priority,
                             uint32_t default_ttl,
                             quicr::messages::Location start_location,
-                            QuicrClientManager& server);
+                            ClientManager& server);
 
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
+
+        PublishObjectStatus PublishObject(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data) override;
+
+        /** @brief Hides non-virtual base; enables moxygen relay byte forwarding when applicable. */
+        PublishObjectStatus ForwardPublishedData(bool is_new_stream,
+                                                 uint64_t group_id,
+                                                 uint64_t subgroup_id,
+                                                 std::shared_ptr<const std::vector<uint8_t>> data);
 
         // note: pipelining starts after the first object
         bool SentFirstObject(uint32_t group_id, uint32_t subgroup_id);
@@ -32,14 +40,15 @@ namespace laps {
                                                            uint8_t default_priority,
                                                            uint32_t default_ttl,
                                                            quicr::messages::Location start_location,
-                                                           QuicrClientManager& server)
+                                                           ClientManager& server)
         {
             return std::make_shared<PublishTrackHandler>(
               full_track_name, track_mode, default_priority, default_ttl, start_location, server);
         }
 
       private:
-        QuicrClientManager& server_;
+        ClientManager& server_;
+        quicr::TrackMode publish_track_mode_{ quicr::TrackMode::kStream };
 
       public:
         /*

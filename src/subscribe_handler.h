@@ -1,7 +1,7 @@
 #pragma once
 
+#include "client_manager.h"
 #include "publish_namespace_handler.h"
-#include "quicr_client_manager.h"
 
 #include <quicr/common.h>
 #include <quicr/object.h>
@@ -22,7 +22,7 @@ namespace laps {
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               quicr::messages::ObjectPriority priority,
                               quicr::messages::GroupOrder group_order,
-                              QuicrClientManager& server,
+                              ClientManager& server,
                               std::weak_ptr<quicr::TickService> tick_service,
                               bool is_publisher_initiated = false);
 
@@ -38,7 +38,14 @@ namespace laps {
 
         void SetFromPeer();
 
+        void SetRelayUpstreamConnection(quicr::ConnectionHandle h) { SetConnectionId(h); }
+
         std::optional<uint64_t> GetPendingNewRquestId() { return pending_new_group_request_id_; };
+
+        void ClearPendingNewGroupRequestId() noexcept { pending_new_group_request_id_.reset(); }
+
+        /** True when this handler is bound to libquicr transport (announcer QUIC path); false for WebTransport/moxygen upstream. */
+        bool HasQuicrTransport() const noexcept { return static_cast<bool>(GetTransport().lock()); }
 
         struct PublisherLastUpdateInfo
         {
@@ -93,7 +100,7 @@ namespace laps {
         void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                      std::optional<quicr::Extensions> immutable_extensions);
 
-        QuicrClientManager& server_;
+        ClientManager& server_;
         std::weak_ptr<quicr::TickService> tick_service_;
 
         bool is_datagram_{ false };

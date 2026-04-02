@@ -6,9 +6,11 @@
 
 #include <quicr/defer.h>
 
-#include "client_manager.h"
+#include "quicr_client_manager.h"
+
 #include "config.h"
 #include "fetch_handler.h"
+#include "publish_fetch_handler.h"
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 #include "subscribe_handler.h"
@@ -22,7 +24,8 @@ namespace laps {
                                            peering::PeerManager& peer_manager)
       : ClientManager(state, config, peer_manager)
       , quicr::Server(cfg, peer_manager.GetTickService())
-      , cache_duration_ms_(config.cache_duration_ms)
+      , quicr_moq_port_(std::make_shared<moq::shim::QuicrMoqServerPort>(*this))
+      , relay_core_(state, config, peer_manager, quicr_moq_port_)
     {
     }
 
@@ -87,7 +90,9 @@ namespace laps {
                   th.track_namespace_hash,
                   track_alias);
 
-                UnsubscribeTrack(connection_handle, ptd);
+                quicr_moq_port_->UnsubscribeTrack(
+                  connection_handle,
+                  std::static_pointer_cast<quicr::SubscribeTrackHandler>(ptd));
             }
             state_.pub_subscribes.erase({ track_alias, connection_handle });
         }
@@ -188,7 +193,9 @@ namespace laps {
                                                          sub_info.start_location);
                     }
 
-                    SubscribeTrack(connection_handle, sub_track_handler);
+                    quicr_moq_port_->SubscribeTrack(
+                      connection_handle,
+                      std::static_pointer_cast<quicr::SubscribeTrackHandler>(sub_track_handler));
                     state_.pub_subscribes[{ a_si.track_alias, connection_handle }] = sub_track_handler;
                 }
             }
@@ -378,7 +385,9 @@ namespace laps {
         auto [it, is_new] = state_.subscribes_namespaces.try_emplace(prefix_namespace);
 
         auto handler = PublishNamespaceHandler::Create(prefix_namespace, GetTickService());
-        PublishNamespace(connection_handle, handler);
+        quicr_moq_port_->PublishNamespace(
+          connection_handle,
+          std::static_pointer_cast<quicr::PublishNamespaceHandler>(handler));
 
         auto [pub_it, _] = it->second.emplace(connection_handle, handler);
 
@@ -734,7 +743,9 @@ namespace laps {
                                    key.second,
                                    track_fullname_hash);
 
-                UnsubscribeTrack(key.second, sub_to_pub_handler);
+                quicr_moq_port_->UnsubscribeTrack(
+                  key.second,
+                  std::static_pointer_cast<quicr::SubscribeTrackHandler>(sub_to_pub_handler));
                 remove_sub_pub.push_back(key);
             }
         }
@@ -904,9 +915,9 @@ namespace laps {
         }
 
         // TODO: Adjust the TTL to allow more time for transmission
-        auto pub_fetch_h =
-          quicr::PublishFetchHandler::Create(track_full_name, priority, request_id, group_order, config_.object_ttl_);
-        BindFetchTrack(connection_handle, pub_fetch_h);
+        auto pub_fetch_h = laps::PublishFetchHandler::Create(
+          track_full_name, priority, request_id, group_order, config_.object_ttl_, *this);
+        quicr_moq_port_->BindFetchTrack(connection_handle, pub_fetch_h);
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
 
@@ -922,7 +933,7 @@ namespace laps {
                             largest_location.has_value() ? largest_location.value().group : 0);
 
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
-            defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
+            defer(quicr_moq_port_->UnbindFetchTrack(connection_handle, pub_fetch_h));
 
             auto rc = reason_code;
 
@@ -963,7 +974,9 @@ namespace laps {
                                         connection_handle,
                                         request_id,
                                         pub_connection_handle);
-                    FetchTrack(pub_connection_handle, track_handler);
+                    quicr_moq_port_->FetchTrack(
+                      pub_connection_handle,
+                      std::static_pointer_cast<quicr::FetchTrackHandler>(track_handler));
 
                     for (int to = 0; to < kFetchUpstreamMaxWaitMs; to += 5) {
                         if (track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kPendingResponse &&
@@ -1004,7 +1017,9 @@ namespace laps {
                 }
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-                CancelFetchTrack(pub_connection_handle, track_handler);
+                quicr_moq_port_->CancelFetchTrack(
+                  pub_connection_handle,
+                  std::static_pointer_cast<quicr::FetchTrackHandler>(track_handler));
                 return;
             }
 
@@ -1157,42 +1172,8 @@ namespace laps {
       std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
       bool new_group_request)
     {
-        if (sub_to_pub_track_handler->GetConnectionId() <= 1) {
-            // No updates sent to peering
-            return false;
-        }
-
-        auto now = std::chrono::steady_clock::now();
-
-        uint64_t elapsed = config_.sub_dampen_ms_ + 1;
-
-        if (sub_to_pub_track_handler->pub_last_update_info_.time.has_value()) {
-            elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        now - *sub_to_pub_track_handler->pub_last_update_info_.time)
-                        .count();
-        }
-
-        if (new_group_request || elapsed > config_.sub_dampen_ms_) {
-            SPDLOG_LOGGER_INFO(LOGGER,
-                               "Sending subscribe-update to publisher connection handler: {} subscribe "
-                               "track_alias: {} new_group: {} pending_new_group_id: {}",
-                               sub_to_pub_track_handler->GetConnectionId(),
-                               sub_to_pub_track_handler->GetTrackAlias().value(),
-                               new_group_request,
-                               sub_to_pub_track_handler->GetPendingNewRquestId().has_value()
-                                 ? *sub_to_pub_track_handler->GetPendingNewRquestId()
-                                 : 0);
-
-            sub_to_pub_track_handler->pub_last_update_info_.time = now;
-
-            if (new_group_request) {
-                sub_to_pub_track_handler->RequestNewGroup();
-            } else {
-                UpdateTrackSubscription(sub_to_pub_track_handler->GetConnectionId(), sub_to_pub_track_handler);
-            }
-        }
-
-        return false;
+        return relay_core_.DampenOrUpdateTrackSubscription(std::move(sub_to_pub_track_handler),
+                                                           new_group_request);
     }
 
     void QuicrClientManager::ProcessSubscribe(quicr::ConnectionHandle connection_handle,
@@ -1202,131 +1183,19 @@ namespace laps {
                                               const quicr::messages::SubscribeAttributes& attrs,
                                               std::optional<quicr::messages::Location> largest)
     {
-
-        auto start_location = attrs.start_location;
-
-        if (largest.has_value()) {
-            SPDLOG_LOGGER_INFO(LOGGER, "Subscribe largest group: {} object: {}", largest->group, largest->object);
-        }
-
-        if (connection_handle == 0 && request_id == 0) {
-            SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Processing peer subscribe track alias: {} priority: {} new_group_request: {}",
-                                th.track_fullname_hash,
-                                attrs.priority,
-                                attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
-        }
-
-        else {
-            SPDLOG_LOGGER_INFO(LOGGER,
-                               "Processing subscribe connection handle: {} request_id: {} track alias: {} priority: "
-                               "{} ns: {} name: {} new_group_request: {} start group: {} object: {}",
-                               connection_handle,
-                               request_id,
-                               th.track_fullname_hash,
-                               attrs.priority,
-                               th.track_namespace_hash,
-                               th.track_name_hash,
-                               attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1,
-                               start_location.group,
-                               start_location.object);
-
-            // record subscribe as active from this subscriber
-            state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
-              State::SubscribeInfo{ connection_handle,
-                                    request_id,
-                                    th.track_fullname_hash,
-                                    attrs.priority,
-                                    attrs.delivery_timeout,
-                                    attrs.start_location });
-            state_.subscribe_alias_req_id[{ connection_handle, request_id }] = th.track_fullname_hash;
-
-            auto [sub_it, _] = state_.subscribes.try_emplace(
-              { th.track_fullname_hash, connection_handle },
-              State::SubscribePublishHandlerInfo{ track_full_name,
-                                                  th.track_fullname_hash,
-                                                  request_id,
-                                                  attrs.priority,
-                                                  static_cast<uint32_t>(attrs.delivery_timeout.count()),
-                                                  attrs.group_order,
-                                                  {} });
-
-            // Always send updates to peers to support subscribe updates and refresh group support
-            auto params = quicr::messages::Parameters{}
-                            .Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority)
-                            .Add(quicr::messages::ParameterType::kGroupOrder, attrs.group_order);
-
-            quicr::messages::Subscribe sub(request_id, track_full_name.name_space, track_full_name.name, params);
-
-            // TODO: Current new group is not sent by client in subscribe. It's only in subscribe updates.
-
-            quicr::Bytes sub_data;
-            sub_data << sub;
-
-            auto mt_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin());
-            sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + sizeof(uint16_t));
-
-            peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data);
-        }
-
-        // Resume publisher initiated subscribes
-        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
-             it != state_.pub_subscribes.end();
-             ++it) {
-            if (it->first.first != th.track_fullname_hash) {
-                break;
-            }
-            if (it->second->IsPublisherInitiated()) {
-                it->second->Resume();
-            }
-
-            it->second->AddSubscriber(
-              connection_handle, request_id, attrs.priority, attrs.delivery_timeout, attrs.start_location);
-
-            DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request_id.has_value());
-        }
-
-        // Subscribe to announcer if announcer is active
-        for (auto& [key, track_aliases] : state_.pub_namespace_active) {
-            if (!key.first.HasSamePrefix(track_full_name.name_space) || !key.second) {
-                continue;
-            }
-
-            // if we have already forwarded subscription for the track alias
-            // don't forward unless we have expired the refresh period
-            auto pub_handler_it = state_.pub_subscribes.find({ th.track_fullname_hash, key.second });
-            if (pub_handler_it == state_.pub_subscribes.end()) {
-                SPDLOG_LOGGER_INFO(LOGGER,
-                                   "Sending subscribe to announcer connection handler: {0} subscribe track_alias: {1}",
-                                   key.second,
-                                   th.track_fullname_hash);
-
-                track_aliases.insert(th.track_fullname_hash); // Add track alias to state
-                auto sub_track_h =
-                  std::make_shared<SubscribeTrackHandler>(track_full_name,
-                                                          0 /* use zero to indicate to use publisher priority */,
-                                                          quicr::messages::GroupOrder::kAscending,
-                                                          *this,
-                                                          peer_manager_.GetTickService());
-                SubscribeTrack(key.second, sub_track_h);
-
-                sub_track_h->AddSubscriber(
-                  connection_handle, request_id, attrs.priority, attrs.delivery_timeout, attrs.start_location);
-
-                state_.pub_subscribes_by_req_id[{ sub_track_h->GetRequestId().value(), key.second }] = sub_track_h;
-                state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
-
-                if (attrs.new_group_request_id) {
-                    sub_track_h->RequestNewGroup();
-                }
-
-            } else {
-                auto pub_handler_it = state_.pub_subscribes.find({ th.track_fullname_hash, key.second });
-                if (pub_handler_it != state_.pub_subscribes.end()) {
-                    DampenOrUpdateTrackSubscription(pub_handler_it->second, attrs.new_group_request_id.has_value());
-                }
-            }
-        }
+        moq::shim::AnnouncerSubscribeHandlerFactory factory =
+          [this](const quicr::FullTrackName& full_track_name,
+                 quicr::messages::ObjectPriority priority,
+                 quicr::messages::GroupOrder group_order) {
+              auto h = std::make_shared<SubscribeTrackHandler>(full_track_name,
+                                                               priority,
+                                                               group_order,
+                                                               *this,
+                                                               peer_manager_.GetTickService());
+              h->SupportNewGroupRequest(true);
+              return h;
+          };
+        relay_core_.ProcessSubscribe(factory, connection_handle, request_id, th, track_full_name, attrs, largest);
     }
 
     void QuicrClientManager::MetricsSampled(const quicr::ConnectionHandle connection_handle,
@@ -1343,5 +1212,47 @@ namespace laps {
                             metrics.quic.srtt_us.max,
                             metrics.quic.tx_rate_bps.max,
                             metrics.quic.tx_lost_pkts);
+    }
+
+    void QuicrClientManager::ApplyPeerAnnouncePublishNamespace(
+      quicr::ConnectionHandle connection_handle,
+      const quicr::TrackNamespace& track_namespace,
+      const quicr::PublishNamespaceAttributes& attributes)
+    {
+        PublishNamespaceReceived(connection_handle, track_namespace, attributes);
+    }
+
+    void QuicrClientManager::ApplyPeerAnnouncePublishNamespaceDone(quicr::ConnectionHandle connection_handle,
+                                                                   quicr::messages::RequestID request_id)
+    {
+        static_cast<void>(PublishNamespaceDoneReceived(connection_handle, request_id));
+    }
+
+    void QuicrClientManager::ApplyPeerAnnouncePublish(
+      quicr::ConnectionHandle connection_handle,
+      uint64_t request_id,
+      const quicr::messages::PublishAttributes& publish_attributes,
+      std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
+    {
+        PublishReceived(connection_handle, request_id, publish_attributes, sub_ns_handler);
+    }
+
+    void QuicrClientManager::RelayBindPublisherTrack(
+      quicr::ConnectionHandle connection_handle,
+      quicr::ConnectionHandle src_id,
+      uint64_t request_id,
+      const std::shared_ptr<quicr::PublishTrackHandler>& track_handler,
+      bool ephemeral)
+    {
+        BindPublisherTrack(connection_handle, src_id, request_id, track_handler, ephemeral);
+    }
+
+    void QuicrClientManager::RelayUnbindPublisherTrack(
+      quicr::ConnectionHandle connection_handle,
+      quicr::ConnectionHandle src_id,
+      const std::shared_ptr<quicr::PublishTrackHandler>& track_handler,
+      bool send_publish_done)
+    {
+        UnbindPublisherTrack(connection_handle, src_id, track_handler, send_publish_done);
     }
 }

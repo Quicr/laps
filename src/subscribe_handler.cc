@@ -13,7 +13,7 @@ namespace laps {
     SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                                                  quicr::messages::ObjectPriority priority,
                                                  quicr::messages::GroupOrder group_order,
-                                                 QuicrClientManager& server,
+                                                 ClientManager& server,
                                                  std::weak_ptr<quicr::TickService> tick_service,
                                                  bool is_publisher_initiated)
       : quicr::SubscribeTrackHandler(full_track_name,
@@ -31,7 +31,7 @@ namespace laps {
     SubscribeTrackHandler::~SubscribeTrackHandler()
     {
         for (auto& [conn_handle, handler] : subscribers) {
-            server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), handler);
+            server_.RelayUnbindPublisherTrack(conn_handle, GetConnectionId(), handler, false);
         }
     }
 
@@ -86,13 +86,13 @@ namespace laps {
           is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream,
           priority == 0 ? GetPriority() : priority,
           delivery_timeout.count() == 0
-            ? GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count()
+            ? GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.GetConfig().object_ttl_)).count()
             : delivery_timeout.count(),
           start_location,
           server_);
 
         // Create a subscribe track that will be used by the relay to send to subscriber for matching objects
-        server_.BindPublisherTrack(conn_handle, GetConnectionId(), request_id, pub_track_h, false);
+        server_.RelayBindPublisherTrack(conn_handle, GetConnectionId(), request_id, pub_track_h, false);
 
         subscribers.emplace(conn_handle, pub_track_h);
 
@@ -106,7 +106,7 @@ namespace laps {
             return;
         }
 
-        server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), it->second);
+        server_.RelayUnbindPublisherTrack(conn_handle, GetConnectionId(), it->second, false);
         subscribers.erase(conn_handle);
     }
 
@@ -366,7 +366,7 @@ namespace laps {
 
                 if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
                     // Use default if delivery timeout is not set
-                    SetDeliveryTimeout(std::chrono::milliseconds(server_.config_.object_ttl_));
+                    SetDeliveryTimeout(std::chrono::milliseconds(server_.GetConfig().object_ttl_));
                 }
             }
         }

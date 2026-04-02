@@ -7,6 +7,11 @@ cmake_minimum_required(VERSION 3.16)
 option(LAPS_INSTALL "Install the laps Components" ON)
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
 option(LAPS_WITH_MOXYGEN ON)
+option(LAPS_MOQ_DUAL_BACKEND "Build quicr + moxygen; choose stack at startup (--moq-backend)" OFF)
+
+if(LAPS_MOQ_DUAL_BACKEND AND NOT LAPS_WITH_MOXYGEN)
+    message(FATAL_ERROR "LAPS_MOQ_DUAL_BACKEND=ON requires LAPS_WITH_MOXYGEN=ON (moxygen must be built).")
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
