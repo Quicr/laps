@@ -9,7 +9,6 @@
 
 #include "subscribe_handler.h"
 #include <chrono>
-#include <sstream>
 
 namespace laps::peering {
 
@@ -583,7 +582,7 @@ namespace laps::peering {
                         out_stream_id = stream_it->second;
                     }
 
-                    SPDLOG_LOGGER_DEBUG(
+                    SPDLOG_LOGGER_TRACE(
                       LOGGER,
                       "Data object send, peer_session: {} egress SNS_ID: {} in stream_id: {} out "
                       "stream_id: {} tfn_hash: {} group_id: {} subgroup_id: {} streams: {} data len: {}",

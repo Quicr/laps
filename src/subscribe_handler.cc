@@ -251,8 +251,14 @@ namespace laps {
                   updated_data->end(), data->begin() + (data->size() - stream.buffer.Size()), data->end());
 
                 ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), updated_data);
+
+                stream.current_group_id = s_hdr.group_id;
+                stream.current_subgroup_id = s_hdr.subgroup_id.value_or(0);
             } else {
                 ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), data);
+
+                stream.current_group_id = s_hdr.group_id;
+                stream.current_subgroup_id = s_hdr.subgroup_id.value_or(0);
             }
 
         } else if (data) {

@@ -262,11 +262,14 @@ namespace laps {
         bool is_from_peer = !connection_handle && !request_id;
         auto th = quicr::TrackHash(publish_attributes.track_full_name);
 
-        SPDLOG_LOGGER_INFO(LOGGER,
-                           "Received publish from connection handle: {} using track alias: {} request_id: {}",
-                           connection_handle,
-                           th.track_fullname_hash,
-                           request_id);
+        SPDLOG_LOGGER_INFO(
+          LOGGER,
+          "Received publish from connection handle: {} using track alias: {} request_id: {} tfn: {} ({})",
+          connection_handle,
+          th.track_fullname_hash,
+          request_id,
+          publish_attributes.track_full_name.NamespaceStr(),
+          publish_attributes.track_full_name.NameStr());
 
         quicr::PublishResponse publish_response;
         publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
@@ -829,14 +832,16 @@ namespace laps {
             return;
         }
 
-        SPDLOG_LOGGER_INFO(
-          LOGGER,
-          "New subscribe connection handle: {} request_id: {} track alias: {} priority: {} delivery timeout: {}ms",
-          connection_handle,
-          request_id,
-          th.track_fullname_hash,
-          attrs.priority,
-          attrs.delivery_timeout.count());
+        SPDLOG_LOGGER_INFO(LOGGER,
+                           "New subscribe connection handle: {} request_id: {} track alias: {} priority: {} delivery "
+                           "timeout: {}ms tfn: {} ({})",
+                           connection_handle,
+                           request_id,
+                           th.track_fullname_hash,
+                           attrs.priority,
+                           attrs.delivery_timeout.count(),
+                           track_full_name.NamespaceStr(),
+                           track_full_name.NameStr());
 
         auto largest = GetLargestAvailable(track_full_name);
         if (largest.has_value()) {
@@ -1217,11 +1222,14 @@ namespace laps {
         }
 
         if (connection_handle == 0 && request_id == 0) {
-            SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Processing peer subscribe track alias: {} priority: {} new_group_request: {}",
-                                th.track_fullname_hash,
-                                attrs.priority,
-                                attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1);
+            SPDLOG_LOGGER_DEBUG(
+              LOGGER,
+              "Processing peer subscribe track alias: {} priority: {} new_group_request: {} tfn: {} / {}",
+              th.track_fullname_hash,
+              attrs.priority,
+              attrs.new_group_request_id.has_value() ? *attrs.new_group_request_id : -1,
+              track_full_name.NamespaceStr(),
+              track_full_name.NameStr());
         }
 
         else {
