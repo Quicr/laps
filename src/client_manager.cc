@@ -401,9 +401,11 @@ namespace laps {
         auto [pub_it, _] = it->second.emplace(connection_handle, handler);
 
         if (is_new) {
-            SPDLOG_INFO("Subscribe namespace received connection handle: {} for namespace_hash: {}, adding to state",
-                        connection_handle,
-                        th.track_namespace_hash);
+            SPDLOG_INFO(
+              "Subscribe namespace received connection handle: {} for namespace_hash: {} prefix: {}, adding to state",
+              connection_handle,
+              th.track_namespace_hash,
+              prefix_namespace.Str());
         }
 
         auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());

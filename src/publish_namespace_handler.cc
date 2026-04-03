@@ -25,10 +25,6 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
         cur_ticks = tick_svc->Milliseconds();
     }
     published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
-
-    if (property_type_.has_value()) {
-        PublishTrack(handler);
-    }
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus

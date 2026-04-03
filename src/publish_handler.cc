@@ -81,7 +81,6 @@ namespace laps {
 
     bool PublishTrackHandler::SentFirstObject(uint32_t group_id, uint32_t subgroup_id)
     {
-        return false;
         const auto group_it = stream_info_by_group_.find(group_id);
         if (group_it != stream_info_by_group_.end()) {
             const auto subgroup_it = group_it->second.find(subgroup_id);
