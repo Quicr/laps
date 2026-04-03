@@ -13,6 +13,21 @@ namespace laps {
       , tick_service_(tick_service)
     {
     }
+
+    void PublishNamespaceHandler::CompleteMoqPublishNamespace(
+      bool success,
+      std::optional<std::pair<quicr::messages::ErrorCode, std::string>> error)
+    {
+        if (success) {
+            RequestOk(0, quicr::messages::Parameters{});
+            return;
+        }
+        if (error.has_value()) {
+            RequestError(error->first, error->second);
+            return;
+        }
+        RequestError(quicr::messages::ErrorCode::kInternalError, "publishNamespace failed");
+    }
 }
 
 void

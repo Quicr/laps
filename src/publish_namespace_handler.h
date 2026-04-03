@@ -3,6 +3,8 @@
 #include "quicr/publish_namespace_handler.h"
 #include "quicr/track_name.h"
 
+#include <optional>
+#include <string>
 #include <unordered_map>
 
 namespace laps {
@@ -43,6 +45,17 @@ namespace laps {
         {
             return std::shared_ptr<PublishNamespaceHandler>(new PublishNamespaceHandler(prefix, tick_service));
         }
+
+        /**
+         * @brief Apply result of an outbound moxygen `publishNamespace` (MoQRelaySession); drives quicr status via
+         *        `RequestOk` / `RequestError` (only available from a laps-derived handler).
+         */
+        void CompleteMoqPublishNamespace(
+          bool success,
+          std::optional<std::pair<quicr::messages::ErrorCode, std::string>> error = std::nullopt);
+
+        /** @brief Exposes `BaseTrackHandler::SetConnectionId` for MoQ shim (otherwise protected). */
+        void SetWireConnectionId(quicr::ConnectionHandle connection_handle) { SetConnectionId(connection_handle); }
 
         /**
          * @brief Updates the track ranking

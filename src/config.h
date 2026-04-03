@@ -13,6 +13,15 @@
 namespace laps {
 #define LOGGER config_.logger_
 
+    /**
+     * @brief MoQ wire stack for the relay (P3). When only one backend is compiled in, this is ignored.
+     */
+    enum class MoqTransportBackend : std::uint8_t
+    {
+        kLibquicr = 0,
+        kMoxygen = 1,
+    };
+
     constexpr uint16_t kDefaultClientPort = 33435;
     constexpr uint16_t kDefaultPeerPort = 33434;
     constexpr uint64_t kDefaultPeerCheckIntervalMs = 5'000;
@@ -48,6 +57,9 @@ namespace laps {
 
         std::optional<std::uint64_t> cache_key = std::nullopt;
         std::size_t cache_duration_ms = 60000;
+
+        /** Active when laps is built with LAPS_HAVE_DUAL_MOQ_BACKENDS (see CMake). */
+        MoqTransportBackend moq_transport_backend{ MoqTransportBackend::kMoxygen };
 
         struct Peering
         {

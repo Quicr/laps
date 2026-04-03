@@ -3,6 +3,7 @@
 
 #include "fetch_handler.h"
 #include "config.h"
+#include "publish_fetch_handler.h"
 #include <quicr/fetch_track_handler.h>
 #include <quicr/server.h>
 
@@ -60,9 +61,17 @@ namespace laps {
                 stream.buffer.Pop(stream.buffer.Size());
             }
 
-            publish_fetch_handler_->ForwardPublishedData(true, 0, 0, std::move(bytes));
+            if (const auto laps_pf = std::dynamic_pointer_cast<PublishFetchHandler>(publish_fetch_handler_)) {
+                laps_pf->ForwardPublishedData(true, 0, 0, std::move(bytes));
+            } else {
+                publish_fetch_handler_->ForwardPublishedData(true, 0, 0, std::move(bytes));
+            }
         } else {
-            publish_fetch_handler_->ForwardPublishedData(false, 0, 0, std::move(data));
+            if (const auto laps_pf = std::dynamic_pointer_cast<PublishFetchHandler>(publish_fetch_handler_)) {
+                laps_pf->ForwardPublishedData(false, 0, 0, std::move(data));
+            } else {
+                publish_fetch_handler_->ForwardPublishedData(false, 0, 0, std::move(data));
+            }
         }
     }
 

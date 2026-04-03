@@ -14,10 +14,11 @@ namespace laps {
                                              uint8_t default_priority,
                                              uint32_t default_ttl,
                                              quicr::messages::Location start_location,
-                                             QuicrClientManager& server)
+                                             ClientManager& server)
       : quicr::PublishTrackHandler(full_track_name, track_mode, default_priority, default_ttl)
       , server_(server)
       , start_location_(start_location)
+      , publish_track_mode_(track_mode)
     {
     }
 
@@ -61,6 +62,36 @@ namespace laps {
             }
             SPDLOG_INFO("Publish track alias: {0} state change, reason: {1}", GetTrackAlias().value(), reason);
         }
+    }
+
+    PublishTrackHandler::PublishObjectStatus PublishTrackHandler::PublishObject(const quicr::ObjectHeaders& object_headers,
+                                                                              quicr::BytesSpan data)
+    {
+        if (const auto moq = server_.TryMoxygenRelayPublishObject(static_cast<quicr::PublishTrackHandler*>(this),
+                                                                    publish_track_mode_,
+                                                                    object_headers,
+                                                                    data)) {
+            return *moq;
+        }
+        return quicr::PublishTrackHandler::PublishObject(object_headers, data);
+    }
+
+    PublishTrackHandler::PublishObjectStatus PublishTrackHandler::ForwardPublishedData(
+      bool is_new_stream,
+      uint64_t group_id,
+      uint64_t subgroup_id,
+      std::shared_ptr<const std::vector<uint8_t>> data)
+    {
+        if (const auto moq = server_.TryMoxygenRelayForwardPublishedData(
+              static_cast<quicr::PublishTrackHandler*>(this),
+              is_new_stream,
+              group_id,
+              subgroup_id,
+              data)) {
+            return *moq;
+        }
+        return quicr::PublishTrackHandler::ForwardPublishedData(
+          is_new_stream, group_id, subgroup_id, std::move(data));
     }
 
     void PublishTrackHandler::MetricsSampled(const quicr::PublishTrackMetrics& metrics)

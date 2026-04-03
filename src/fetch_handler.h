@@ -38,6 +38,9 @@ namespace laps {
                             uint64_t stream_id,
                             std::shared_ptr<const std::vector<uint8_t>> data) override;
 
+        /** @brief `SubscribeTrackHandler::SetStatus` is not accessible from `MoxygenMoqServerPort`. */
+        void ApplyMoqFetchSubscribeStatus(Status status) { SetStatus(status); }
+
       private:
         bool first_data_received_{ false };
         std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler_;
