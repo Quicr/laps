@@ -197,8 +197,8 @@ namespace laps {
 
             // Fanout object to subscribers
             for (auto& [conn_handle, pub_handler] : subscribers_) {
-                if (conn_handle == 0 ||
-                    pub_handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
+                if (conn_handle == 0 || (!is_datagram_ && pub_handler->SentFirstObject(object_headers.group_id,
+                                                                                       object_headers.subgroup_id))) {
                     continue;
                 }
 
@@ -334,7 +334,7 @@ namespace laps {
 
         quicr::messages::ObjectDatagram msg;
         if (dgram_buffer_ >> msg) {
-            ForwardReceivedData(false, msg.group_id, 0, data);
+            // ForwardReceivedData(false, msg.group_id, 0, data);
 
             subscribe_track_metrics_.objects_received++;
             subscribe_track_metrics_.bytes_received += msg.payload.size();
