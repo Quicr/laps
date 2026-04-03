@@ -25,6 +25,10 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
         cur_ticks = tick_svc->Milliseconds();
     }
     published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
+
+    if (property_type_.has_value()) {
+        PublishTrack(handler);
+    }
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
@@ -85,6 +89,10 @@ void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks)
 {
+    if (!property_type_.has_value()) {
+        return;
+    }
+
     // Update latest tick for each publish track
     for (auto& [ta, insert_seq_num, latest_tick, conn_id] : ordered_tracks) {
         SPDLOG_DEBUG("DEBUG: conn_id: {} ta: {} insert_seq_num: {} latest_tick: {}",

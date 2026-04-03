@@ -279,6 +279,14 @@ namespace laps {
             const auto prefix_match = tn.IsPrefixOf(publish_attributes.track_full_name.name_space);
 
             if (prefix_match == std::partial_ordering::less || prefix_match == std::partial_ordering::equivalent) {
+
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Publish matches subscribe namespace track alias: {} request_id: {} tfn: {} ({})",
+                                    th.track_fullname_hash,
+                                    request_id,
+                                    publish_attributes.track_full_name.NamespaceStr(),
+                                    publish_attributes.track_full_name.NameStr());
+
                 for (auto& [_, pub_ns_h] : conns) {
                     if (!config_.allow_self && pub_ns_h->GetConnectionId() == connection_handle) {
                         // Initially do not mirror
@@ -440,7 +448,7 @@ namespace laps {
 
             const auto& track_full_name = handler->GetFullTrackName();
             const auto prefix_match = prefix_namespace.IsPrefixOf(track_full_name.name_space);
-            if (prefix_match == std::partial_ordering::greater || prefix_match == std::partial_ordering::equivalent) {
+            if (prefix_match == std::partial_ordering::less || prefix_match == std::partial_ordering::equivalent) {
                 std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
                 /*
