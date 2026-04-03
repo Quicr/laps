@@ -188,6 +188,7 @@ namespace laps {
         }
 
       private:
+        // min(kConfigMaxTracks, max(sub_ns max_selected_tracks)) * 1.5 )
         uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
         uint64_t inactive_age_ms_{ 10000 };  // Age in ms of a track that is considered stale/inactive
         uint64_t update_value_seq_num_{ 0 }; // Track ranking update value sequence number

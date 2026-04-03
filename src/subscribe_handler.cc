@@ -319,6 +319,13 @@ namespace laps {
 
                 *stream.next_object_id += 1;
                 stream.buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+
+
+                auto remaining_data = std::make_shared<std::vector<uint8_t>>(stream.buffer.Front(stream.buffer.Size()));
+                if (!remaining_data->empty()) {
+                    SPDLOG_DEBUG("Bytes remaining being forwarded: {}", stream.buffer.Size());
+                    ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), remaining_data);
+                }
             }
 
             break; // Not complete, wait for more data
