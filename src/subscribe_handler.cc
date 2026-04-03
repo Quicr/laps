@@ -189,12 +189,11 @@ namespace laps {
 
         try {
             // Fanout object to subscribe namespaces
-            // TODO: This can cause duplicate data upon new stream.  This is here to support mid group join, which needs
-            // to be looked at for (const auto [_, conn_subs] : sub_namespaces_) {
-            //     for (const auto& [_, handler] : conn_subs) {
-            //         handler->PublishObject(GetTrackAlias().value(), object_headers, data);
-            //     }
-            // }
+            for (const auto [_, conn_subs] : sub_namespaces_) {
+                for (const auto& [_, handler] : conn_subs) {
+                    handler->PublishObject(GetTrackAlias().value(), object_headers, data);
+                }
+            }
 
             // Fanout object to subscribers
             for (auto& [conn_handle, pub_handler] : subscribers_) {

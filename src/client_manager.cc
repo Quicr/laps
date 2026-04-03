@@ -426,6 +426,11 @@ namespace laps {
             }
         }
 
+        const quicr::SubscribeNamespaceResponse response = { .reason_code =
+                                                               quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
+                                                             .namespaces = std::move(matched_ns) };
+        ResolveSubscribeNamespace(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
+
         // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
         //  subscribes
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
@@ -454,10 +459,10 @@ namespace laps {
                     auto pub_th = quicr::TrackHash(track_full_name);
                     pub_handler->SetTrackAlias(pub_th.track_fullname_hash);
                 }
-                pub_it->second->PublishTrack(pub_handler);
 
                 handler->AddSubscribeNamespace(pub_it->second);
                 handler->SetTrackRanking(ranks_it->second);
+                pub_it->second->PublishTrack(pub_handler);
 
                 SPDLOG_LOGGER_DEBUG(
                   LOGGER,
@@ -467,11 +472,6 @@ namespace laps {
                   quicr::TrackHash(track_full_name).track_fullname_hash);
             }
         }
-
-        const quicr::SubscribeNamespaceResponse response = { .reason_code =
-                                                               quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
-                                                             .namespaces = std::move(matched_ns) };
-        ResolveSubscribeNamespace(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
     }
 
     void ClientManager::UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
