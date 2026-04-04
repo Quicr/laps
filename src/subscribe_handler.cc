@@ -158,7 +158,9 @@ namespace laps {
         }
     }
 
-    void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
+    void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers,
+                                               quicr::BytesSpan data,
+                                               std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
     {
         auto self_connection_handle = GetConnectionId();
 
@@ -191,7 +193,7 @@ namespace laps {
             // Fanout object to subscribe namespaces
             for (const auto [_, conn_subs] : sub_namespaces_) {
                 for (const auto& [_, handler] : conn_subs) {
-                    handler->PublishObject(GetTrackAlias().value(), object_headers, data);
+                    handler->PublishObject(GetTrackAlias().value(), object_headers, data, stream_mode);
                 }
             }
 
@@ -207,7 +209,7 @@ namespace laps {
 
                 if (object.headers.group_id >= pub_handler->start_location_.group &&
                     object.headers.object_id >= pub_handler->start_location_.object) {
-                    pub_handler->PublishObject(object_headers, data);
+                    pub_handler->PublishObject(object_headers, data, stream_mode);
                 }
             }
         } catch (const std::exception& e) {
@@ -315,11 +317,11 @@ namespace laps {
                                  quicr::TrackMode::kStream,
                                  obj.extensions,
                                  obj.immutable_extensions },
-                               obj.payload);
+                               obj.payload,
+                               s_hdr.properties);
 
                 *stream.next_object_id += 1;
                 stream.buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
-
 
                 auto remaining_data = std::make_shared<std::vector<uint8_t>>(stream.buffer.Front(stream.buffer.Size()));
                 if (!remaining_data->empty()) {

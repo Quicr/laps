@@ -30,7 +30,8 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
 quicr::PublishTrackHandler::PublishObjectStatus
 laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full_name_hash,
                                              const quicr::ObjectHeaders& object_headers,
-                                             quicr::BytesSpan data)
+                                             quicr::BytesSpan data,
+                                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
 {
     // TODO: Implement subscribe namespace level per track filters
     //      Process incoming watched extensions to form Top-N
@@ -49,7 +50,7 @@ laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full
         }
 
         // Not using pipeline forwarding, publish complete object
-        return pub_it->second->PublishObject(object_headers, data);
+        return pub_it->second->PublishObject(object_headers, data, stream_mode);
     }
 
     return quicr::PublishTrackHandler::PublishObjectStatus::kOk;

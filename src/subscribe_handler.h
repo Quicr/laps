@@ -34,7 +34,9 @@ namespace laps {
                             uint64_t stream_id,
                             std::shared_ptr<const std::vector<uint8_t>> data) override;
         void DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data) override;
-        void ObjectReceived(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data) override;
+        void ObjectReceived(const quicr::ObjectHeaders& object_headers,
+                            quicr::BytesSpan data,
+                            std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
 
         void StatusChanged(Status status) override;
 

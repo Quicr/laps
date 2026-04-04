@@ -28,9 +28,11 @@ namespace laps {
 
         void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed);
 
-        quicr::PublishTrackHandler::PublishObjectStatus PublishObject(quicr::TrackFullNameHash track_full_name_hash,
-                                                                      const quicr::ObjectHeaders& object_headers,
-                                                                      quicr::BytesSpan data) override;
+        quicr::PublishTrackHandler::PublishObjectStatus PublishObject(
+          quicr::TrackFullNameHash track_full_name_hash,
+          const quicr::ObjectHeaders& object_headers,
+          quicr::BytesSpan data,
+          std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
 
         quicr::PublishTrackHandler::PublishObjectStatus ForwardPublishedData(
           quicr::TrackFullNameHash track_full_name_hash,

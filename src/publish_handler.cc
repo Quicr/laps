@@ -14,8 +14,14 @@ namespace laps {
                                              uint8_t default_priority,
                                              uint32_t default_ttl,
                                              quicr::messages::Location start_location,
-                                             ClientManager& server)
-      : quicr::PublishTrackHandler(full_track_name, track_mode, default_priority, default_ttl)
+                                             ClientManager& server,
+                                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
+      : quicr::PublishTrackHandler(full_track_name,
+                                   track_mode,
+                                   default_priority,
+                                   default_ttl,
+                                   stream_mode,
+                                   start_location)
       , server_(server)
       , start_location_(start_location)
     {

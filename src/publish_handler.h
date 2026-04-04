@@ -15,7 +15,8 @@ namespace laps {
                             uint8_t default_priority,
                             uint32_t default_ttl,
                             quicr::messages::Location start_location,
-                            ClientManager& server);
+                            ClientManager& server,
+                            std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt);
 
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
