@@ -400,7 +400,6 @@ namespace laps {
 
         // Fanout object to subscribers
         for (auto& [conn_handle, pub_handler] : subscribers_) {
-
             if (conn_handle == 0) { // from peer
                 server_.peer_manager_.ClientDataRecv(
                   *track_alias,
@@ -413,7 +412,9 @@ namespace laps {
                 continue;
             }
 
-            pub_handler->ForwardPublishedData(is_new_stream, group_id, subgroup_id, data);
+            if (pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                pub_handler->ForwardPublishedData(is_new_stream, group_id, subgroup_id, data);
+            }
         }
     }
 
