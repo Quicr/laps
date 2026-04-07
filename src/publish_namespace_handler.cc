@@ -24,7 +24,14 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
     if (auto tick_svc = tick_service_.lock()) {
         cur_ticks = tick_svc->Milliseconds();
     }
-    published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
+    auto [it, inserted] = published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
+
+    // TOPN_TRACE: Log when a track is published to this handler
+    SPDLOG_INFO("TOPN_TRACE PUBLISH_TRACK my_conn:{} ta:{} inserted:{} total_pub_tracks:{}",
+                GetConnectionId(),
+                handler->GetTrackAlias().value(),
+                inserted,
+                published_tracks_.size());
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
@@ -86,7 +93,16 @@ void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks)
 {
+    // TOPN_TRACE: Log entry to UpdateTrackRanking
+    SPDLOG_INFO("TOPN_TRACE HANDLER_UPDATE_START my_conn:{} prop_type:{} max_sel:{} pub_tracks_count:{} ordered_count:{}",
+                GetConnectionId(),
+                property_type_.value_or(0),
+                max_tracks_selected_,
+                published_tracks_.size(),
+                ordered_tracks.size());
+
     if (!property_type_.has_value()) {
+        SPDLOG_INFO("TOPN_TRACE HANDLER_SKIP_NO_PROP my_conn:{}", GetConnectionId());
         return;
     }
 
@@ -104,25 +120,39 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
         }
     }
 
+    // TOPN_TRACE: Log published tracks before selection
+    std::string pub_tracks_str;
+    for (const auto& [ta, track] : published_tracks_) {
+        auto status_str = "unknown";
+        if (auto h = track.handler.lock()) {
+            switch (h->GetStatus()) {
+                case PublishTrackHandler::Status::kOk: status_str = "ok"; break;
+                case PublishTrackHandler::Status::kPaused: status_str = "paused"; break;
+                default: status_str = "other"; break;
+            }
+        }
+        pub_tracks_str += fmt::format("[ta={},status={}]", ta, status_str);
+    }
+    SPDLOG_INFO("TOPN_TRACE HANDLER_PUB_TRACKS my_conn:{} tracks:{}", GetConnectionId(), pub_tracks_str);
+
     std::unordered_map<uint64_t, uint64_t> active_tracks;
+    std::string selection_trace;
     for (const auto& [ta, insert_seq_num, latest_tick, publisher_conn_id] : ordered_tracks) {
         if (active_tracks.size() >= max_tracks_selected_) {
+            selection_trace += fmt::format("[ta={},SKIP_MAX_REACHED]", ta);
             break;
         }
 
         // Filter out self-tracks
         if (publisher_conn_id == GetConnectionId()) {
+            selection_trace += fmt::format("[ta={},SKIP_SELF,pub_conn={}]", ta, publisher_conn_id);
             SPDLOG_DEBUG("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
             continue;
         }
 
-        SPDLOG_DEBUG("Update track tracking: Top track {} track alias: {} from conn {}",
-                     active_tracks.size(),
-                     ta,
-                     publisher_conn_id);
-
         auto pub_track_it = published_tracks_.find(ta);
         if (pub_track_it == published_tracks_.end()) {
+            selection_trace += fmt::format("[ta={},SKIP_NOT_PUBLISHED,pub_conn={}]", ta, publisher_conn_id);
             // Publish tracks should/must exists before this is call. They are managed by PublishTrack()
             SPDLOG_WARN("Track {} missing from publish_tracks; track alias: {} from conn {}",
                         active_tracks.size(),
@@ -131,7 +161,13 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
             continue;
         }
 
+        SPDLOG_DEBUG("Update track tracking: Top track {} track alias: {} from conn {}",
+                     active_tracks.size(),
+                     ta,
+                     publisher_conn_id);
+
         if (auto h = pub_track_it->second.handler.lock(); h->GetStatus() == PublishTrackHandler::Status::kPaused) {
+            selection_trace += fmt::format("[ta={},RESUME,pub_conn={}]", ta, publisher_conn_id);
             h->SetStatus(PublishTrackHandler::Status::kOk);
 
             auto track_it = handlers_.find(ta);
@@ -144,13 +180,27 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
             } else {
                 pub_track_it->second.last_updated_tick = latest_tick;
             }
+        } else {
+            selection_trace += fmt::format("[ta={},ALREADY_ACTIVE,pub_conn={}]", ta, publisher_conn_id);
         }
 
         active_tracks.emplace(ta, latest_tick);
     }
 
+    // TOPN_TRACE: Log selection result
+    std::string active_str;
+    for (const auto& [ta, tick] : active_tracks) {
+        active_str += fmt::format("[ta={}]", ta);
+    }
+    SPDLOG_INFO("TOPN_TRACE HANDLER_SELECTION my_conn:{} active_count:{} active:{} trace:{}",
+                GetConnectionId(),
+                active_tracks.size(),
+                active_str,
+                selection_trace);
+
     if (published_tracks_.size() > max_tracks_selected_) {
         // Unpublish tracks that are too old
+        std::string pause_trace;
         for (auto& [ta, track] : published_tracks_) {
             if (active_tracks.contains(ta)) {
                 // Skip, track is active
@@ -164,6 +214,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
             if (auto h = track.handler.lock()) {
                 if (h->GetStatus() == PublishTrackHandler::Status::kOk) {
+                    pause_trace += fmt::format("[ta={},PAUSING]", ta);
                     SPDLOG_INFO("Setting track to Paused, no longer in top-n alias: {} conn_id: {} ticks: {} < {}",
                                 ta,
                                 GetConnectionId(),
@@ -186,6 +237,16 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                 }
             }
         }
+        if (!pause_trace.empty()) {
+            SPDLOG_INFO("TOPN_TRACE HANDLER_PAUSE my_conn:{} pause_trace:{}", GetConnectionId(), pause_trace);
+        }
+    } else {
+        SPDLOG_INFO("TOPN_TRACE HANDLER_NO_PAUSE my_conn:{} pub_tracks_size:{} max_sel:{} (condition: {} > {} = false)",
+                    GetConnectionId(),
+                    published_tracks_.size(),
+                    max_tracks_selected_,
+                    published_tracks_.size(),
+                    max_tracks_selected_);
     }
 }
 

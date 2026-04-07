@@ -44,9 +44,11 @@ namespace laps {
             // Check if track exists in a different value bucket
             bool needs_rebuild = false;
             bool value_decreased = false;
+            PropertyValue old_value = 0;
             for (auto it = ordered_tracks_.lower_bound({ prop, 0 });
                  it != ordered_tracks_.end() && it->first.first == prop;) {
                 if (it->first.second != value && it->second.contains(track_alias)) {
+                    old_value = it->first.second;
                     if (it->first.second > value) {
                         value_decreased = true;
                     }
@@ -81,6 +83,17 @@ namespace laps {
 
             // Rebuild if track moved buckets or new bucket was created
             needs_rebuild = needs_rebuild || inserted;
+
+            // TOPN_TRACE: Log value update with old/new values
+            SPDLOG_INFO("TOPN_TRACE UPDATE_VALUE ta:{} conn:{} prop:{} old_val:{} new_val:{} tick:{} rebuild:{} decreased:{}",
+                        track_alias,
+                        connection_id,
+                        prop,
+                        old_value,
+                        value,
+                        tick,
+                        needs_rebuild,
+                        value_decreased);
 
             SPDLOG_DEBUG("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
                          track_alias,
@@ -131,6 +144,17 @@ namespace laps {
                     flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
                 }
 
+                // TOPN_TRACE: Log rebuilt ranking
+                std::string ranking_str;
+                for (size_t i = 0; i < flat_track_list_.size(); ++i) {
+                    const auto& [ta, seq, tick, conn] = flat_track_list_[i];
+                    ranking_str += fmt::format("[{}:ta={},conn={},seq={}]", i, ta, conn, seq);
+                }
+                SPDLOG_INFO("TOPN_TRACE RANKING_REBUILT prop:{} count:{} ranking:{}",
+                            prop,
+                            flat_track_list_.size(),
+                            ranking_str);
+
             } else {
                 // Update latest_tick in flat_track_list_ in-place
                 for (auto& [alias, insert_seq_num, latest_tick, conn_id] : flat_track_list_) {
@@ -142,11 +166,24 @@ namespace laps {
                 }
             }
 
+            // TOPN_TRACE: Log current ranking before notification
+            std::string current_ranking;
+            for (size_t i = 0; i < flat_track_list_.size() && i < 10; ++i) {
+                const auto& [ta, seq, tick_val, conn] = flat_track_list_[i];
+                current_ranking += fmt::format("[{}:ta={},conn={}]", i, ta, conn);
+            }
+            SPDLOG_INFO("TOPN_TRACE NOTIFY_START handlers:{} ranking:{}",
+                        ns_handlers_.size(),
+                        current_ranking);
+
             // notify each subscribe namespace (aka publish namespace handler)
             for (auto ns_it = ns_handlers_.begin(); ns_it != ns_handlers_.end();) {
                 auto& [ns_hash, conn_handlers] = *ns_it;
                 for (auto conn_it = conn_handlers.begin(); conn_it != conn_handlers.end();) {
                     if (auto h = conn_it->second.lock()) {
+                        SPDLOG_INFO("TOPN_TRACE NOTIFY_HANDLER ns_hash:{} handler_conn:{}",
+                                    ns_hash,
+                                    h->GetConnectionId());
                         h->UpdateTrackRanking(flat_track_list_);
                         ++conn_it;
                     } else {
@@ -175,7 +212,14 @@ namespace laps {
         {
             if (auto h = handler.lock()) {
                 auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
-                ns_handlers_[th.track_namespace_hash].try_emplace(h->GetConnectionId(), handler);
+                auto [it, inserted] = ns_handlers_[th.track_namespace_hash].try_emplace(h->GetConnectionId(), handler);
+                SPDLOG_INFO("TOPN_TRACE ADD_HANDLER ns_hash:{} conn:{} prop_type:{} max_sel:{} inserted:{} total_handlers:{}",
+                            th.track_namespace_hash,
+                            h->GetConnectionId(),
+                            h->GetPropertyType(),
+                            h->GetMaxSelected(),
+                            inserted,
+                            ns_handlers_[th.track_namespace_hash].size());
             }
         }
 
@@ -183,6 +227,9 @@ namespace laps {
         {
             if (auto h = handler.lock()) {
                 auto th = quicr::TrackHash({ .name_space = h->GetPrefix(), .name = {} });
+                SPDLOG_INFO("TOPN_TRACE REMOVE_HANDLER ns_hash:{} conn:{}",
+                            th.track_namespace_hash,
+                            h->GetConnectionId());
                 ns_handlers_[th.track_namespace_hash].erase(h->GetConnectionId());
             }
         }

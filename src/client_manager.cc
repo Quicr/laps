@@ -290,6 +290,10 @@ namespace laps {
                 for (auto& [_, pub_ns_h] : conns) {
                     if (!config_.allow_self && pub_ns_h->GetConnectionId() == connection_handle) {
                         // Initially do not mirror
+                        SPDLOG_INFO("TOPN_TRACE PUBLISH_SKIP_SELF publisher_conn:{} subscriber_conn:{} ta:{}",
+                                    connection_handle,
+                                    pub_ns_h->GetConnectionId(),
+                                    th.track_fullname_hash);
                         continue;
                     }
 
@@ -302,6 +306,11 @@ namespace laps {
                     if (!handler->GetTrackAlias().has_value()) {
                         handler->SetTrackAlias(th.track_fullname_hash);
                     }
+
+                    SPDLOG_INFO("TOPN_TRACE PUBLISH_TO_NS_HANDLER publisher_conn:{} subscriber_conn:{} ta:{}",
+                                connection_handle,
+                                pub_ns_h->GetConnectionId(),
+                                th.track_fullname_hash);
 
                     pub_ns_h->PublishTrack(handler);
                 }
@@ -373,7 +382,16 @@ namespace laps {
         auto ns_th = quicr::TrackHash({ sub_ns, {} });
         auto rank_it = track_rankings_.find(ns_th.track_namespace_hash);
         if (rank_it != track_rankings_.end()) {
+            SPDLOG_INFO("TOPN_TRACE SET_TRACK_RANKING pub_conn:{} ta:{} ns_hash:{}",
+                        connection_handle,
+                        th.track_fullname_hash,
+                        ns_th.track_namespace_hash);
             sub_track_handler->SetTrackRanking(rank_it->second);
+        } else {
+            SPDLOG_INFO("TOPN_TRACE NO_TRACK_RANKING pub_conn:{} ta:{} ns_hash:{} (ranking not found)",
+                        connection_handle,
+                        th.track_fullname_hash,
+                        ns_th.track_namespace_hash);
         }
 
         if (!has_subs) {
@@ -411,7 +429,8 @@ namespace laps {
         auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());
 
         if (const auto* tf = std::get_if<quicr::messages::TrackFilter>(&attributes.filter)) {
-            SPDLOG_INFO("Subscribe namespace track filter: property_type={} max_tracks={} timeout={}ms",
+            SPDLOG_INFO("TOPN_TRACE SUB_NS_FILTER conn:{} prop_type:{} max_tracks:{} timeout:{}ms",
+                        connection_handle,
                         tf->property_type,
                         tf->max_tracks_selected,
                         tf->max_time_selected);
@@ -419,7 +438,8 @@ namespace laps {
             handler->SetInactiveAge(tf->max_time_selected);
             handler->SetPropertyType(tf->property_type);
         } else {
-            SPDLOG_INFO("Subscribe namespace has no track filter, using defaults");
+            SPDLOG_INFO("TOPN_TRACE SUB_NS_NO_FILTER conn:{} (handler will skip ranking updates!)",
+                        connection_handle);
         }
 
         ranks_it->second->AddNamespaceHandler(handler);
@@ -472,6 +492,12 @@ namespace laps {
 
                 handler->AddSubscribeNamespace(pub_it->second);
                 handler->SetTrackRanking(ranks_it->second);
+
+                SPDLOG_INFO("TOPN_TRACE SUB_NS_PUBLISH_TRACK subscriber_conn:{} publisher_conn:{} ta:{}",
+                            connection_handle,
+                            ta_conn.second,
+                            pub_handler->GetTrackAlias().value_or(0));
+
                 pub_it->second->PublishTrack(pub_handler);
 
                 SPDLOG_LOGGER_DEBUG(
