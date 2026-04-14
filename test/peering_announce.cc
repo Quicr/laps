@@ -18,8 +18,8 @@ TEST_CASE("Serialize Announce Info")
 
     auto net_data = announce_info.Serialize(false);
 
-    CHECK_EQ(net_data.size(), 74);
-    CHECK_EQ(announce_info.SizeBytes(), 74);
+    CHECK_EQ(net_data.size(), 75);
+    CHECK_EQ(announce_info.SizeBytes(), 75);
 
     AnnounceInfo decoded_ai(net_data);
 

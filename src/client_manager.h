@@ -120,6 +120,15 @@ namespace laps {
                               const quicr::messages::SubscribeAttributes&,
                               std::optional<quicr::messages::Location>);
 
+        void PeerDataReceived(quicr::TrackFullNameHash track_full_name_hash,
+                              bool is_new_stream,
+                              std::optional<uint64_t> stream_id,
+                              std::shared_ptr<const std::vector<uint8_t>> data);
+
+        void PeerUnsubscribeTrack(quicr::TrackFullNameHash track_full_name_hash);
+
+        void PeerStreamClosed(quicr::TrackFullNameHash track_full_name_hash, uint64_t stream_id, bool reset);
+
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                              bool new_group_request);
 

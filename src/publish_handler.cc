@@ -14,8 +14,14 @@ namespace laps {
                                              uint8_t default_priority,
                                              uint32_t default_ttl,
                                              quicr::messages::Location start_location,
-                                             ClientManager& server)
-      : quicr::PublishTrackHandler(full_track_name, track_mode, default_priority, default_ttl)
+                                             ClientManager& server,
+                                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
+      : quicr::PublishTrackHandler(full_track_name,
+                                   track_mode,
+                                   default_priority,
+                                   default_ttl,
+                                   stream_mode,
+                                   start_location)
       , server_(server)
       , start_location_(start_location)
     {
@@ -104,6 +110,17 @@ namespace laps {
 
         for (auto& [group, subgroup] : rm_subgroups) {
             EndSubgroup(group, subgroup, false);
+        }
+    }
+
+    void PublishTrackHandler::EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed)
+    {
+        // Call base class end subgroup to clean up handler state
+        quicr::PublishTrackHandler::EndSubgroup(group_id, subgroup_id, completed);
+
+        // Notify peering manager
+        if (GetTrackAlias().has_value()) {
+            server_.peer_manager_.EndSubgroup(GetTrackAlias().value(), group_id, subgroup_id, !completed);
         }
     }
 }

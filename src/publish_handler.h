@@ -15,7 +15,8 @@ namespace laps {
                             uint8_t default_priority,
                             uint32_t default_ttl,
                             quicr::messages::Location start_location,
-                            ClientManager& server);
+                            ClientManager& server,
+                            std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt);
 
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
@@ -26,6 +27,8 @@ namespace laps {
         void SetBaseTrackAlias(uint64_t track_alias) { track_alias_ = track_alias; }
 
         void AbruptCloseAllSubgroups();
+
+        void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed) override;
 
         static std::shared_ptr<PublishTrackHandler> Create(const quicr::FullTrackName& full_track_name,
                                                            quicr::TrackMode track_mode,

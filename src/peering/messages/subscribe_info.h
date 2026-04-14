@@ -34,8 +34,6 @@ namespace laps::peering {
 
         // Data not in wire message (e.g., serialized)
 
-        /// Client manager subscribe handler to fanout/process/cache on peer received data
-        std::shared_ptr<SubscribeTrackHandler> client_subscribe_handler;
         // End not serialized
 
         /**

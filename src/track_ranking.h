@@ -82,12 +82,12 @@ namespace laps {
             // Rebuild if track moved buckets or new bucket was created
             needs_rebuild = needs_rebuild || inserted;
 
-            SPDLOG_INFO("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
-                        track_alias,
-                        prop,
-                        value,
-                        tick,
-                        connection_id);
+            SPDLOG_DEBUG("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
+                         track_alias,
+                         prop,
+                         value,
+                         tick,
+                         connection_id);
 
             // Remove inactive tracks from ordered_tracks_
             for (auto it = ordered_tracks_.begin(); it != ordered_tracks_.end();) {
@@ -188,8 +188,9 @@ namespace laps {
         }
 
       private:
+        // min(kConfigMaxTracks, max(sub_ns max_selected_tracks)) * 1.5 )
         uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 1500 };   // Age in ms of a track that is considered stale/inactive
+        uint64_t inactive_age_ms_{ 10000 };  // Age in ms of a track that is considered stale/inactive
         uint64_t update_value_seq_num_{ 0 }; // Track ranking update value sequence number
 
         struct TrackInfo

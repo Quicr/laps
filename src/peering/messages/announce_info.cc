@@ -5,10 +5,11 @@
 
 namespace laps::peering {
 
-    AnnounceInfo::AnnounceInfo(NodeIdValueType source_node_id, const quicr::FullTrackName& full_name)
+    AnnounceInfo::AnnounceInfo(NodeIdValueType source_node_id, const quicr::FullTrackName& full_name, bool publish)
       : source_node_id(source_node_id)
       , name_space(full_name.name_space)
       , name(full_name.name)
+      , flags(publish ? 0 : 1)
     {
     }
 
@@ -19,7 +20,8 @@ namespace laps::peering {
                + sizeof(fullname_hash)
                + 1 /* num of namespace tuples */
                + sizeof(uint16_t) * name_space.GetEntries().size() + name_space.size()
-               + sizeof(uint16_t) + name.size();
+               + sizeof(uint16_t) + name.size()
+               + 1; /* flags */
 
         // clang-format on
     }
@@ -57,6 +59,8 @@ namespace laps::peering {
             name.assign(it, it + name_size);
             it += name_size;
         }
+
+        flags = *it++;
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const AnnounceInfo& announce_info)
@@ -85,6 +89,8 @@ namespace laps::peering {
         if (announce_info.name.size()) {
             data.insert(data.end(), announce_info.name.begin(), announce_info.name.end());
         }
+
+        data.push_back(announce_info.flags);
 
         return data;
     }

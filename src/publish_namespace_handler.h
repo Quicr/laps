@@ -26,9 +26,13 @@ namespace laps {
 
         PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::TickService> tick_service);
 
-        quicr::PublishTrackHandler::PublishObjectStatus PublishObject(quicr::TrackFullNameHash track_full_name_hash,
-                                                                      const quicr::ObjectHeaders& object_headers,
-                                                                      quicr::BytesSpan data) override;
+        void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed);
+
+        quicr::PublishTrackHandler::PublishObjectStatus PublishObject(
+          quicr::TrackFullNameHash track_full_name_hash,
+          const quicr::ObjectHeaders& object_headers,
+          quicr::BytesSpan data,
+          std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
 
         quicr::PublishTrackHandler::PublishObjectStatus ForwardPublishedData(
           quicr::TrackFullNameHash track_full_name_hash,
@@ -64,13 +68,13 @@ namespace laps {
         constexpr uint64_t GetInactiveAge() { return inactive_age_ms_; }
 
         constexpr void SetPropertyType(const uint64_t prop) { property_type_ = prop; }
-        constexpr uint64_t GetPropertyType() { return property_type_; }
+        constexpr uint64_t GetPropertyType() { return property_type_.value_or(0); }
 
       private:
-        uint64_t max_tracks_selected_{ 1 };     // Max tracks to select as candidate top-n
-        uint64_t inactive_age_ms_{ 3000 };      // Age in ms of a track that is considered stale/inactive
-        uint64_t property_type_{ 12 };          // Property type to rank by
-        uint64_t delay_publish_done_ms_{ 900 }; // Delay sending publish done to allow publish to come back
+        uint64_t max_tracks_selected_{ 1 };       // Max tracks to select as candidate top-n
+        uint64_t inactive_age_ms_{ 10000 };       // Age in ms of a track that is considered stale/inactive
+        std::optional<uint64_t> property_type_;   // Property type to rank by
+        uint64_t delay_publish_done_ms_{ 20000 }; // Delay sending publish done to allow publish to come back
 
         std::weak_ptr<quicr::TickService> tick_service_;
 

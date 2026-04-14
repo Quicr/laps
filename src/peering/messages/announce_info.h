@@ -33,6 +33,7 @@ namespace laps::peering {
         quicr::messages::TrackNamespace name_space;
         quicr::messages::TrackName name;
         quicr::TrackFullNameHash fullname_hash{ 0 };
+        uint8_t flags{ 0 }; // LSB 0 indicates publish, 1 indicates publish namespace
 
         /**
          * @brief Encode node object into bytes that can be written on the wire
@@ -40,7 +41,7 @@ namespace laps::peering {
         std::vector<uint8_t> Serialize(bool include_common_header, bool withdraw = false) const;
 
         AnnounceInfo() = default;
-        AnnounceInfo(NodeIdValueType source_node_id, const quicr::FullTrackName& full_name);
+        AnnounceInfo(NodeIdValueType source_node_id, const quicr::FullTrackName& full_name, bool publish = true);
         AnnounceInfo(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
