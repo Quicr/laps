@@ -82,7 +82,7 @@ namespace laps {
             quicr::messages::RequestID request_id{ 0 };
             uint8_t priority{ 0 };
             uint32_t object_ttl{ 0 };
-            quicr::messages::GroupOrder group_order;
+            std::optional<quicr::messages::GroupOrder> group_order;
             quicr::messages::Location start_location;
         };
 
