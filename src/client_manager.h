@@ -144,7 +144,7 @@ namespace laps {
                            uint64_t request_id,
                            const quicr::FullTrackName& track_full_name,
                            uint8_t priority,
-                           quicr::messages::GroupOrder group_order,
+                           std::optional<quicr::messages::GroupOrder> group_order,
                            quicr::messages::Location start,
                            quicr::messages::FetchEndLocation end);
 

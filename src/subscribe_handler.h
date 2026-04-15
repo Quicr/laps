@@ -21,7 +21,7 @@ namespace laps {
 
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               quicr::messages::ObjectPriority priority,
-                              quicr::messages::GroupOrder group_order,
+                              std::optional<quicr::messages::GroupOrder> group_order,
                               ClientManager& server,
                               std::weak_ptr<quicr::TickService> tick_service,
                               bool is_publisher_initiated = false);

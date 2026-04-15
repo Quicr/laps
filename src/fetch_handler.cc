@@ -10,7 +10,7 @@ namespace laps {
     FetchTrackHandler::FetchTrackHandler(const std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler,
                                          const quicr::FullTrackName& full_track_name,
                                          quicr::messages::ObjectPriority priority,
-                                         quicr::messages::GroupOrder group_order,
+                                         std::optional<quicr::messages::GroupOrder> group_order,
                                          const quicr::messages::Location& start_location,
                                          const quicr::messages::FetchEndLocation& end_location)
       : quicr::FetchTrackHandler(full_track_name, priority, group_order, start_location, end_location)

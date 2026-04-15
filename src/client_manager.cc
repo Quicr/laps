@@ -177,8 +177,8 @@ namespace laps {
                     const auto& sub_ftn = sub_info_it->second.track_full_name;
 
                     // TODO(tievens): Don't really like passing self to subscribe handler, see about fixing this
-                    auto sub_track_handler = std::make_shared<SubscribeTrackHandler>(
-                      sub_ftn, 0, quicr::messages::GroupOrder::kOriginalPublisherOrder, *this, config_.tick_service_);
+                    auto sub_track_handler =
+                      std::make_shared<SubscribeTrackHandler>(sub_ftn, 0, std::nullopt, *this, config_.tick_service_);
 
                     // Add subsribers to publisher subscribe handler
                     for (const auto& sub_info : sub_tracks) {
@@ -894,7 +894,7 @@ namespace laps {
                                       uint64_t request_id,
                                       const quicr::FullTrackName& track_full_name,
                                       uint8_t priority,
-                                      quicr::messages::GroupOrder group_order,
+                                      std::optional<quicr::messages::GroupOrder> group_order,
                                       quicr::messages::Location start,
                                       quicr::messages::FetchEndLocation end)
     {
@@ -928,7 +928,11 @@ namespace laps {
 
         // TODO: Adjust the TTL to allow more time for transmission
         auto pub_fetch_h =
-          quicr::PublishFetchHandler::Create(track_full_name, priority, request_id, group_order, config_.object_ttl_);
+          quicr::PublishFetchHandler::Create(track_full_name,
+                                             priority,
+                                             request_id,
+                                             group_order.value_or(quicr::messages::GroupOrder::kAscending),
+                                             config_.object_ttl_);
         BindFetchTrack(connection_handle, pub_fetch_h);
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
@@ -1148,6 +1152,7 @@ namespace laps {
                                             {
                                               kDefaultPriority,
                                               quicr::messages::GroupOrder::kAscending,
+                                              quicr::messages::GroupOrder::kAscending,
                                               std::chrono::milliseconds(kDefaultObjectTtl),
                                               std::chrono::milliseconds(0),
                                               std::monostate{},
@@ -1276,10 +1281,12 @@ namespace laps {
                                                   attrs.group_order,
                                                   {} });
 
-            // Always send updates to peers to support subscribe updates and refresh group support
-            auto params = quicr::messages::Parameters{}
-                            .Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority)
-                            .Add(quicr::messages::ParameterType::kGroupOrder, attrs.group_order);
+            // TODO: Check draft Section 7.3 re forwarding group order
+            auto params =
+              quicr::messages::Parameters{}.Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority);
+            if (attrs.group_order.has_value()) {
+                params.Add(quicr::messages::ParameterType::kGroupOrder, *attrs.group_order);
+            }
 
             quicr::messages::Subscribe sub(request_id, track_full_name.name_space, track_full_name.name, params);
 
