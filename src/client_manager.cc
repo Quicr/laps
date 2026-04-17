@@ -411,12 +411,16 @@ namespace laps {
         auto [ranks_it, __] = track_rankings_.try_emplace(th.track_namespace_hash, std::make_shared<TrackRanking>());
 
         if (const auto* tf = std::get_if<quicr::messages::TrackFilter>(&attributes.filter)) {
+            if (ranks_it->second->GetInactiveAge() < tf->timeout) {
+                ranks_it->second->SetInactiveAge(tf->timeout);
+            }
+
             SPDLOG_INFO("Subscribe namespace track filter: property_type={} max_tracks={} timeout={}ms",
                         tf->property_type,
                         tf->max_tracks_selected,
-                        tf->max_time_selected);
+                        tf->timeout);
             handler->SetMaxSelected(tf->max_tracks_selected);
-            handler->SetInactiveAge(tf->max_time_selected);
+            handler->SetInactiveAge(tf->timeout);
             handler->SetPropertyType(tf->property_type);
         } else {
             SPDLOG_INFO("Subscribe namespace has no track filter, using defaults");
