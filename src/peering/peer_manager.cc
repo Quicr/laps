@@ -101,10 +101,18 @@ namespace laps::peering {
         if (not withdraw) {
             uint64_t update_ref = rand();
 
-            quicr::messages::Subscribe sub;
-            subscribe_info.subscribe_data >> sub;
+            auto msg_bytes = quicr::BytesSpan(subscribe_info.subscribe_data);
 
-            auto priority = sub.parameters.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority);
+            // subscribe headers in expected order, must each be parsed
+            [[maybe_unused]] const auto request_id = quicr::messages::Message::ParseField<std::uint64_t>(msg_bytes);
+            const auto track_namespace = quicr::messages::Message::ParseField<quicr::TrackNamespace>(msg_bytes);
+            const auto track_name = quicr::messages::Message::ParseField<quicr::Bytes>(msg_bytes);
+            const auto parameters = quicr::messages::Message::ParseField<quicr::messages::Parameters>(msg_bytes);
+
+            auto tfn = quicr::FullTrackName{ track_namespace, track_name };
+
+            auto priority = parameters.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority);
+            auto ngr_id = parameters.GetOptional<uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
 
             std::lock_guard _(state_.state_mutex);
             bool announce_matches{ false };
@@ -122,7 +130,7 @@ namespace laps::peering {
             // If no publish, then check announces
             if (not announce_matches) {
                 for (auto& [key, track_aliases] : state_.pub_namespace_active) {
-                    if (!key.first.HasSamePrefix(sub.track_namespace)) {
+                    if (!key.first.HasSamePrefix(track_namespace)) {
                         continue;
                     }
                     announce_matches = true;
@@ -138,13 +146,7 @@ namespace laps::peering {
                 if (client_manager_ != nullptr) {
                     quicr::messages::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
-
-                    for (const auto& param : sub.parameters) {
-                        if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
-                            s_attrs.new_group_request_id = true;
-                            break;
-                        }
-                    }
+                    s_attrs.new_group_request_id = ngr_id;
 
                     SPDLOG_LOGGER_INFO(LOGGER,
                                        "Subscribe to client manager track alias: {} new_group_request: {}",
@@ -153,7 +155,7 @@ namespace laps::peering {
                                                                                 : -1);
 
                     client_manager_->ProcessSubscribe(
-                      0, 0, subscribe_info.track_hash, { sub.track_namespace, sub.track_name }, s_attrs, std::nullopt);
+                      0, 0, subscribe_info.track_hash, { track_namespace, track_name }, s_attrs, std::nullopt);
                 }
 
                 auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
@@ -605,9 +607,6 @@ namespace laps::peering {
     void PeerManager::ClientUnsubscribe(uint64_t track_fullname_hash)
     {
         if (auto si = info_base_->GetSubscribe(track_fullname_hash, node_info_.id)) {
-            quicr::messages::Subscribe sub;
-            si->subscribe_data >> sub;
-
             info_base_->RemoveSubscribe(*si);
 
             for (const auto& sess : client_peer_sessions_) {
@@ -634,50 +633,55 @@ namespace laps::peering {
         auto tfn = track_full_name;
         auto th = quicr::TrackHash(tfn);
 
-        quicr::messages::Subscribe sub;
-
         // Check for existing subscribe and update
         if (auto si = info_base_->GetSubscribe(th.track_fullname_hash, node_info_.id)) {
             try {
                 // Update subscription params with new group request
-                si->subscribe_data >> sub;
 
-                std::optional<uint64_t> new_group_request_id;
-                if (sub.parameters.Contains(quicr::messages::ParameterType::kNewGroupRequest)) {
-                    new_group_request_id =
-                      sub.parameters.Get<std::uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
-                } else {
-                    sub.parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, attrs.new_group_request_id);
+                // subscribe headers in expected order, must each be parsed
+                auto msg_bytes = quicr::BytesSpan(si->subscribe_data);
+                [[maybe_unused]] const auto request_id = quicr::messages::Message::ParseField<std::uint64_t>(msg_bytes);
+                [[maybe_unused]] const auto track_namespace =
+                  quicr::messages::Message::ParseField<quicr::TrackNamespace>(msg_bytes);
+                [[maybe_unused]] const auto track_name = quicr::messages::Message::ParseField<quicr::Bytes>(msg_bytes);
+                auto parameters = quicr::messages::Message::ParseField<quicr::messages::Parameters>(msg_bytes);
+
+                auto ngr_id = parameters.GetOptional<uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
+
+                if (!ngr_id.has_value()) {
+                    parameters.AddOptional(quicr::messages::ParameterType::kNewGroupRequest, ngr_id);
                 }
 
                 bool has_new_group_request = false;
-                for (auto it = sub.parameters.begin(); it != sub.parameters.end(); ++it) {
+                for (auto it = parameters.begin(); it != parameters.end(); ++it) {
                     if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
                         has_new_group_request = true;
 
                         if (!attrs.new_group_request_id.has_value()) {
                             // Remove new group request since it's not requested but was found
-                            sub.parameters.parameters.erase(it);
-                            quicr::Bytes sub_data;
-                            sub_data << sub;
+                            parameters.parameters.erase(it);
 
-                            si->subscribe_data.assign(sub_data.begin() + sizeof(uint8_t) +
-                                                        sizeof(uint16_t) /* Strip type and control header length */,
-                                                      sub_data.end());
+                            auto sub_data = quicr::messages::Message()
+                                              .Append(request_id)
+                                              .Append(track_namespace)
+                                              .Append(track_name)
+                                              .Append(parameters);
+
+                            si->subscribe_data.assign(sub_data.ToByteSpan().begin(), sub_data.ToByteSpan().end());
                         }
                         break;
                     }
                 }
 
                 if (attrs.new_group_request_id.has_value() && not has_new_group_request) {
-                    sub.parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, attrs.new_group_request_id);
+                    parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, attrs.new_group_request_id);
+                    auto sub_data = quicr::messages::Message()
+                                      .Append(request_id)
+                                      .Append(track_namespace)
+                                      .Append(track_name)
+                                      .Append(parameters);
 
-                    quicr::Bytes sub_data;
-                    sub_data << sub;
-
-                    si->subscribe_data.assign(sub_data.begin() + sizeof(uint8_t) +
-                                                sizeof(uint16_t) /* Strip type and control header length */,
-                                              sub_data.end());
+                    si->subscribe_data.assign(sub_data.ToByteSpan().begin(), sub_data.ToByteSpan().end());
                 }
 
             } catch (const std::exception& e) {
@@ -711,9 +715,6 @@ namespace laps::peering {
                                       std::span<const uint8_t> subscribe_data)
     {
         auto tfn = track_full_name;
-        auto th = quicr::TrackHash(tfn);
-
-        quicr::messages::Subscribe sub;
 
         if (subscribe_data.empty())
             return; // Empty means it was supposed to be an update which didn't happen
@@ -803,78 +804,83 @@ namespace laps::peering {
                     if (si_it.first == node_info_.id)
                         continue;
                     const auto& sub_info = si_it.second;
-                    quicr::messages::Subscribe sub;
 
                     try {
-                        sub_info.subscribe_data >> sub;
+                        // subscribe headers in expected order, must each be parsed
+                        auto msg_bytes = quicr::BytesSpan(sub_info.subscribe_data);
+                        [[maybe_unused]] const auto request_id =
+                          quicr::messages::Message::ParseField<std::uint64_t>(msg_bytes);
+                        const auto track_namespace =
+                          quicr::messages::Message::ParseField<quicr::TrackNamespace>(msg_bytes);
+                        [[maybe_unused]] const auto track_name =
+                          quicr::messages::Message::ParseField<quicr::Bytes>(msg_bytes);
+                        auto parameters = quicr::messages::Message::ParseField<quicr::messages::Parameters>(msg_bytes);
 
+                        auto ngr_id =
+                          parameters.GetOptional<uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
+
+                        if (track_full_name.name_space.HasSamePrefix(track_namespace)) {
+
+                            if (sub_info.source_node_id == node_info_.id)
+                                continue;
+
+                            if (auto cm = client_manager_) {
+                                quicr::messages::SubscribeAttributes s_attrs;
+                                s_attrs.priority = 10;
+
+                                for (const auto& param : parameters) {
+                                    if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
+                                        s_attrs.new_group_request_id = true;
+                                        break;
+                                    }
+                                }
+
+                                SPDLOG_LOGGER_INFO(LOGGER,
+                                                   "Subscribe to client manager track alias: {}",
+                                                   sub_info.track_hash.track_fullname_hash);
+
+                                cm->ProcessSubscribe(
+                                  0, 0, sub_info.track_hash, { track_namespace, track_name }, s_attrs, std::nullopt);
+                            }
+
+                            auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);
+                            if (bp_it != info_base_->nodes_best_.end()) {
+                                const auto& peer_session = bp_it->second.lock();
+                                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                                    "Best peer session for subscribe fullname: {} source_node: {} is "
+                                                    "via peer_session_id: {}",
+                                                    sub_info.track_hash.track_fullname_hash,
+                                                    sub_info.source_node_id,
+                                                    peer_session->GetSessionId());
+
+                                if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
+                                      sub_info.track_hash.track_fullname_hash,
+                                      sub_info.source_node_id,
+                                      parameters.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority));
+                                    is_new) {
+                                    SPDLOG_LOGGER_INFO(
+                                      LOGGER,
+                                      "New source added to peer session for subscribe fullname: {} source_node: {} is "
+                                      "via peer_session_id: {} sns_id: {}",
+                                      sub_info.track_hash.track_fullname_hash,
+                                      sub_info.source_node_id,
+                                      peer_session->GetSessionId(),
+                                      sns_id);
+
+                                    if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
+                                          { sub_info.track_hash.track_fullname_hash, peer_session->GetSessionId() },
+                                          InfoBase::FibEntry{ update_ref, {}, sns_id, bp_it->second });
+                                        is_new) {
+                                        SPDLOG_LOGGER_INFO(LOGGER,
+                                                           "New subscribe fullname: {} added to client fib",
+                                                           sub_info.track_hash.track_fullname_hash);
+                                    }
+                                }
+                            }
+                        }
                     } catch (const std::exception& e) {
                         SPDLOG_LOGGER_ERROR(LOGGER, "Unable to parse subscribe message {}", e.what());
                         continue;
-                    }
-
-                    if (track_full_name.name_space.HasSamePrefix(sub.track_namespace)) {
-
-                        if (sub_info.source_node_id == node_info_.id)
-                            continue;
-
-                        if (auto cm = client_manager_) {
-                            quicr::messages::SubscribeAttributes s_attrs;
-                            s_attrs.priority = 10;
-
-                            for (const auto& param : sub.parameters) {
-                                if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
-                                    s_attrs.new_group_request_id = true;
-                                    break;
-                                }
-                            }
-
-                            SPDLOG_LOGGER_INFO(LOGGER,
-                                               "Subscribe to client manager track alias: {}",
-                                               sub_info.track_hash.track_fullname_hash);
-
-                            cm->ProcessSubscribe(0,
-                                                 0,
-                                                 sub_info.track_hash,
-                                                 { sub.track_namespace, sub.track_name },
-                                                 s_attrs,
-                                                 std::nullopt);
-                        }
-
-                        auto bp_it = info_base_->nodes_best_.find(sub_info.source_node_id);
-                        if (bp_it != info_base_->nodes_best_.end()) {
-                            const auto& peer_session = bp_it->second.lock();
-                            SPDLOG_LOGGER_DEBUG(
-                              LOGGER,
-                              "Best peer session for subscribe fullname: {} source_node: {} is via peer_session_id: {}",
-                              sub_info.track_hash.track_fullname_hash,
-                              sub_info.source_node_id,
-                              peer_session->GetSessionId());
-
-                            if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                                  sub_info.track_hash.track_fullname_hash,
-                                  sub_info.source_node_id,
-                                  sub.parameters.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority));
-                                is_new) {
-                                SPDLOG_LOGGER_INFO(
-                                  LOGGER,
-                                  "New source added to peer session for subscribe fullname: {} source_node: {} is "
-                                  "via peer_session_id: {} sns_id: {}",
-                                  sub_info.track_hash.track_fullname_hash,
-                                  sub_info.source_node_id,
-                                  peer_session->GetSessionId(),
-                                  sns_id);
-
-                                if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
-                                      { sub_info.track_hash.track_fullname_hash, peer_session->GetSessionId() },
-                                      InfoBase::FibEntry{ update_ref, {}, sns_id, bp_it->second });
-                                    is_new) {
-                                    SPDLOG_LOGGER_INFO(LOGGER,
-                                                       "New subscribe fullname: {} added to client fib",
-                                                       sub_info.track_hash.track_fullname_hash);
-                                }
-                            }
-                        }
                     }
                 }
             }

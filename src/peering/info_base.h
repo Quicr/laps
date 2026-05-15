@@ -106,7 +106,7 @@ namespace laps::peering {
          *
          * @returns a set of announce source node Ids
          */
-        std::set<NodeIdValueType> GetAnnounceIds(quicr::messages::TrackNamespace name_space,
+        std::set<NodeIdValueType> GetAnnounceIds(quicr::TrackNamespace name_space,
                                                  quicr::messages::TrackName name,
                                                  bool exact);
 

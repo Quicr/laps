@@ -230,7 +230,7 @@ namespace laps::peering {
         return removed;
     }
 
-    std::set<NodeIdValueType> InfoBase::GetAnnounceIds(quicr::messages::TrackNamespace name_space,
+    std::set<NodeIdValueType> InfoBase::GetAnnounceIds(quicr::TrackNamespace name_space,
                                                        quicr::messages::TrackName name,
                                                        bool exact)
     {
