@@ -343,7 +343,16 @@ namespace laps {
 
         quicr::messages::ObjectDatagram msg;
         if (dgram_buffer_ >> msg) {
-            // ForwardReceivedData(false, msg.group_id, 0, data);
+            if (subscribers_.contains(0)) { // Is peering subscribed
+                server_.peer_manager_.ClientDataRecv(
+                  msg.track_alias,
+                  GetPriority(),
+                  GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
+                  peering::DataType::kDatagram,
+                  msg.group_id,
+                  0,
+                  data);
+            }
 
             subscribe_track_metrics_.objects_received++;
             subscribe_track_metrics_.bytes_received += msg.payload.size();
