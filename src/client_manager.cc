@@ -1295,7 +1295,7 @@ namespace laps {
             auto sub_data = quicr::messages::Message()
                               .Append(request_id)
                               .Append(track_full_name.name_space)
-                              .Append(track_full_name.name_space)
+                              .Append(track_full_name.name)
                               .Append(params);
 
             // TODO: Current new group is not sent by client in subscribe. It's only in subscribe updates.
