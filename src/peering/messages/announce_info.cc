@@ -50,7 +50,7 @@ namespace laps::peering {
             it += len;
         }
 
-        name_space = quicr::messages::TrackNamespace(entries);
+        name_space = quicr::TrackNamespace(entries);
 
         uint16_t name_size = ValueOf<uint16_t>({ it, it + 2 });
         it += 2;

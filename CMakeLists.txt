@@ -15,12 +15,14 @@ set (CMAKE_POLICY_VERSION_MINIMUM 3.5)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.16.18
+        VERSION 0.16.20
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
 configure_file( version_config.h.in ${CMAKE_BINARY_DIR}/generated/version_config.h )
 include_directories( ${CMAKE_BINARY_DIR}/generated/ ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+add_compile_options(-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
 
 ###
 ### Global Config

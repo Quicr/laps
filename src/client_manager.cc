@@ -355,7 +355,7 @@ namespace laps {
             }
         }
 
-        quicr::messages::TrackNamespace sub_ns;
+        quicr::TrackNamespace sub_ns;
         for (const auto& [ns_prefix, conns] : state_.subscribes_namespaces) {
             if (ns_prefix.HasSamePrefix(publish_attributes.track_full_name.name_space) && !conns.empty()) {
                 has_subs = true;
@@ -1292,17 +1292,15 @@ namespace laps {
                 params.Add(quicr::messages::ParameterType::kGroupOrder, *attrs.group_order);
             }
 
-            quicr::messages::Subscribe sub(request_id, track_full_name.name_space, track_full_name.name, params);
+            auto sub_data = quicr::messages::Message()
+                              .Append(request_id)
+                              .Append(track_full_name.name_space)
+                              .Append(track_full_name.name)
+                              .Append(params);
 
             // TODO: Current new group is not sent by client in subscribe. It's only in subscribe updates.
 
-            quicr::Bytes sub_data;
-            sub_data << sub;
-
-            auto mt_sz = quicr::UintVar::Size(*quicr::UintVar(sub_data).begin());
-            sub_data.erase(sub_data.begin(), sub_data.begin() + mt_sz + sizeof(uint16_t));
-
-            peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data);
+            peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data.ToByteSpan());
         }
 
         // Resume publisher initiated subscribes
