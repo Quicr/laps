@@ -667,7 +667,8 @@ namespace laps::peering {
                                               .Append(track_name)
                                               .Append(parameters);
 
-                            si->subscribe_data.assign(sub_data.ToByteSpan().begin(), sub_data.ToByteSpan().end());
+                            const auto sub_data_bytes = sub_data.ToByteSpan();
+                            si->subscribe_data.assign(sub_data_bytes.begin(), sub_data_bytes.end());
                         }
                         break;
                     }
