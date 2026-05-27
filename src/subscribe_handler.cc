@@ -164,6 +164,14 @@ namespace laps {
     {
         auto self_connection_handle = GetConnectionId();
 
+        // Update tracked properties
+        UpdateTrackedProperties(object_headers.extensions, object_headers.immutable_extensions);
+
+        if (pending_new_group_request_id_.has_value() &&
+            (object_headers.group_id == 0 || object_headers.group_id > *pending_new_group_request_id_)) {
+            pending_new_group_request_id_.reset();
+            }
+
         // Cache Object
         if (server_.cache_.count(GetTrackAlias().value()) == 0) {
             server_.cache_.insert(std::make_pair(GetTrackAlias().value(),
@@ -171,17 +179,8 @@ namespace laps {
                                                    server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
         }
 
-        // Update tracked properties
-        UpdateTrackedProperties(object_headers.extensions, object_headers.immutable_extensions);
-
         auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
-
         CacheObject object{ object_headers, { data.begin(), data.end() } };
-
-        if (pending_new_group_request_id_.has_value() &&
-            (object_headers.group_id == 0 || object_headers.group_id > *pending_new_group_request_id_)) {
-            pending_new_group_request_id_.reset();
-        }
 
         if (auto group = cache_entry.Get(object_headers.group_id)) {
             group->insert(std::move(object));
@@ -511,6 +510,10 @@ namespace laps {
                 handler->EndSubgroup(
                   stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
             }
+        }
+
+        for (const auto [_, handler] : subscribers_) {
+            handler->EndSubgroup(stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
         }
 
         streams_.erase(stream_it);
