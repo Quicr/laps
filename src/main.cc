@@ -43,6 +43,11 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
         cfg.logger_->set_level(spdlog::level::debug);
     }
 
+    if (cli_opts.count("disable_cache") && cli_opts["disable_cache"].as<bool>() == true) {
+        SPDLOG_LOGGER_INFO(cfg.logger_, "Disabling object caching");
+        cfg.disable_cache = true;
+    }
+
     if (cli_opts.count("detached_subs") && cli_opts["detached_subs"].as<bool>() == true) {
         SPDLOG_LOGGER_INFO(cfg.logger_, "Enabling detached subscriber support");
         cfg.detached_subs = true;
@@ -154,8 +159,8 @@ main(int argc, char* argv[])
             cxxopts::value<size_t>()->default_value("60000"))
         ("cache_key", "Value of isCached extension key", cxxopts::value<std::uint64_t>())
         ("l,detached_subs", "Enable support for detached subscribers")
+        ("disable_cache", "Disable object caching")
         ("allow_self", "Allow subscribe namespace self-subscriptions");
-
 
     options.add_options("Peering")
         ("peer_port", "Listening port for peering connections",

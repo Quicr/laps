@@ -33,6 +33,7 @@ namespace laps {
         bool use_reset_wait_strategy{ false };
         bool detached_subs{ false };
         bool allow_self{ false };
+        bool disable_cache{ false };
 
         std::string relay_id_;
         std::string tls_cert_filename_;
