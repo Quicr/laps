@@ -123,6 +123,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.transport_config.quic_qlog_path = qlog_path;
     config.transport_config.idle_timeout_ms = 10000;
     config.transport_config.time_queue_rx_size = 10'000;
+    config.transport_config.time_queue_bucket_interval = 500;
     config.transport_config.time_queue_max_duration = cfg.object_ttl_ * 2;
     config.transport_config.max_connections = 5000;
 
