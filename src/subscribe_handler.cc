@@ -516,10 +516,6 @@ namespace laps {
             }
         }
 
-        for (const auto [_, handler] : subscribers_) {
-            handler->EndSubgroup(stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
-        }
-
         streams_.erase(stream_it);
     }
 
