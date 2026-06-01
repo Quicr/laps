@@ -21,10 +21,10 @@ namespace laps {
         struct TrackPropertyValue
         {
             uint64_t latest_value;                       // Latest value sampled
-            quicr::TickService::TickType latest_tick_ms; // Latest tick value when last sampled
+            timeq::tick_service::tick_type latest_tick_ms; // Latest tick value when last sampled
         };
 
-        PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::TickService> tick_service);
+        PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<timeq::tick_service> tick_service);
 
         void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed);
 
@@ -43,7 +43,7 @@ namespace laps {
 
         void PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler) override;
 
-        static auto Create(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::TickService> tick_service)
+        static auto Create(const quicr::TrackNamespace& prefix, std::weak_ptr<timeq::tick_service> tick_service)
         {
             return std::shared_ptr<PublishNamespaceHandler>(new PublishNamespaceHandler(prefix, tick_service));
         }
@@ -76,7 +76,7 @@ namespace laps {
         std::optional<uint64_t> property_type_;   // Property type to rank by
         uint64_t delay_publish_done_ms_{ 20000 }; // Delay sending publish done to allow publish to come back
 
-        std::weak_ptr<quicr::TickService> tick_service_;
+        std::weak_ptr<timeq::tick_service> tick_service_;
 
         struct ActiveTrack
         {

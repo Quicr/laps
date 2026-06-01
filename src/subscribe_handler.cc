@@ -14,7 +14,7 @@ namespace laps {
                                                  quicr::messages::ObjectPriority priority,
                                                  std::optional<quicr::messages::GroupOrder> group_order,
                                                  ClientManager& server,
-                                                 std::weak_ptr<quicr::TickService> tick_service,
+                                                 std::weak_ptr<timeq::tick_service> tick_service,
                                                  bool is_publisher_initiated)
       : quicr::SubscribeTrackHandler(full_track_name,
                                      priority,
@@ -126,9 +126,9 @@ namespace laps {
                        ticks = tick_service_.lock(),
                        ranking = track_ranking_.lock()](
                         uint64_t prop, PublishNamespaceHandler::TrackPropertyValue& value, uint64_t recv_value) {
-            quicr::TickService::TickType cur_tick{ 0 };
+            timeq::tick_service::tick_type cur_tick{ 0 };
             if (ticks != nullptr) {
-                cur_tick = ticks->Milliseconds();
+                cur_tick = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(ticks->get()).count());
             }
 
             if (value.latest_value != recv_value || cur_tick - value.latest_tick_ms > kRefreshRankingIntervalMs) {
