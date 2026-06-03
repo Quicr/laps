@@ -14,7 +14,7 @@ namespace laps {
                                                  quicr::messages::ObjectPriority priority,
                                                  std::optional<quicr::messages::GroupOrder> group_order,
                                                  ClientManager& server,
-                                                 std::weak_ptr<quicr::TickService> tick_service,
+                                                 std::weak_ptr<timeq::tick_service> tick_service,
                                                  bool is_publisher_initiated)
       : quicr::SubscribeTrackHandler(full_track_name,
                                      priority,
@@ -126,9 +126,9 @@ namespace laps {
                        ticks = tick_service_.lock(),
                        ranking = track_ranking_.lock()](
                         uint64_t prop, PublishNamespaceHandler::TrackPropertyValue& value, uint64_t recv_value) {
-            quicr::TickService::TickType cur_tick{ 0 };
+            timeq::tick_service::tick_type cur_tick{ 0 };
             if (ticks != nullptr) {
-                cur_tick = ticks->Milliseconds();
+                cur_tick = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(ticks->get()).count());
             }
 
             if (value.latest_value != recv_value || cur_tick - value.latest_tick_ms > kRefreshRankingIntervalMs) {
@@ -164,29 +164,32 @@ namespace laps {
     {
         auto self_connection_handle = GetConnectionId();
 
-        // Cache Object
-        if (server_.cache_.count(GetTrackAlias().value()) == 0) {
-            server_.cache_.insert(std::make_pair(GetTrackAlias().value(),
-                                                 quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
-                                                   server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
-        }
-
         // Update tracked properties
         UpdateTrackedProperties(object_headers.extensions, object_headers.immutable_extensions);
-
-        auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
-
-        CacheObject object{ object_headers, { data.begin(), data.end() } };
 
         if (pending_new_group_request_id_.has_value() &&
             (object_headers.group_id == 0 || object_headers.group_id > *pending_new_group_request_id_)) {
             pending_new_group_request_id_.reset();
         }
 
-        if (auto group = cache_entry.Get(object_headers.group_id)) {
-            group->insert(std::move(object));
-        } else {
-            cache_entry.Insert(object_headers.group_id, { std::move(object) }, server_.cache_duration_ms_);
+        CacheObject object{ object_headers, { data.begin(), data.end() } };
+
+        // Cache Object
+        if (!server_.config_.disable_cache) {
+            if (server_.cache_.count(GetTrackAlias().value()) == 0) {
+                server_.cache_.insert(
+                  std::make_pair(GetTrackAlias().value(),
+                                 quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                                   server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
+            }
+
+            auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
+
+            if (auto group = cache_entry.Get(object_headers.group_id)) {
+                group->insert(std::move(object));
+            } else {
+                cache_entry.Insert(object_headers.group_id, { std::move(object) }, server_.cache_duration_ms_);
+            }
         }
 
         try {

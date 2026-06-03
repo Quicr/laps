@@ -637,32 +637,34 @@ namespace laps {
         std::vector<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>> unsub_list;
 
         if (!have_publishers) {
-            // Find subscribers that match this publisher and unsubscribe
-            for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
-                 ++it) {
-                if (it->first.first != th.track_fullname_hash) {
-                    break;
+
+            // TODO: check if subscyyribe requests detatch or not
+
+            if (!config_.detached_subs) {
+                // Find subscribers that match this publisher and unsubscribe
+                for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 });
+                     it != state_.subscribes.end();
+                     ++it) {
+                    if (it->first.first != th.track_fullname_hash) {
+                        break;
+                    }
+
+                    SPDLOG_LOGGER_INFO(LOGGER,
+                                       "No publishers left, unsubscribe conn_id: {} track_alias: {} request_id: {}",
+                                       it->first.second,
+                                       it->second.track_alias,
+                                       it->second.request_id);
+
+                    unsub_list.emplace_back(it->first.second, it->second.request_id);
                 }
 
-                SPDLOG_LOGGER_INFO(LOGGER,
-                                   "No publishers left, unsubscribe conn_id: {} track_alias: {} request_id: {}",
-                                   it->first.second,
-                                   it->second.track_alias,
-                                   it->second.request_id);
+                lock.unlock();
+                for (auto& [c_handle, req_id] : unsub_list) {
+                    UnsubscribeReceived(c_handle, req_id);
+                }
 
-                unsub_list.emplace_back(it->first.second, it->second.request_id);
+                lock.lock();
             }
-        }
-
-        // TODO: check if subscribe requests detatch or not
-
-        if (!config_.detached_subs) {
-            lock.unlock();
-            for (auto& [c_handle, req_id] : unsub_list) {
-                UnsubscribeReceived(c_handle, req_id);
-            }
-
-            lock.lock();
         }
 
         state_.pub_subscribes_by_req_id.erase(s_it);

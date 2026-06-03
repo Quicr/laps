@@ -6,7 +6,7 @@
 
 #include <list>
 #include <quicr/config.h>
-#include <quicr/detail/tick_service.h>
+#include <timeq/tick_service.h>
 #include <spdlog/spdlog.h>
 
 namespace laps {
@@ -33,6 +33,7 @@ namespace laps {
         bool use_reset_wait_strategy{ false };
         bool detached_subs{ false };
         bool allow_self{ false };
+        bool disable_cache{ false };
 
         std::string relay_id_;
         std::string tls_cert_filename_;
@@ -43,7 +44,7 @@ namespace laps {
 
         peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
 
-        std::shared_ptr<quicr::ThreadedTickService> tick_service_;
+        std::shared_ptr<timeq::threaded_tick_service> tick_service_;
         std::optional<std::uint64_t> cache_key = std::nullopt;
 
         struct Peering

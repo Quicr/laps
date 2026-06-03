@@ -23,7 +23,7 @@ namespace laps {
                               quicr::messages::ObjectPriority priority,
                               std::optional<quicr::messages::GroupOrder> group_order,
                               ClientManager& server,
-                              std::weak_ptr<quicr::TickService> tick_service,
+                              std::weak_ptr<timeq::tick_service> tick_service,
                               bool is_publisher_initiated = false);
 
         ~SubscribeTrackHandler();
@@ -98,7 +98,7 @@ namespace laps {
                                      std::optional<quicr::Extensions> immutable_extensions);
 
         ClientManager& server_;
-        std::weak_ptr<quicr::TickService> tick_service_;
+        std::weak_ptr<timeq::tick_service> tick_service_;
 
         bool is_datagram_{ false };
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
