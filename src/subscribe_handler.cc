@@ -6,7 +6,7 @@
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/server.h>
+#include <quicr/session.h>
 #include <quicr/subscribe_track_handler.h>
 
 namespace laps {
@@ -128,7 +128,8 @@ namespace laps {
                         uint64_t prop, PublishNamespaceHandler::TrackPropertyValue& value, uint64_t recv_value) {
             timeq::tick_service::tick_type cur_tick{ 0 };
             if (ticks != nullptr) {
-                cur_tick = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(ticks->get()).count());
+                cur_tick =
+                  static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(ticks->get()).count());
             }
 
             if (value.latest_value != recv_value || cur_tick - value.latest_tick_ms > kRefreshRankingIntervalMs) {

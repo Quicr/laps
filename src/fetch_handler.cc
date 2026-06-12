@@ -4,7 +4,7 @@
 #include "fetch_handler.h"
 #include "config.h"
 #include <quicr/fetch_track_handler.h>
-#include <quicr/server.h>
+#include <quicr/session.h>
 
 namespace laps {
     FetchTrackHandler::FetchTrackHandler(const std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler,

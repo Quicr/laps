@@ -6,8 +6,8 @@
 
 #include <list>
 #include <quicr/config.h>
-#include <timeq/tick_service.h>
 #include <spdlog/spdlog.h>
+#include <timeq/tick_service.h>
 
 namespace laps {
 #define LOGGER config_.logger_

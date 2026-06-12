@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
 
-#include <quicr/server.h>
+#include <quicr/session.h>
 #include <quicr/subscribe_track_handler.h>
 
 #include <quicr/defer.h>
@@ -21,7 +21,7 @@ namespace laps {
                                  const quicr::ServerConfig& cfg,
                                  peering::PeerManager& peer_manager,
                                  size_t cache_duration_ms)
-      : quicr::Server(cfg, config.tick_service_)
+      : quicr::Session(cfg, config.tick_service_)
       , state_(state)
       , config_(config)
       , peer_manager_(peer_manager)
@@ -220,7 +220,7 @@ namespace laps {
         state_.pub_namespace_active.try_emplace(std::make_pair(track_namespace, connection_handle));
 
         PublishNamespaceResponse announce_response;
-        announce_response.reason_code = quicr::Server::PublishNamespaceResponse::ReasonCode::kOk;
+        announce_response.reason_code = PublishNamespaceResponse::ReasonCode::kOk;
 
         std::vector<quicr::ConnectionHandle> sub_annos_connections;
 
@@ -293,12 +293,13 @@ namespace laps {
                         continue;
                     }
 
-                    const auto handler = PublishTrackHandler::Create(publish_attributes.track_full_name,
-                                                                     quicr::TrackMode::kStream,
-                                                                     publish_attributes.priority,
-                                                                     publish_attributes.delivery_timeout.count(),
-                                                                     publish_attributes.start_location,
-                                                                     *this);
+                    const auto handler =
+                      PublishTrackHandler::Create(publish_attributes.track_full_name,
+                                                  quicr::TrackMode::kStream,
+                                                  publish_attributes.default_publisher_priority,
+                                                  publish_attributes.delivery_timeout.value_or(config_.object_ttl_),
+                                                  quicr::messages::Location{ 0, 0 },
+                                                  *this);
                     if (!handler->GetTrackAlias().has_value()) {
                         handler->SetTrackAlias(th.track_fullname_hash);
                     }
@@ -587,15 +588,10 @@ namespace laps {
         PurgePublishState(connection_handle);
     }
 
-    quicr::Server::ClientSetupResponse ClientManager::ClientSetupReceived(
-      quicr::ConnectionHandle,
-      const quicr::ClientSetupAttributes& client_setup_attributes)
+    void ClientManager::ClientSetupReceived(quicr::ConnectionHandle,
+                                            const quicr::ClientSetupAttributes& client_setup_attributes)
     {
-        ClientSetupResponse client_setup_response;
-
         SPDLOG_LOGGER_INFO(LOGGER, "Client setup received from endpoint_id: {0}", client_setup_attributes.endpoint_id);
-
-        return client_setup_response;
     }
 
     void ClientManager::PublishDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id)

@@ -4,7 +4,7 @@
 
 #include <map>
 #include <optional>
-#include <quicr/detail/quic_transport.h>
+#include <quicr/detail/transport.h>
 #include <set>
 
 #include "config.h"
