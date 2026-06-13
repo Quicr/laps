@@ -22,7 +22,8 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
 
     timeq::tick_service::tick_type cur_ticks{ 0 };
     if (auto tick_svc = tick_service_.lock()) {
-        cur_ticks = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
+        cur_ticks =
+          static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
     }
     published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
 }
@@ -159,7 +160,8 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
             timeq::tick_service::tick_type cur_tick{ 0 };
             if (auto tick_svc = tick_service_.lock()) {
-                cur_tick = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
+                cur_tick =
+                  static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
             }
 
             if (auto h = track.handler.lock()) {

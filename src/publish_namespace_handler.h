@@ -20,7 +20,7 @@ namespace laps {
          */
         struct TrackPropertyValue
         {
-            uint64_t latest_value;                       // Latest value sampled
+            uint64_t latest_value;                         // Latest value sampled
             timeq::tick_service::tick_type latest_tick_ms; // Latest tick value when last sampled
         };
 

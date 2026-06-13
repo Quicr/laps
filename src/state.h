@@ -1,7 +1,7 @@
 #pragma once
 
 #include <mutex>
-#include <quicr/server.h>
+#include <quicr/session.h>
 #include <set>
 
 namespace laps {
