@@ -5,7 +5,7 @@
 #include "track_ranking.h"
 #include <peering/peer_manager.h>
 #include <quicr/cache.h>
-#include <quicr/server.h>
+#include <quicr/session.h>
 
 #include <functional>
 #include <set>
@@ -47,7 +47,7 @@ namespace laps {
      * @brief MoQ Server
      * @details Implementation of the MoQ Server
      */
-    class ClientManager : public quicr::Server
+    class ClientManager : public quicr::Session
     {
       public:
         ClientManager(State& state,
@@ -77,8 +77,8 @@ namespace laps {
 
         void ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status) override;
 
-        ClientSetupResponse ClientSetupReceived(quicr::ConnectionHandle,
-                                                const quicr::ClientSetupAttributes& client_setup_attributes) override;
+        void ClientSetupReceived(quicr::ConnectionHandle,
+                                 const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
         void UnsubscribeReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
         void PublishDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;

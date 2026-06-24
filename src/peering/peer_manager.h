@@ -3,7 +3,7 @@
 #pragma once
 
 #include <map>
-#include <quicr/detail/quic_transport.h>
+#include <quicr/detail/transport.h>
 #include <quicr/detail/safe_queue.h>
 #include <thread>
 

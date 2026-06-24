@@ -275,15 +275,20 @@ namespace laps::peering {
         } else { // PUBLISH
             if (!withdraw) {
                 // TODO: Add defaults to announce info from original PUBLISH, but for now it's not needed
-                quicr::messages::PublishAttributes attrs;
-                attrs.track_full_name = { announce_info.name_space, announce_info.name };
-                attrs.track_alias = announce_info.fullname_hash;
-                attrs.is_publisher_initiated = true;
-                attrs.dynamic_groups = true;
-                attrs.forward = true;
-                attrs.group_order = quicr::messages::GroupOrder::kAscending;
-                attrs.priority = 64;
-                attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
+                const quicr::messages::PublishAttributes attrs{
+                    .track_full_name = { announce_info.name_space, announce_info.name },
+                    .track_alias = announce_info.fullname_hash,
+                    .auth_tokens = {},
+                    .expires = std::nullopt,
+                    .largest_object = std::nullopt,
+                    .forward = true,
+                    .default_publisher_group_order = quicr::messages::GroupOrder::kAscending,
+                    .dynamic_groups = true,
+                    .default_publisher_priority = 64,
+                    .max_cache_duration = std::nullopt,
+                    .delivery_timeout = kDefaultObjectTtl,
+                    .track_properties = {},
+                };
 
                 client_manager_->PublishReceived(0, 0, attrs, {});
             } else {
@@ -654,7 +659,7 @@ namespace laps::peering {
 
                 bool has_new_group_request = false;
                 for (auto it = parameters.begin(); it != parameters.end(); ++it) {
-                    if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
+                    if (it->first == static_cast<std::uint64_t>(quicr::messages::ParameterType::kNewGroupRequest)) {
                         has_new_group_request = true;
 
                         if (!attrs.new_group_request_id.has_value()) {
@@ -675,7 +680,7 @@ namespace laps::peering {
                 }
 
                 if (attrs.new_group_request_id.has_value() && not has_new_group_request) {
-                    parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, attrs.new_group_request_id);
+                    parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, *attrs.new_group_request_id);
                     auto sub_data = quicr::messages::Message()
                                       .Append(request_id)
                                       .Append(track_namespace)
@@ -830,7 +835,7 @@ namespace laps::peering {
                                 s_attrs.priority = 10;
 
                                 for (const auto& param : parameters) {
-                                    if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
+                                    if (param.first == static_cast<std::uint64_t>(quicr::messages::ParameterType::kNewGroupRequest)) {
                                         s_attrs.new_group_request_id = true;
                                         break;
                                     }

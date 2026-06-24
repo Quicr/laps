@@ -6,7 +6,7 @@
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/server.h>
+#include <quicr/session.h>
 #include <quicr/subscribe_track_handler.h>
 
 namespace laps {
@@ -326,7 +326,8 @@ namespace laps {
                 *stream.next_object_id += 1;
                 stream.buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
 
-                auto remaining_data = std::make_shared<std::vector<uint8_t>>(stream.buffer.Front(stream.buffer.Size()));
+                const auto remaining = stream.buffer.Front(stream.buffer.Size());
+                const auto remaining_data = std::make_shared<std::vector<uint8_t>>(remaining.begin(), remaining.end());
                 if (!remaining_data->empty()) {
                     SPDLOG_DEBUG("Bytes remaining being forwarded: {}", stream.buffer.Size());
                     ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), remaining_data);
