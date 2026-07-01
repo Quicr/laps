@@ -31,8 +31,8 @@ namespace laps::peering {
         NodeIdValueType source_node_id;
 
         quicr::TrackNamespace name_space;
-        quicr::messages::TrackName name;
-        quicr::TrackFullNameHash fullname_hash{ 0 };
+        std::vector<uint8_t> name;
+        std::uint64_t fullname_hash{ 0 };
         uint8_t flags{ 0 }; // LSB 0 indicates publish, 1 indicates publish namespace
 
         /**

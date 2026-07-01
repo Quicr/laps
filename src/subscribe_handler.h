@@ -20,7 +20,7 @@ namespace laps {
         static constexpr uint64_t kRefreshRankingIntervalMs = 120;
 
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
-                              quicr::messages::ObjectPriority priority,
+                              std::uint64_t priority,
                               std::optional<quicr::messages::GroupOrder> group_order,
                               ClientManager& server,
                               std::weak_ptr<timeq::tick_service> tick_service,
@@ -58,8 +58,8 @@ namespace laps {
          * @param delivery_timeout      Subscriber delivery timeout
          * @param start_location        Subscriber requested start location
          */
-        void AddSubscriber(quicr::ConnectionHandle conn_handle,
-                           quicr::messages::RequestID request_id,
+        void AddSubscriber(std::uint64_t conn_handle,
+                           std::uint64_t request_id,
                            uint8_t priority,
                            std::chrono::milliseconds delivery_timeout,
                            quicr::messages::Location start_location);
@@ -68,7 +68,7 @@ namespace laps {
          * @brief Remove subscriber from publish fanout
          * @param conn_handle           Subscriber connection handle
          */
-        void RemoveSubscriber(quicr::ConnectionHandle conn_handle);
+        void RemoveSubscriber(std::uint64_t conn_handle);
 
         /**
          * @brief Add subscribe namespace publish namespace handler
@@ -110,13 +110,12 @@ namespace laps {
          *
          * @
          */
-        std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> subscribers_;
+        std::map<std::uint64_t, std::shared_ptr<PublishTrackHandler>> subscribers_;
 
         /**
          * @brief Map of publish namespace handlers by subscribe namespace full track name hash and connection handle
          */
-        std::map<quicr::TrackFullNameHash, std::map<quicr::ConnectionHandle, std::shared_ptr<PublishNamespaceHandler>>>
-          sub_namespaces_;
+        std::map<std::uint64_t, std::map<std::uint64_t, std::shared_ptr<PublishNamespaceHandler>>> sub_namespaces_;
 
         /**
          * @brief property values

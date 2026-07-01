@@ -49,7 +49,7 @@ namespace laps::peering {
                              uint64_t data_offset,
                              quicr::ITransport::EnqueueFlags eflags);
 
-        void ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
+        void ClientDataRecv(std::uint64_t track_full_name_hash,
                             uint8_t priority,
                             uint32_t ttl,
                             DataType type,
@@ -150,7 +150,7 @@ namespace laps::peering {
          * @param subgroup_id           Subgroup Id to close
          * @param reset                 Use reset to close the stream, if false use fin
          */
-        void EndSubgroup(quicr::TrackFullNameHash track_full_name_hash,
+        void EndSubgroup(std::uint64_t track_full_name_hash,
                          uint64_t group_id,
                          uint64_t subgroup_id,
                          bool reset = false);
@@ -159,17 +159,16 @@ namespace laps::peering {
         // QUIC Transport callbacks
         // -------------------------------------------------------------------------------
 
-        void OnNewDataContext(const quicr::TransportConnId&, const quicr::DataContextId&) override {}
-        void OnConnectionStatus(const quicr::TransportConnId& conn_id, const quicr::TransportStatus status) override;
-        void OnNewConnection(const quicr::TransportConnId& conn_id, const quicr::TransportRemote& remote) override;
-        void OnRecvStream(const quicr::TransportConnId& conn_id,
+        void OnNewDataContext(const std::uint64_t&, const std::uint64_t&) override {}
+        void OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status) override;
+        void OnNewConnection(const std::uint64_t& conn_id, const quicr::TransportRemote& remote) override;
+        void OnRecvStream(const std::uint64_t& conn_id,
                           uint64_t stream_id,
-                          std::optional<quicr::DataContextId> data_ctx_id,
+                          std::optional<std::uint64_t> data_ctx_id,
                           const bool is_bidir = false) override;
-        void OnRecvDgram(const quicr::TransportConnId& conn_id,
-                         std::optional<quicr::DataContextId> data_ctx_id) override;
+        void OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id) override;
 
-        void OnStreamClosed(const quicr::TransportConnId& connection_handle,
+        void OnStreamClosed(const std::uint64_t& connection_handle,
                             std::uint64_t stream_id,
                             std::shared_ptr<quicr::StreamRxContext> rx_context,
                             std::optional<uint64_t> request_id,
@@ -218,8 +217,8 @@ namespace laps::peering {
 
         std::thread check_thr_; /// Check/task thread, handles reconnects
 
-        /// Subscribe track handler for received data
-        std::map<quicr::messages::TrackAlias, std::shared_ptr<SubscribeTrackHandler>> subscribe_handlers_;
+        /// Subscribe track handler for received data, key is track alias
+        std::map<std::uint64_t, std::shared_ptr<SubscribeTrackHandler>> subscribe_handlers_;
     };
 
 } // namespace laps

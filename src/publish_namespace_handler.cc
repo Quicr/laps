@@ -29,7 +29,7 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
-laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full_name_hash,
+laps::PublishNamespaceHandler::PublishObject(std::uint64_t track_full_name_hash,
                                              const quicr::ObjectHeaders& object_headers,
                                              quicr::BytesSpan data,
                                              std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
@@ -58,7 +58,7 @@ laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
-laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash track_full_name_hash,
+laps::PublishNamespaceHandler::ForwardPublishedData(std::uint64_t track_full_name_hash,
                                                     bool is_new_stream,
                                                     uint64_t group_id,
                                                     uint64_t subgroup_id,
@@ -85,7 +85,7 @@ laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash tra
 
 void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
-  std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks)
+  std::span<const std::tuple<std::uint64_t, uint64_t, uint64_t, uint64_t>> ordered_tracks)
 {
     if (!property_type_.has_value()) {
         return;

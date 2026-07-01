@@ -21,7 +21,7 @@ namespace laps {
 
             // Verify default configuration
             CHECK_EQ(ranking->GetMaxSelected(), 32);
-            CHECK_EQ(ranking->GetInactiveAge(), 1500);
+            CHECK_EQ(ranking->GetInactiveAge(), 10000);
         }
 
         TEST_CASE("Multiple tracks with different property values")

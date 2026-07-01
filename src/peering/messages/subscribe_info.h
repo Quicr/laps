@@ -46,7 +46,7 @@ namespace laps::peering {
         {
         }
 
-        SubscribeInfo(quicr::TrackFullNameHash, NodeIdValueType source_node_id, const quicr::TrackHash& track_hash);
+        SubscribeInfo(std::uint64_t, NodeIdValueType source_node_id, const quicr::TrackHash& track_hash);
         SubscribeInfo(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;

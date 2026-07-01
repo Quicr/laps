@@ -29,13 +29,13 @@ namespace laps {
         void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed);
 
         quicr::PublishTrackHandler::PublishObjectStatus PublishObject(
-          quicr::TrackFullNameHash track_full_name_hash,
+          std::uint64_t track_full_name_hash,
           const quicr::ObjectHeaders& object_headers,
           quicr::BytesSpan data,
           std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
 
         quicr::PublishTrackHandler::PublishObjectStatus ForwardPublishedData(
-          quicr::TrackFullNameHash track_full_name_hash,
+          std::uint64_t track_full_name_hash,
           bool is_new_stream,
           uint64_t group_id,
           uint64_t subgroup_id,
@@ -56,7 +56,7 @@ namespace laps {
          * connection IDs
          */
         virtual void UpdateTrackRanking(
-          std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks);
+          std::span<const std::tuple<std::uint64_t, uint64_t, uint64_t, uint64_t>> ordered_tracks);
 
         /*
          * Getter/Setters
@@ -84,6 +84,6 @@ namespace laps {
             std::weak_ptr<quicr::PublishTrackHandler> handler;
         };
 
-        std::map<quicr::messages::TrackAlias, ActiveTrack> published_tracks_;
+        std::map<std::uint64_t, ActiveTrack> published_tracks_; // Key is track alias
     };
 } // namespace laps

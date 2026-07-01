@@ -4,6 +4,7 @@
 
 #include <map>
 #include <set>
+#include <spdlog/spdlog.h>
 #include <unordered_map>
 #include <vector>
 
@@ -217,6 +218,6 @@ namespace laps {
          * @brief Publish namespace handlers that are related to this track ranking
          * @details Indexed by namespace hash, then by connection ID
          */
-        std::map<quicr::TrackNamespaceHash, std::map<uint64_t, std::weak_ptr<PublishNamespaceHandler>>> ns_handlers_;
+        std::map<std::uint64_t, std::map<uint64_t, std::weak_ptr<PublishNamespaceHandler>>> ns_handlers_;
     };
 }

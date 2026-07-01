@@ -51,7 +51,7 @@ namespace laps::peering {
          * @param remote                    Transport remote peer config/parameters
          */
         PeerSession(const bool is_inbound,
-                    const quicr::TransportConnId conn_id,
+                    const std::uint64_t conn_id,
                     const Config& cfg,
                     const NodeInfo& node_info,
                     const quicr::TransportRemote& remote,
@@ -83,10 +83,10 @@ namespace laps::peering {
 
         uint64_t CreateStream(SubscribeNodeSetId sns_id, uint8_t priority) const;
         void CloseStream(SubscribeNodeSetId sns_id, uint64_t stream_id, quicr::StreamClosedFlag flag);
-        void SendNodeInfo(const NodeInfo& node_info, bool withdraw = false);
-        void SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw = false);
+        void SendNodeInfo(const NodeInfo& node_info, bool withdraw = false) const;
+        void SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw = false) const;
         void SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw = false);
-        void SendSns(const SubscribeNodeSet& sns, bool withdraw = false);
+        void SendSns(const SubscribeNodeSet& sns, bool withdraw = false) const;
         void SendData(uint8_t priority,
                       uint32_t ttl,
                       SubscribeNodeSetId sns_id,
@@ -117,7 +117,7 @@ namespace laps::peering {
          * @param priority           Priority to use for the data context
          * @returns pair Subscribe Node Set Id and True if subscriber node is new or False if existing
          */
-        std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
+        std::pair<SubscribeNodeSetId, bool> AddSubscribeSourceNode(std::uint64_t full_name_hash,
                                                                    NodeIdValueType sub_node_id,
                                                                    uint8_t priority);
 
@@ -134,8 +134,7 @@ namespace laps::peering {
          * @eturns First bool indicates true if source node was removed and second indicates true if there are
          *   no subscribe nodes
          */
-        std::pair<bool, bool> RemoveSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
-                                                        NodeIdValueType sub_node_id);
+        std::pair<bool, bool> RemoveSubscribeSourceNode(std::uint64_t full_name_hash, NodeIdValueType sub_node_id);
 
         /**
          * @brief Remove subscriber source node from the peer SNS state
@@ -154,21 +153,20 @@ namespace laps::peering {
         /*
          * Delegate functions mainly for Outgoing but does include incoming
          */
-        void OnNewDataContext(const quicr::TransportConnId&, const quicr::DataContextId&) override {}
-        void OnConnectionStatus(const quicr::TransportConnId& conn_id, const quicr::TransportStatus status) override;
-        void OnNewConnection(const quicr::TransportConnId& conn_id, const quicr::TransportRemote& remote) override;
-        void OnRecvStream(const quicr::TransportConnId& conn_id,
+        void OnNewDataContext(const std::uint64_t&, const std::uint64_t&) override {}
+        void OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status) override;
+        void OnNewConnection(const std::uint64_t& conn_id, const quicr::TransportRemote& remote) override;
+        void OnRecvStream(const std::uint64_t& conn_id,
                           uint64_t stream_id,
-                          std::optional<quicr::DataContextId> data_ctx_id,
+                          std::optional<std::uint64_t> data_ctx_id,
                           const bool is_bidir = false) override;
-        void OnRecvDgram(const quicr::TransportConnId& conn_id,
-                         std::optional<quicr::DataContextId> data_ctx_id) override;
+        void OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id) override;
 
         void OnConnectionMetricsSampled(const quicr::MetricsTimeStamp sample_time,
-                                        const quicr::TransportConnId conn_id,
+                                        const std::uint64_t conn_id,
                                         const quicr::QuicConnectionMetrics& quic_connection_metrics) override;
 
-        void OnStreamClosed(const quicr::TransportConnId& connection_handle,
+        void OnStreamClosed(const std::uint64_t& connection_handle,
                             std::uint64_t stream_id,
                             std::shared_ptr<quicr::StreamRxContext> rx_context,
                             std::optional<uint64_t> request_id,
@@ -178,13 +176,13 @@ namespace laps::peering {
 
       private:
         void SendConnect();
-        void SendConnectOk();
+        void SendConnectOk() const;
 
         void ProcessControlMessage();
 
         bool ProcessReceivedData(std::optional<uint64_t> stream_id,
                                  std::any& ctx,
-                                 std::shared_ptr<const std::vector<uint8_t>> data);
+                                 std::shared_ptr<const std::vector<uint8_t>> data) const;
 
       public:
         quicr::TransportRemote peer_config_;
@@ -212,16 +210,16 @@ namespace laps::peering {
         };
 
         /// Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)
-        std::map<quicr::TrackFullNameHash, SubscribeNodeSet> sub_sns_;
+        std::map<std::uint64_t, SubscribeNodeSet> sub_sns_;
 
         /// Map of subscriber source nodes initiated by peer ingress SNS.
         /// Key is the ingress peer session ID and SNS ID, value is the SNS egress via this peer
         std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, SubscribeNodeSet> peer_sns_;
 
-        quicr::TransportConnId t_conn_id_;         /// Transport connection context ID (aka peer session id)
-        quicr::DataContextId control_data_ctx_id_; /// Control data context ID
-        uint64_t control_stream_id_{ 0 };          /// control bidir stream
-        std::vector<uint8_t> controL_msg_buffer_;  /// Working buffer of control message being processed
+        std::uint64_t t_conn_id_;                 /// Transport connection context ID (aka peer session id)
+        std::uint64_t control_data_ctx_id_;       /// Control data context ID
+        uint64_t control_stream_id_{ 0 };         /// control bidir stream
+        std::vector<uint8_t> controL_msg_buffer_; /// Working buffer of control message being processed
 
         std::shared_ptr<quicr::ITransport> transport_; /// Transport used for the peering connection
     };

@@ -11,9 +11,8 @@ TEST_CASE("Serialize Announce Info")
     AnnounceInfo announce_info;
     announce_info.source_node_id = 0xff00aabbcc;
 
-    announce_info.name_space =
-      quicr::messages::TrackNamespace{ "abc"s, "12345"s, "third tuple"s, "now the final tuple"s };
-    announce_info.name = quicr::messages::TrackName{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    announce_info.name_space = quicr::TrackNamespace{ "abc"s, "12345"s, "third tuple"s, "now the final tuple"s };
+    announce_info.name = std::vector<uint8_t>{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
     announce_info.fullname_hash = 0x9876543210;
 
     auto net_data = announce_info.Serialize(false);

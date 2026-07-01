@@ -11,7 +11,7 @@
 
 namespace laps {
     SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
-                                                 quicr::messages::ObjectPriority priority,
+                                                 std::uint64_t priority,
                                                  std::optional<quicr::messages::GroupOrder> group_order,
                                                  ClientManager& server,
                                                  std::weak_ptr<timeq::tick_service> tick_service,
@@ -69,8 +69,8 @@ namespace laps {
         }
     }
 
-    void SubscribeTrackHandler::AddSubscriber(quicr::ConnectionHandle conn_handle,
-                                              quicr::messages::RequestID request_id,
+    void SubscribeTrackHandler::AddSubscriber(std::uint64_t conn_handle,
+                                              std::uint64_t request_id,
                                               uint8_t priority,
                                               std::chrono::milliseconds delivery_timeout,
                                               quicr::messages::Location start_location)
@@ -102,7 +102,7 @@ namespace laps {
         Resume();
     }
 
-    void SubscribeTrackHandler::RemoveSubscriber(quicr::ConnectionHandle conn_handle)
+    void SubscribeTrackHandler::RemoveSubscriber(std::uint64_t conn_handle)
     {
         auto it = subscribers_.find(conn_handle);
         if (it != subscribers_.end()) {
@@ -180,7 +180,7 @@ namespace laps {
             if (server_.cache_.count(GetTrackAlias().value()) == 0) {
                 server_.cache_.insert(
                   std::make_pair(GetTrackAlias().value(),
-                                 quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>{
+                                 quicr::Cache<std::uint64_t, std::set<CacheObject>>{
                                    server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
             }
 
@@ -327,10 +327,14 @@ namespace laps {
                 *stream.next_object_id += 1;
                 stream.buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
 
-                auto remaining_data = std::make_shared<std::vector<uint8_t>>(stream.buffer.Front(stream.buffer.Size()));
-                if (!remaining_data->empty()) {
+                auto remaining_data = stream.buffer.Front(stream.buffer.Size());
+                if (!remaining_data.empty()) {
                     SPDLOG_DEBUG("Bytes remaining being forwarded: {}", stream.buffer.Size());
-                    ForwardReceivedData(is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), remaining_data);
+                    ForwardReceivedData(
+                      is_start,
+                      s_hdr.group_id,
+                      s_hdr.subgroup_id.value_or(0),
+                      std::make_shared<std::vector<uint8_t>>(remaining_data.begin(), remaining_data.end()));
                 }
             }
 

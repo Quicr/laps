@@ -107,7 +107,7 @@ namespace laps::peering {
          * @returns a set of announce source node Ids
          */
         std::set<NodeIdValueType> GetAnnounceIds(quicr::TrackNamespace name_space,
-                                                 quicr::messages::TrackName name,
+                                                 std::vector<uint8_t> name,
                                                  bool exact);
 
         /**
@@ -146,7 +146,7 @@ namespace laps::peering {
          */
         std::unordered_map<NodeIdValueType, std::weak_ptr<PeerSession>> nodes_best_;
 
-        std::map<quicr::TrackFullNameHash, std::map<NodeIdValueType, SubscribeInfo>> subscribes_;
+        std::map<std::uint64_t, std::map<NodeIdValueType, SubscribeInfo>> subscribes_;
 
         struct FibEntry
         {
@@ -166,7 +166,7 @@ namespace laps::peering {
          *
          *   Key is the track full name hash and the egress peer session id
          */
-        std::map<std::pair<quicr::TrackFullNameHash, PeerSessionId>, FibEntry> client_fib_;
+        std::map<std::pair<std::uint64_t, PeerSessionId>, FibEntry> client_fib_;
 
         /**
          * @brief Peer forwarding information base (table)
@@ -185,7 +185,7 @@ namespace laps::peering {
          *
          * @details State map tracks both PUBLISH and PUBLISH_NAMESPACE. Name does not have to be defined.
          */
-        std::map<quicr::TrackFullNameHash, std::map<NodeIdValueType, AnnounceInfo>> announces_;
+        std::map<std::uint64_t, std::map<NodeIdValueType, AnnounceInfo>> announces_;
 
         /**
          * @brief State map of prefix matchable tuple hashes to full announce namespace/name hash
@@ -199,7 +199,7 @@ namespace laps::peering {
          *      that matches the lookup prefix hash.  The vaule is a set of full hash values to be used
          *      to find in the announces_ state map.
          */
-        std::map<quicr::TrackNamespaceHash, std::set<quicr::TrackNamespaceHash>> prefix_lookup_announces_;
+        std::map<std::uint64_t, std::set<std::uint64_t>> prefix_lookup_announces_;
 
         /**
          * @brief Nodes by peer session id
