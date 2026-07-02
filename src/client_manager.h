@@ -58,10 +58,10 @@ namespace laps {
 
         void NewConnectionAccepted(std::uint64_t connection_handle, const ConnectionRemoteInfo& remote) override;
 
-        void SubscribeNamespaceReceived(std::uint64_t connection_handle,
-                                        std::uint64_t data_ctx_id,
-                                        const quicr::TrackNamespace& prefix_namespace,
-                                        const quicr::messages::SubscribeNamespaceAttributes& attributes) override;
+        void SubscribeTracksReceived(std::uint64_t connection_handle,
+                                     std::uint64_t data_ctx_id,
+                                     const quicr::TrackNamespace& prefix_namespace,
+                                     const quicr::messages::SubscribeNamespaceAttributes& attributes) override;
 
         void UnsubscribeNamespaceReceived(std::uint64_t connection_handle,
                                           const quicr::TrackNamespace& prefix_namespace) override;

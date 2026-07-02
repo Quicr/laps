@@ -385,10 +385,10 @@ namespace laps {
         }
     }
 
-    void ClientManager::SubscribeNamespaceReceived(std::uint64_t connection_handle,
-                                                   std::uint64_t data_ctx_id,
-                                                   const quicr::TrackNamespace& prefix_namespace,
-                                                   const quicr::messages::SubscribeNamespaceAttributes& attributes)
+    void ClientManager::SubscribeTracksReceived(std::uint64_t connection_handle,
+                                                std::uint64_t data_ctx_id,
+                                                const quicr::TrackNamespace& prefix_namespace,
+                                                const quicr::messages::SubscribeNamespaceAttributes& attributes)
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
@@ -401,7 +401,7 @@ namespace laps {
 
         if (is_new) {
             SPDLOG_INFO(
-              "Subscribe namespace received connection handle: {} for namespace_hash: {} prefix: {}, adding to state",
+              "Subscribe tracks received connection handle: {} for namespace_hash: {} prefix: {}, adding to state",
               connection_handle,
               th.track_namespace_hash,
               prefix_namespace.Str());
@@ -414,7 +414,7 @@ namespace laps {
                 ranks_it->second->SetInactiveAge(tf->timeout);
             }
 
-            SPDLOG_INFO("Subscribe namespace track filter: property_type={} max_tracks={} timeout={}ms",
+            SPDLOG_INFO("Subscribe tracks track filter: property_type={} max_tracks={} timeout={}ms",
                         tf->property_type,
                         tf->max_tracks_selected,
                         tf->timeout);
@@ -422,7 +422,7 @@ namespace laps {
             handler->SetInactiveAge(tf->timeout);
             handler->SetPropertyType(tf->property_type);
         } else {
-            SPDLOG_INFO("Subscribe namespace has no track filter, using defaults");
+            SPDLOG_INFO("Subscribe tracks has no track filter, using defaults");
         }
 
         ranks_it->second->AddNamespaceHandler(handler);
@@ -442,7 +442,7 @@ namespace laps {
         const quicr::SubscribeNamespaceResponse response = { .reason_code =
                                                                quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
                                                              .namespaces = std::move(matched_ns) };
-        ResolveSubscribeNamespace(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
+        ResolveSubscribeTracks(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
 
         // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
         //  subscribes
@@ -479,7 +479,7 @@ namespace laps {
 
                 SPDLOG_LOGGER_DEBUG(
                   LOGGER,
-                  "Matched PUBLISH track for SUBSCRIBE_NAMESPACE: conn: {} track_alias: {} track_hash: {}",
+                  "Matched PUBLISH track for SUBSCRIBE_TRACKS: conn: {} track_alias: {} track_hash: {}",
                   connection_handle,
                   ta_conn.first,
                   quicr::TrackHash(track_full_name).track_fullname_hash);
