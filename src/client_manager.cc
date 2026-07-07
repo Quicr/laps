@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 Cisco Systems
 // SPDX-License-Identifier: BSD-2-Clause
 
+#include <quicr/handlers/subscribe_track_handler.h>
 #include <quicr/session.h>
-#include <quicr/subscribe_track_handler.h>
 
-#include <quicr/defer.h>
+#include <quicr/utilities/defer.h>
 
 #include "client_manager.h"
 #include "config.h"
@@ -254,7 +254,7 @@ namespace laps {
 
     void ClientManager::PublishReceived(std::uint64_t connection_handle,
                                         uint64_t request_id,
-                                        const quicr::messages::PublishAttributes& publish_attributes,
+                                        const quicr::PublishAttributes& publish_attributes,
                                         [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
     {
         bool is_from_peer = !connection_handle && !request_id;
@@ -388,7 +388,7 @@ namespace laps {
     void ClientManager::SubscribeNamespaceReceived(std::uint64_t connection_handle,
                                                    std::uint64_t data_ctx_id,
                                                    const quicr::TrackNamespace& prefix_namespace,
-                                                   const quicr::messages::SubscribeNamespaceAttributes& attributes)
+                                                   const quicr::SubscribeNamespaceAttributes& attributes)
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
@@ -817,7 +817,7 @@ namespace laps {
     void ClientManager::SubscribeReceived(std::uint64_t connection_handle,
                                           uint64_t request_id,
                                           const quicr::FullTrackName& track_full_name,
-                                          const quicr::messages::SubscribeAttributes& attrs)
+                                          const quicr::SubscribeAttributes& attrs)
     {
         auto th = quicr::TrackHash(track_full_name);
 
@@ -1083,7 +1083,7 @@ namespace laps {
     void ClientManager::StandaloneFetchReceived(std::uint64_t connection_handle,
                                                 uint64_t request_id,
                                                 const quicr::FullTrackName& track_full_name,
-                                                const quicr::messages::StandaloneFetchAttributes& attributes)
+                                                const quicr::StandaloneFetchAttributes& attributes)
     {
         FetchReceived(connection_handle,
                       request_id,
@@ -1097,7 +1097,7 @@ namespace laps {
     void ClientManager::JoiningFetchReceived(std::uint64_t connection_handle,
                                              uint64_t request_id,
                                              const quicr::FullTrackName& track_full_name,
-                                             const quicr::messages::JoiningFetchAttributes& attributes)
+                                             const quicr::JoiningFetchAttributes& attributes)
     {
         std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
 
@@ -1224,7 +1224,7 @@ namespace laps {
                                          uint64_t request_id,
                                          const quicr::TrackHash& th,
                                          const quicr::FullTrackName& track_full_name,
-                                         const quicr::messages::SubscribeAttributes& attrs,
+                                         const quicr::SubscribeAttributes& attrs,
                                          std::optional<quicr::messages::Location> largest)
     {
 
@@ -1399,16 +1399,20 @@ namespace laps {
 
     void ClientManager::MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics)
     {
+        const auto publish_track_count = state_.PublishTrackCount(connection_handle);
+
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Metrics connection handle: {0}"
-                            " rtt_us: {1}"
-                            " srtt_us: {2}"
-                            " rate_bps: {3}"
-                            " lost pkts: {4}",
+                            "Metrics connection handle: {}"
+                            " rtt_us: {}"
+                            " srtt_us: {}"
+                            " rate_bps: {}"
+                            " lost pkts: {}"
+                            " publish tracks: {}",
                             connection_handle,
                             metrics.quic.rtt_us.max,
                             metrics.quic.srtt_us.max,
                             metrics.quic.tx_rate_bps.max,
-                            metrics.quic.tx_lost_pkts);
+                            metrics.quic.tx_lost_pkts,
+                            publish_track_count);
     }
 }

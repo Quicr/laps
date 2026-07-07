@@ -144,7 +144,7 @@ namespace laps::peering {
                                    subscribe_info.track_hash.track_fullname_hash);
 
                 if (client_manager_ != nullptr) {
-                    quicr::messages::SubscribeAttributes s_attrs;
+                    quicr::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
                     s_attrs.new_group_request_id = ngr_id;
 
@@ -275,20 +275,19 @@ namespace laps::peering {
         } else { // PUBLISH
             if (!withdraw) {
                 // TODO: Add defaults to announce info from original PUBLISH, but for now it's not needed
-                quicr::messages::PublishAttributes attrs{
-                    .track_full_name = { announce_info.name_space, announce_info.name },
-                    .track_alias = announce_info.fullname_hash,
-                    .auth_tokens = {},
-                    .expires = std::nullopt,
-                    .largest_object = std::nullopt,
-                    .forward = true,
-                    .default_publisher_group_order = quicr::messages::GroupOrder::kAscending,
-                    .dynamic_groups = true,
-                    .default_publisher_priority = 64,
-                    .max_cache_duration = std::nullopt,
-                    .delivery_timeout = kDefaultObjectTtl,
-                    .track_properties = {}
-                };
+                quicr::PublishAttributes attrs{ .track_full_name = { announce_info.name_space, announce_info.name },
+                                                .track_alias = announce_info.fullname_hash,
+                                                .auth_tokens = {},
+                                                .expires = std::nullopt,
+                                                .largest_object = std::nullopt,
+                                                .forward = true,
+                                                .default_publisher_group_order =
+                                                  quicr::messages::GroupOrder::kAscending,
+                                                .dynamic_groups = true,
+                                                .default_publisher_priority = 64,
+                                                .max_cache_duration = std::nullopt,
+                                                .delivery_timeout = kDefaultObjectTtl,
+                                                .track_properties = {} };
 
                 client_manager_->PublishReceived(0, 0, attrs, {});
             } else {
@@ -633,7 +632,7 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientSubscribeUpdate(const quicr::FullTrackName& track_full_name,
-                                            const quicr::messages::SubscribeAttributes& attrs)
+                                            const quicr::SubscribeAttributes& attrs)
     {
         auto tfn = track_full_name;
         auto th = quicr::TrackHash(tfn);
@@ -710,7 +709,7 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
-                                      const quicr::messages::SubscribeAttributes& attrs,
+                                      const quicr::SubscribeAttributes& attrs,
                                       std::span<const uint8_t> subscribe_data)
     {
         auto tfn = track_full_name;
@@ -824,7 +823,7 @@ namespace laps::peering {
                                 continue;
 
                             if (auto cm = client_manager_) {
-                                quicr::messages::SubscribeAttributes s_attrs;
+                                quicr::SubscribeAttributes s_attrs;
                                 s_attrs.priority = 10;
                                 s_attrs.new_group_request_id =
                                   parameters.GetOptional<bool>(quicr::messages::ParameterType::kNewGroupRequest);

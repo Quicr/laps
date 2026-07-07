@@ -8,7 +8,7 @@
 #include "peering/messages/subscribe_info.h"
 
 #include <map>
-#include <quicr/detail/messages.h>
+#include <quicr/messages/messages.h>
 #include <set>
 
 namespace laps::peering {

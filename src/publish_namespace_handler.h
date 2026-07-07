@@ -1,9 +1,7 @@
 #pragma once
 
-#include "quicr/publish_namespace_handler.h"
+#include "quicr/handlers/publish_namespace_handler.h"
 #include "quicr/track_name.h"
-
-#include <unordered_map>
 
 namespace laps {
     class PublishTrackHandler;

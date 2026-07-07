@@ -3,7 +3,7 @@
 
 #include "fetch_handler.h"
 #include "config.h"
-#include <quicr/fetch_track_handler.h>
+#include <quicr/handlers/fetch_track_handler.h>
 #include <quicr/session.h>
 
 namespace laps {

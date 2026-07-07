@@ -3,8 +3,8 @@
 #pragma once
 
 #include <map>
-#include <quicr/detail/safe_queue.h>
-#include <quicr/detail/transport.h>
+#include <quicr/containers/safe_queue.h>
+#include <quicr/transport.h>
 #include <thread>
 
 #include "config.h"
@@ -67,11 +67,10 @@ namespace laps::peering {
             ClientAnnounce(full_track_name, {}, true);
         }
 
-        void ClientSubscribeUpdate(const quicr::FullTrackName& track_full_name,
-                                   const quicr::messages::SubscribeAttributes&);
+        void ClientSubscribeUpdate(const quicr::FullTrackName& track_full_name, const quicr::SubscribeAttributes&);
 
         void ClientSubscribe(const quicr::FullTrackName& track_full_name,
-                             const quicr::messages::SubscribeAttributes&,
+                             const quicr::SubscribeAttributes&,
                              std::span<const uint8_t> subscribe_data);
 
         void ClientUnsubscribe(uint64_t track_fullname_hash);

@@ -58,7 +58,7 @@ namespace laps {
         std::map<std::pair<std::uint64_t, std::uint64_t>, std::shared_ptr<SubscribeTrackHandler>> pub_subscribes;
 
         /**
-         * Active publisher initiated subscribes by request Id
+         * Active publisher initiated subscribes by request Id and connection handle
          */
         std::map<std::pair<uint64_t, std::uint64_t>, std::shared_ptr<SubscribeTrackHandler>> pub_subscribes_by_req_id;
 
@@ -81,6 +81,31 @@ namespace laps {
             std::optional<quicr::messages::GroupOrder> group_order;
             quicr::messages::Location start_location;
         };
+
+        /**
+         * @brief Get the count of publish tracks
+         *
+         * @param connection_handle     Connection handle/id
+         *
+         * @return Number of publishing tracks per the connection
+         */
+        std::size_t PublishTrackCount(std::uint64_t connection_handle)
+        {
+            std::size_t count = 0;
+
+            std::lock_guard _(state_mutex);
+
+            for (const auto& subscribe : pub_subscribes) {
+                const auto& key = subscribe.first;
+                const auto stored_connection_handle = key.second;
+
+                if (stored_connection_handle == connection_handle) {
+                    ++count;
+                }
+            }
+
+            return count;
+        }
 
         /**
          * Active subscriber publish tracks for a given track, indexed (keyed) by track_alias, connection handle
