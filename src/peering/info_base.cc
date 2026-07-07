@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "info_base.h"
-#include <quicr/hash.h>
+#include <quicr/utilities/hash.h>
 
 namespace laps::peering {
     bool InfoBase::AddNode(std::shared_ptr<PeerSession> peer_session, const NodeInfo& node_info)

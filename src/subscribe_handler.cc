@@ -6,8 +6,8 @@
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 
+#include <quicr/handlers/subscribe_track_handler.h>
 #include <quicr/session.h>
-#include <quicr/subscribe_track_handler.h>
 
 namespace laps {
     SubscribeTrackHandler::SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
@@ -527,5 +527,11 @@ namespace laps {
     void SubscribeTrackHandler::SetFromPeer()
     {
         is_from_peer_ = true;
+    }
+
+    void SubscribeTrackHandler::MetricsSampled(const quicr::SubscribeTrackMetrics& metrics)
+    {
+        const auto tfn = GetFullTrackName();
+        SPDLOG_DEBUG("track: {} ({}) metrics subscribers: {} ", tfn.NamespaceStr(), tfn.NameStr(), subscribers_.size());
     }
 }

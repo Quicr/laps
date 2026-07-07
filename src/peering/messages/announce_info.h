@@ -4,8 +4,7 @@
 
 #include "node_info.h"
 #include "peering/common.h"
-#include "quicr/detail/base_track_handler.h"
-#include "quicr/hash.h"
+#include "quicr/handlers/base_track_handler.h"
 
 #include <set>
 

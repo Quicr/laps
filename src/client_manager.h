@@ -4,7 +4,7 @@
 
 #include "track_ranking.h"
 #include <peering/peer_manager.h>
-#include <quicr/cache.h>
+#include <quicr/containers/cache.h>
 #include <quicr/session.h>
 
 #include <functional>
@@ -61,7 +61,7 @@ namespace laps {
         void SubscribeTracksReceived(std::uint64_t connection_handle,
                                      std::uint64_t data_ctx_id,
                                      const quicr::TrackNamespace& prefix_namespace,
-                                     const quicr::messages::SubscribeNamespaceAttributes& attributes) override;
+                                     const quicr::SubscribeNamespaceAttributes& attributes) override;
 
         void UnsubscribeNamespaceReceived(std::uint64_t connection_handle,
                                           const quicr::TrackNamespace& prefix_namespace) override;
@@ -83,7 +83,7 @@ namespace laps {
         void SubscribeReceived(std::uint64_t connection_handle,
                                uint64_t request_id,
                                const quicr::FullTrackName& track_full_name,
-                               const quicr::messages::SubscribeAttributes&) override;
+                               const quicr::SubscribeAttributes&) override;
 
         void NewGroupRequested(const quicr::FullTrackName& track_full_name, std::uint64_t group_id) override;
 
@@ -98,23 +98,23 @@ namespace laps {
         void StandaloneFetchReceived(std::uint64_t connection_handle,
                                      uint64_t request_id,
                                      const quicr::FullTrackName& track_full_name,
-                                     const quicr::messages::StandaloneFetchAttributes& attributes) override;
+                                     const quicr::StandaloneFetchAttributes& attributes) override;
 
         void JoiningFetchReceived(std::uint64_t connection_handle,
                                   uint64_t request_id,
                                   const quicr::FullTrackName& track_full_name,
-                                  const quicr::messages::JoiningFetchAttributes& attributes) override;
+                                  const quicr::JoiningFetchAttributes& attributes) override;
 
         void PublishReceived(std::uint64_t connection_handle,
                              uint64_t request_id,
-                             const quicr::messages::PublishAttributes& publish_attributes,
+                             const quicr::PublishAttributes& publish_attributes,
                              std::weak_ptr<quicr::SubscribeNamespaceHandler> ns_handler) override;
 
         void ProcessSubscribe(std::uint64_t connection_handle,
                               uint64_t request_id,
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
-                              const quicr::messages::SubscribeAttributes&,
+                              const quicr::SubscribeAttributes&,
                               std::optional<quicr::messages::Location>);
 
         void PeerDataReceived(std::uint64_t track_full_name_hash,

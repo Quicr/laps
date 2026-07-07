@@ -3,8 +3,7 @@
 #include "client_manager.h"
 
 #include <quicr/common.h>
-#include <quicr/fetch_track_handler.h>
-#include <quicr/object.h>
+#include <quicr/handlers/fetch_track_handler.h>
 
 namespace laps {
     /**

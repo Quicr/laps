@@ -5,8 +5,8 @@
 #include "peering/common.h"
 #include "subscribe_info.h"
 
-#include <quicr/detail/messages.h>
-#include <quicr/detail/uintvar.h>
+#include <quicr/messages/messages.h>
+#include <quicr/messages/uintvar.h>
 
 namespace laps::peering {
 

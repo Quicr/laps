@@ -3,9 +3,7 @@
 
 #pragma once
 
-#include <quicr/detail/uintvar.h>
-
-#include <iostream>
+#include <quicr/messages/uintvar.h>
 #include <quicr/track_name.h>
 
 namespace laps::peering {

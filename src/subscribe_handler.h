@@ -3,9 +3,8 @@
 #include "client_manager.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/common.h>
-#include <quicr/object.h>
-#include <quicr/subscribe_track_handler.h>
+#include <quicr/handlers/subscribe_track_handler.h>
+#include <quicr/messages/object.h>
 
 #include <map>
 
@@ -37,6 +36,7 @@ namespace laps {
         void ObjectReceived(const quicr::ObjectHeaders& object_headers,
                             quicr::BytesSpan data,
                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
+        void MetricsSampled(const quicr::SubscribeTrackMetrics& metrics) override;
 
         void StatusChanged(Status status) override;
 
