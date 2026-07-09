@@ -4,11 +4,13 @@ LAPS publishes relay metrics over MoQ tracks as newline-delimited JSON. Metrics 
 
 ## Transport
 
-The metrics publisher starts when the relay starts and stops with the relay. Each `MetricsSampled()` callback serializes the sample to one JSON object plus a trailing newline and pushes it into a `quicr::SafeQueue`. The metrics thread blocks on that queue and publishes each JSON line with `PublishTrack`.
+The metrics publisher starts when the relay starts and stops with the relay. Each `MetricsSampled()` callback serializes the sample to one JSON object plus a trailing newline and pushes it into a `quicr::SafeQueue`. The metrics thread blocks on that queue and publishes each JSON line through relay-local publish tracks.
 
 The queue is bounded. If the queue is full, the oldest queued sample is dropped and the new sample is kept.
 
-Metrics are published as MoQ objects using datagram track mode. Object IDs increase per metrics track, with `group_id` set to `0`.
+The relay registers the metrics tracks as self-published tracks using connection handle `0`; it does not publish metrics back through the client connection that emitted the sample. Normal `SUBSCRIBE` and `SUBSCRIBE_TRACKS` matching then forwards metrics objects to interested subscribers the same way it forwards objects from other publishers.
+
+Metrics are forwarded as MoQ objects using datagram track mode. Object IDs increase per metrics track, with `group_id` set to `0`.
 
 ## Tracks
 
@@ -184,4 +186,3 @@ Publish `quic` fields:
 | `tx_object_duration_us` | Object time in queue in microseconds. |
 
 `tx_queue_size`, `tx_callback_ms`, and `tx_object_duration_us` use the min/max/average object shape.
-

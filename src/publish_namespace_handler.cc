@@ -93,7 +93,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
     // Update latest tick for each publish track
     for (auto& [ta, insert_seq_num, latest_tick, conn_id] : ordered_tracks) {
-        SPDLOG_DEBUG("DEBUG: conn_id: {} ta: {} insert_seq_num: {} latest_tick: {}",
+        SPDLOG_TRACE("DEBUG: conn_id: {} ta: {} insert_seq_num: {} latest_tick: {}",
                      GetConnectionId(),
                      ta,
                      insert_seq_num,
@@ -113,7 +113,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
         // Filter out self-tracks
         if (publisher_conn_id == GetConnectionId()) {
-            SPDLOG_DEBUG("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
+            SPDLOG_TRACE("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
             continue;
         }
 

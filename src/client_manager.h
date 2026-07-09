@@ -6,7 +6,9 @@
 #include "track_ranking.h"
 #include <peering/peer_manager.h>
 #include <quicr/containers/cache.h>
+#include <quicr/messages/object.h>
 #include <quicr/session.h>
+#include <quicr/utilities/bytes.h>
 
 #include <functional>
 #include <set>
@@ -121,6 +123,10 @@ namespace laps {
                               const quicr::FullTrackName& track_full_name,
                               const quicr::SubscribeAttributes&,
                               std::optional<quicr::messages::Location>);
+
+        bool PublishLocalObject(std::uint64_t track_fullname_hash,
+                                const quicr::ObjectHeaders& object_headers,
+                                quicr::BytesSpan data);
 
         void PeerDataReceived(std::uint64_t track_full_name_hash,
                               bool is_new_stream,

@@ -73,20 +73,6 @@ namespace laps {
     {
         const auto tfn = GetFullTrackName();
         server_.metrics_publisher_.QueuePublishMetrics(GetConnectionId(), tfn, metrics);
-
-        SPDLOG_DEBUG("Metrics track: {} ({})"
-                     " objects sent: {}"
-                     " bytes sent: {}"
-                     " object duration us: {}"
-                     " queue discards: {}"
-                     " queue size: {}",
-                     tfn.NamespaceStr(),
-                     tfn.NameStr(),
-                     metrics.objects_published,
-                     metrics.bytes_published,
-                     metrics.quic.tx_object_duration_us.avg,
-                     metrics.quic.tx_queue_discards,
-                     metrics.quic.tx_queue_size.avg);
     }
 
     bool PublishTrackHandler::SentFirstObject(uint32_t group_id, uint32_t subgroup_id)

@@ -5,7 +5,6 @@
 
 #include "config.h"
 
-#include <quicr/handlers/publish_track_handler.h>
 #include <quicr/containers/safe_queue.h>
 #include <quicr/metrics.h>
 #include <quicr/session.h>
@@ -18,15 +17,18 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace laps {
+    class ClientManager;
+
     /**
      * @brief Publishes relay metrics samples as JSON lines over MoQ tracks.
      */
     class MetricsPublisher
     {
       public:
-        MetricsPublisher(quicr::Session& session, const Config& config);
+        MetricsPublisher(ClientManager& server, const Config& config);
         ~MetricsPublisher();
 
         MetricsPublisher(const MetricsPublisher&) = delete;
@@ -66,7 +68,8 @@ namespace laps {
 
         struct TrackState
         {
-            std::shared_ptr<quicr::PublishTrackHandler> handler;
+            quicr::FullTrackName full_track_name;
+            std::uint64_t track_fullname_hash{ 0 };
             std::uint64_t next_object_id{ 0 };
         };
 
@@ -80,23 +83,23 @@ namespace laps {
 
         void Run();
         void PublishSample(const MetricsSample& sample);
-        void EnsureMetricsTracks(std::uint64_t connection_handle);
-        std::shared_ptr<quicr::PublishTrackHandler> CreateTrackHandler(MetricType type) const;
+        void EnsureMetricsTracks();
         quicr::FullTrackName FullTrackNameFor(MetricType type) const;
+        std::string MetricsNamespaceStr() const;
         static const char* TypeName(MetricType type);
 
         bool QueueSample(MetricsSample sample);
 
-        quicr::Session& session_;
+        ClientManager& server_;
         const Config& config_;
-        quicr::TrackNamespace metrics_namespace_;
+        std::vector<std::string> metrics_namespace_entries_;
 
         quicr::SafeQueue<MetricsSample> queue_{ kQueueLimit };
         std::atomic_bool running_{ false };
         std::thread worker_;
 
         std::mutex tracks_mutex_;
-        std::map<std::uint64_t, std::map<MetricType, TrackState>> tracks_by_connection_;
+        std::map<MetricType, TrackState> tracks_;
         std::map<std::uint64_t, RemoteInfo> remote_by_connection_;
     };
 } // namespace laps

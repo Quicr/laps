@@ -83,7 +83,7 @@ namespace laps {
             // Rebuild if track moved buckets or new bucket was created
             needs_rebuild = needs_rebuild || inserted;
 
-            SPDLOG_DEBUG("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
+            SPDLOG_TRACE("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
                          track_alias,
                          prop,
                          value,

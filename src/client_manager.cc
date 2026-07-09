@@ -1397,6 +1397,19 @@ namespace laps {
         }
     }
 
+    bool ClientManager::PublishLocalObject(std::uint64_t track_fullname_hash,
+                                           const quicr::ObjectHeaders& object_headers,
+                                           quicr::BytesSpan data)
+    {
+        const auto it = state_.pub_subscribes.find({ track_fullname_hash, 0 });
+        if (it == state_.pub_subscribes.end() || !it->second) {
+            return false;
+        }
+
+        it->second->ObjectReceived(object_headers, data);
+        return true;
+    }
+
     void ClientManager::PeerDataReceived(std::uint64_t track_full_name_hash,
                                          bool is_new_stream,
                                          std::optional<uint64_t> stream_id,
@@ -1428,19 +1441,5 @@ namespace laps {
     {
         const auto publish_track_count = state_.PublishTrackCount(connection_handle);
         metrics_publisher_.QueueConnectionMetrics(connection_handle, publish_track_count, metrics);
-
-        SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Metrics connection handle: {}"
-                            " rtt_us: {}"
-                            " srtt_us: {}"
-                            " rate_bps: {}"
-                            " lost pkts: {}"
-                            " publish tracks: {}",
-                            connection_handle,
-                            metrics.quic.rtt_us.max,
-                            metrics.quic.srtt_us.max,
-                            metrics.quic.tx_rate_bps.max,
-                            metrics.quic.tx_lost_pkts,
-                            publish_track_count);
     }
 }
