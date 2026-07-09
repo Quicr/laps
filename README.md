@@ -104,6 +104,77 @@ cd build/src
 ./lapsRelay
 ```
 
+## Relay Health Check
+
+The `relay_health_check` program can be used to monitor `lapsRelay`, or any other MOQT relay that supports the
+same publish/subscribe behavior. The probe connects as both a publisher and subscriber, publishes a small object,
+and verifies that the subscriber receives the same payload.
+
+Build the local binary with:
+
+```
+make build
+```
+
+Run the probe directly:
+
+```
+./build/src/relay_health_check \
+  --uri moq://laps-relay:12345/relay \
+  --timeout-ms 5000 \
+  --namespace libquicr/health \
+  --message "libquicr relay health check"
+```
+
+The same settings can be supplied with environment variables:
+
+```
+LIBQUICR_RELAY_HEALTH_URI=moq://laps-relay:12345/relay \
+LIBQUICR_RELAY_HEALTH_TIMEOUT_MS=5000 \
+LIBQUICR_RELAY_HEALTH_NAMESPACE=libquicr/health \
+LIBQUICR_RELAY_HEALTH_MESSAGE="libquicr relay health check" \
+./build/src/relay_health_check
+```
+
+The probe prints `ok` on success. On failure it prints `error`; additional failure details are written after that.
+
+### Health Check Docker Image
+
+The `healthcheck.Dockerfile` image runs an HTTP wrapper around `relay_health_check`. A plain HTTP `GET` returns:
+
+```
+ok
+```
+
+or, if the probe fails:
+
+```
+error
+
+<details>
+```
+
+Build health-check images with:
+
+```
+make image-healthcheck-amd64
+make image-healthcheck-arm64
+```
+
+Run the HTTP health-check container:
+
+```
+docker run --rm -p 8080:8080 \
+  -e LIBQUICR_RELAY_HEALTH_URI=moq://laps-relay:12345/relay \
+  quicr/healthcheck:<version>-amd64
+```
+
+Check it with:
+
+```
+curl http://localhost:8080/
+```
+
 ## Build with Docker
 
 To build an image, make sure to have docker running. 
@@ -347,4 +418,3 @@ RUN 'journalctl -u laps.service -f' to tail laps relay log
 ## Discovery using mDNS
 
 See [docs/discovery.md](docs/discovery.md) for details on how to setup and use mDNS
-
