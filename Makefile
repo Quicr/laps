@@ -7,11 +7,12 @@
 BUILD_JOBS?=4
 BUILD_DIR?=build
 ECR_NAME?=laps-relay
+HEALTHCHECK_ECR_NAME?=healthcheck
 CLANG_FORMAT=clang-format -i
 
 PROJECTNAME := laps
 
-.PHONY: all clean cclean format docs
+.PHONY: all clean cclean format docs image-healthcheck image-healthcheck-amd64 image-healthcheck-arm64 publish-healthcheck publish-healthcheck-amd64 publish-healthcheck-arm64
 
 # -----------------------------------------
 # Help/other targets
@@ -73,7 +74,7 @@ docker-prep:
 	@echo "Prep normally requires submodule update, but skipping considering possible custom changes"
 #	@git submodule update --init --recursive
 
-## image-amd64: Create AMD64 docker image∂
+## image-amd64: Create AMD64 docker image
 image-amd64: docker-prep
 	@docker buildx build --progress=plain \
 			--output type=docker --platform linux/amd64 \
@@ -110,6 +111,21 @@ image-arm64: docker-prep
 			--output type=docker --platform linux/arm64 \
 			-f Dockerfile -t quicr/${ECR_NAME}:${DOCKER_TAG}-arm64 .
 
+## image-healthcheck: Create AMD64 and ARM64 relay health-check docker images
+image-healthcheck: image-healthcheck-amd64 image-healthcheck-arm64
+
+## image-healthcheck-amd64: Create AMD64 relay health-check docker image
+image-healthcheck-amd64: docker-prep
+	@docker buildx build --progress=plain \
+			--output type=docker --platform linux/amd64 \
+			-f healthcheck.Dockerfile -t quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-amd64 .
+
+## image-healthcheck-arm64: Create ARM64 relay health-check docker image
+image-healthcheck-arm64: docker-prep
+	@docker buildx build --progress=plain \
+			--output type=docker --platform linux/arm64 \
+			-f healthcheck.Dockerfile -t quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-arm64 .
+
 ecr-login:
 	@echo "==> Logging into ECR using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
 	@docker run --rm \
@@ -134,4 +150,21 @@ publish-image-arm64: ecr-login
 	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-arm64 to ECR"
 	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${ECR_NAME}:${DOCKER_TAG}-arm64
 
+## publish-healthcheck: Publish amd64 and arm64 relay health-check images to ECR
+publish-healthcheck: publish-healthcheck-amd64 publish-healthcheck-arm64
 
+## publish-healthcheck-amd64: Publish amd64 relay health-check image to ECR
+publish-healthcheck-amd64: ecr-login
+	@echo "==> Tagging docker image to 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-amd64"
+	@docker tag quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-amd64 \
+    	017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-amd64
+	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-amd64 to ECR"
+	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-amd64
+
+## publish-healthcheck-arm64: Publish arm64 relay health-check image to ECR
+publish-healthcheck-arm64: ecr-login
+	@echo "==> Tagging docker image to 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-arm64"
+	@docker tag quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-arm64 \
+    	017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-arm64
+	@echo "==> Pushing image 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-arm64 to ECR"
+	@docker push 017125485914.dkr.ecr.us-west-1.amazonaws.com/quicr/${HEALTHCHECK_ECR_NAME}:${DOCKER_TAG}-arm64
