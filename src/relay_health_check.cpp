@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "quicr/client.h"
-#include "quicr/publish_track_handler.h"
-#include "quicr/subscribe_track_handler.h"
+#include "quicr/handlers/publish_track_handler.h"
+#include "quicr/handlers/subscribe_track_handler.h"
 
 #include <spdlog/spdlog.h>
 
@@ -252,6 +252,16 @@ namespace {
         return Client::Create(config);
     }
 
+    void StopClients(const std::shared_ptr<Client>& subscriber, const std::shared_ptr<Client>& publisher)
+    {
+        if (subscriber) {
+            subscriber->Stop();
+        }
+        if (publisher) {
+            publisher->Stop();
+        }
+    }
+
     bool RunHealthCheck(const Options& options, std::string& error)
     {
         const auto unique_name = options.name.value_or(MakeDefaultTrackName());
@@ -265,19 +275,30 @@ namespace {
         auto subscriber = MakeClient("relay-health-subscriber-" + unique_suffix, options);
         auto publisher = MakeClient("relay-health-publisher-" + unique_suffix, options);
 
-        subscriber->Connect();
-        publisher->Connect();
+        const auto subscriber_start = subscriber->Start();
+        const auto publisher_start = publisher->Start();
+
+        if (subscriber_start != Session::Status::kConnecting && subscriber_start != Session::Status::kReady) {
+            error = "subscriber failed to start with status " + std::to_string(static_cast<int>(subscriber_start));
+            StopClients(subscriber, publisher);
+            return false;
+        }
+
+        if (publisher_start != Session::Status::kConnecting && publisher_start != Session::Status::kReady) {
+            error = "publisher failed to start with status " + std::to_string(static_cast<int>(publisher_start));
+            StopClients(subscriber, publisher);
+            return false;
+        }
 
         const bool connected = WaitFor(
           [&subscriber, &publisher]() {
-              return subscriber->GetStatus() == Transport::Status::kReady &&
-                     publisher->GetStatus() == Transport::Status::kReady;
+              return subscriber->GetStatus() == Session::Status::kReady &&
+                     publisher->GetStatus() == Session::Status::kReady;
           },
           options.timeout);
         if (!connected) {
             error = "publisher and subscriber did not both connect before timeout";
-            subscriber->Disconnect();
-            publisher->Disconnect();
+            StopClients(subscriber, publisher);
             return false;
         }
 
@@ -300,8 +321,7 @@ namespace {
                    << static_cast<int>(sub_handler->GetStatus())
                    << ", publisher status=" << static_cast<int>(pub_handler->GetStatus());
             error = stream.str();
-            subscriber->Disconnect();
-            publisher->Disconnect();
+            StopClients(subscriber, publisher);
             return false;
         }
 
@@ -319,21 +339,18 @@ namespace {
         const auto publish_status = pub_handler->PublishObject(headers, expected_payload);
         if (publish_status != PublishTrackHandler::PublishObjectStatus::kOk) {
             error = "PublishObject failed with status " + std::to_string(static_cast<int>(publish_status));
-            subscriber->Disconnect();
-            publisher->Disconnect();
+            StopClients(subscriber, publisher);
             return false;
         }
 
         if (result_future.wait_for(options.timeout) != std::future_status::ready) {
             error = "subscriber did not receive the health-check object before timeout";
-            subscriber->Disconnect();
-            publisher->Disconnect();
+            StopClients(subscriber, publisher);
             return false;
         }
 
         const auto result = result_future.get();
-        subscriber->Disconnect();
-        publisher->Disconnect();
+        StopClients(subscriber, publisher);
 
         if (!result.matched) {
             error = result.error;
