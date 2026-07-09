@@ -72,6 +72,8 @@ namespace laps {
     void PublishTrackHandler::MetricsSampled(const quicr::PublishTrackMetrics& metrics)
     {
         const auto tfn = GetFullTrackName();
+        server_.metrics_publisher_.QueuePublishMetrics(GetConnectionId(), tfn, metrics);
+
         SPDLOG_DEBUG("Metrics track: {} ({})"
                      " objects sent: {}"
                      " bytes sent: {}"

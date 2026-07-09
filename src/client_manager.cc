@@ -25,12 +25,36 @@ namespace laps {
       , state_(state)
       , config_(config)
       , peer_manager_(peer_manager)
+      , metrics_publisher_(*this, config)
       , cache_duration_ms_(cache_duration_ms)
     {
     }
 
+    ClientManager::~ClientManager()
+    {
+        metrics_publisher_.Stop();
+    }
+
+    quicr::Session::Status ClientManager::Start()
+    {
+        const auto status = quicr::Session::Start();
+        if (status == quicr::Session::Status::kReady) {
+            metrics_publisher_.Start();
+        }
+
+        return status;
+    }
+
+    void ClientManager::Stop()
+    {
+        metrics_publisher_.Stop();
+        quicr::Session::Stop();
+    }
+
     void ClientManager::NewConnectionAccepted(std::uint64_t connection_handle, const ConnectionRemoteInfo& remote)
     {
+        metrics_publisher_.AddConnection(connection_handle, remote);
+
         SPDLOG_LOGGER_INFO(
           LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, remote.ip, remote.port);
     }
@@ -552,6 +576,8 @@ namespace laps {
                 SPDLOG_LOGGER_DEBUG(LOGGER, "Connection idle timeout; connection_handle: {0} ", connection_handle);
                 break;
         }
+
+        metrics_publisher_.RemoveConnection(connection_handle);
 
         // Remove all subscribe announces for this connection handle
         std::vector<quicr::TrackNamespace> remove_ns;
@@ -1255,7 +1281,8 @@ namespace laps {
                                attrs.priority,
                                th.track_namespace_hash,
                                th.track_name_hash,
-                               attrs.new_group_request_id ? std::to_string(*attrs.new_group_request_id) : std::string("none"),
+                               attrs.new_group_request_id ? std::to_string(*attrs.new_group_request_id)
+                                                          : std::string("none"),
                                start_location.group,
                                start_location.object);
 
@@ -1400,6 +1427,7 @@ namespace laps {
     void ClientManager::MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics)
     {
         const auto publish_track_count = state_.PublishTrackCount(connection_handle);
+        metrics_publisher_.QueueConnectionMetrics(connection_handle, publish_track_count, metrics);
 
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Metrics connection handle: {}"

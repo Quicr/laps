@@ -1,5 +1,6 @@
 #pragma once
 
+#include "metrics_publisher.h"
 #include "state.h"
 
 #include "track_ranking.h"
@@ -55,6 +56,10 @@ namespace laps {
                       const quicr::ServerConfig& cfg,
                       peering::PeerManager& peer_manager,
                       size_t cache_duration_ms = 60000);
+        ~ClientManager();
+
+        quicr::Session::Status Start() override;
+        void Stop() override;
 
         void NewConnectionAccepted(std::uint64_t connection_handle, const ConnectionRemoteInfo& remote) override;
 
@@ -147,6 +152,7 @@ namespace laps {
         State& state_;
         const Config& config_;
         peering::PeerManager& peer_manager_;
+        MetricsPublisher metrics_publisher_;
 
         /**
          * @brief Map of atomic bools to mark if a fetch thread should be interrupted.
