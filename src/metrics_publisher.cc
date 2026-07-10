@@ -393,7 +393,7 @@ namespace laps {
         headers.status = quicr::ObjectStatus::kAvailable;
         headers.priority = kDefaultPriority;
         headers.ttl = static_cast<std::uint16_t>(kDefaultObjectTtl);
-        headers.track_mode = quicr::TrackMode::kDatagram;
+        headers.track_mode = quicr::TrackMode::kStream;
 
         try {
             if (!server_.PublishLocalObject(target->track_fullname_hash, headers, payload)) {

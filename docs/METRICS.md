@@ -10,7 +10,7 @@ The queue is bounded. If the queue is full, the oldest queued sample is dropped 
 
 The relay registers the metrics tracks as self-published tracks using connection handle `0`; it does not publish metrics back through the client connection that emitted the sample. Normal `SUBSCRIBE` and `SUBSCRIBE_TRACKS` matching then forwards metrics objects to interested subscribers the same way it forwards objects from other publishers.
 
-Metrics are forwarded as MoQ objects using datagram track mode. Object IDs increase per metrics track, with `group_id` set to `0`.
+Metrics are forwarded as MoQ objects using stream track mode. Object IDs increase per metrics track, with `group_id` and `subgroup_id` set to `0`.
 
 ## Tracks
 
