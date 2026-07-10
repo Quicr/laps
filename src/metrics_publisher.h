@@ -70,7 +70,7 @@ namespace laps {
         {
             quicr::FullTrackName full_track_name;
             std::uint64_t track_fullname_hash{ 0 };
-            std::uint64_t next_object_id{ 0 };
+            std::uint64_t next_group_id{ 0 };
         };
 
         struct RemoteInfo

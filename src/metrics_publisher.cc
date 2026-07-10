@@ -357,7 +357,7 @@ namespace laps {
         struct PublishTarget
         {
             std::uint64_t track_fullname_hash{ 0 };
-            std::uint64_t object_id{ 0 };
+            std::uint64_t group_id{ 0 };
         };
 
         std::optional<PublishTarget> target;
@@ -365,7 +365,7 @@ namespace laps {
             std::lock_guard<std::mutex> lock(tracks_mutex_);
             auto track_it = tracks_.find(sample.type);
             if (track_it != tracks_.end()) {
-                target = PublishTarget{ track_it->second.track_fullname_hash, track_it->second.next_object_id++ };
+                target = PublishTarget{ track_it->second.track_fullname_hash, track_it->second.next_group_id++ };
             }
         }
 
@@ -377,7 +377,7 @@ namespace laps {
                 return;
             }
 
-            target = PublishTarget{ track_it->second.track_fullname_hash, track_it->second.next_object_id++ };
+            target = PublishTarget{ track_it->second.track_fullname_hash, track_it->second.next_group_id++ };
         }
 
         if (target->track_fullname_hash == 0) {
@@ -387,8 +387,9 @@ namespace laps {
         std::vector<std::uint8_t> payload(sample.json_line.begin(), sample.json_line.end());
 
         quicr::ObjectHeaders headers{};
-        headers.group_id = 0;
-        headers.object_id = target->object_id;
+        headers.group_id = target->group_id;
+        headers.object_id = 0;
+        headers.subgroup_id = 0;
         headers.payload_length = payload.size();
         headers.status = quicr::ObjectStatus::kAvailable;
         headers.priority = kDefaultPriority;
