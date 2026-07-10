@@ -15,6 +15,8 @@
 
 namespace laps {
     namespace {
+        constexpr std::string_view kMetricsSchemaTrackName = "laps.metrics.openapi.v1";
+
         std::vector<std::string> SplitNamespace(const std::string& value, const std::string& relay_id)
         {
             const std::string namespace_value = value.empty() ? "metrics/" + relay_id : value;
@@ -212,7 +214,10 @@ namespace laps {
 
         EnsureMetricsTracks();
         worker_ = std::thread(&MetricsPublisher::Run, this);
-        SPDLOG_LOGGER_INFO(config_.logger_, "Metrics publishing enabled on namespace {}", MetricsNamespaceStr());
+        SPDLOG_LOGGER_INFO(config_.logger_,
+                           "Metrics publishing enabled on namespace {} name {}",
+                           MetricsNamespaceStr(),
+                           kMetricsSchemaTrackName);
     }
 
     void MetricsPublisher::Stop()
@@ -277,7 +282,7 @@ namespace laps {
         AppendRawField(out, first, "quic", SerializeConnectionQuic(metrics.quic));
         out << "}\n";
 
-        QueueSample({ MetricType::kConnection, connection_handle, out.str() });
+        QueueSample({ out.str() });
     }
 
     void MetricsPublisher::QueuePublishMetrics(std::uint64_t connection_handle,
@@ -300,7 +305,7 @@ namespace laps {
         AppendRawField(out, first, "quic", SerializePublishQuic(metrics.quic));
         out << "}\n";
 
-        QueueSample({ MetricType::kPublish, connection_handle, out.str() });
+        QueueSample({ out.str() });
     }
 
     void MetricsPublisher::QueueSubscribeMetrics(std::uint64_t connection_handle,
@@ -323,7 +328,7 @@ namespace laps {
         AppendUintField(out, first, "subscribers", static_cast<std::uint64_t>(subscriber_count));
         out << "}\n";
 
-        QueueSample({ MetricType::kSubscribe, connection_handle, out.str() });
+        QueueSample({ out.str() });
     }
 
     bool MetricsPublisher::QueueSample(MetricsSample sample)
@@ -363,21 +368,19 @@ namespace laps {
         std::optional<PublishTarget> target;
         {
             std::lock_guard<std::mutex> lock(tracks_mutex_);
-            auto track_it = tracks_.find(sample.type);
-            if (track_it != tracks_.end()) {
-                target = PublishTarget{ track_it->second.track_fullname_hash, track_it->second.next_group_id++ };
+            if (metrics_track_.has_value()) {
+                target = PublishTarget{ metrics_track_->track_fullname_hash, metrics_track_->next_group_id++ };
             }
         }
 
         if (!target.has_value()) {
             EnsureMetricsTracks();
             std::lock_guard<std::mutex> lock(tracks_mutex_);
-            auto track_it = tracks_.find(sample.type);
-            if (track_it == tracks_.end()) {
+            if (!metrics_track_.has_value()) {
                 return;
             }
 
-            target = PublishTarget{ track_it->second.track_fullname_hash, track_it->second.next_group_id++ };
+            target = PublishTarget{ metrics_track_->track_fullname_hash, metrics_track_->next_group_id++ };
         }
 
         if (target->track_fullname_hash == 0) {
@@ -411,54 +414,45 @@ namespace laps {
     {
         {
             std::lock_guard<std::mutex> lock(tracks_mutex_);
-            if (!tracks_.empty()) {
+            if (metrics_track_.has_value()) {
                 return;
             }
         }
 
-        std::map<MetricType, TrackState> tracks;
-        const MetricType metric_types[] = { MetricType::kConnection, MetricType::kSubscribe, MetricType::kPublish };
-        for (const auto type : metric_types) {
-            auto full_track_name = FullTrackNameFor(type);
-            const auto th = quicr::TrackHash(full_track_name);
+        auto full_track_name = MetricsTrackName();
+        const auto th = quicr::TrackHash(full_track_name);
 
-            SPDLOG_LOGGER_DEBUG(config_.logger_,
-                                "Creating relay-local metrics publish track namespace: {} name: {} alias: {}",
-                                full_track_name.NamespaceStr(),
-                                full_track_name.NameStr(),
-                                th.track_fullname_hash);
+        SPDLOG_LOGGER_DEBUG(config_.logger_,
+                            "Creating relay-local metrics publish track namespace: {} name: {} alias: {}",
+                            full_track_name.NamespaceStr(),
+                            full_track_name.NameStr(),
+                            th.track_fullname_hash);
 
-            const quicr::PublishAttributes attrs{ full_track_name,
-                                                  th.track_fullname_hash,
-                                                  {},
-                                                  std::nullopt,
-                                                  std::nullopt,
-                                                  true,
-                                                  quicr::messages::GroupOrder::kAscending,
-                                                  false,
-                                                  kDefaultPriority,
-                                                  std::nullopt,
-                                                  kDefaultObjectTtl,
-                                                  {} };
-            server_.PublishReceived(0, 0, attrs, {});
-            tracks.emplace(type, TrackState{ std::move(full_track_name), th.track_fullname_hash, 0 });
-        }
-
-        if (tracks.empty()) {
-            return;
-        }
+        const quicr::PublishAttributes attrs{ full_track_name,
+                                              th.track_fullname_hash,
+                                              {},
+                                              std::nullopt,
+                                              std::nullopt,
+                                              true,
+                                              quicr::messages::GroupOrder::kAscending,
+                                              false,
+                                              kDefaultPriority,
+                                              std::nullopt,
+                                              kDefaultObjectTtl,
+                                              {} };
+        server_.PublishReceived(0, 0, attrs, {});
 
         std::lock_guard<std::mutex> lock(tracks_mutex_);
-        tracks_ = std::move(tracks);
+        if (!metrics_track_.has_value()) {
+            metrics_track_ = TrackState{ std::move(full_track_name), th.track_fullname_hash, 0 };
+        }
     }
 
-    quicr::FullTrackName MetricsPublisher::FullTrackNameFor(MetricType type) const
+    quicr::FullTrackName MetricsPublisher::MetricsTrackName() const
     {
-        const std::string_view name = TypeName(type);
-
         quicr::FullTrackName full_track_name;
         full_track_name.name_space = quicr::TrackNamespace(metrics_namespace_entries_);
-        full_track_name.name = BytesFromString(name);
+        full_track_name.name = BytesFromString(kMetricsSchemaTrackName);
         return full_track_name;
     }
 

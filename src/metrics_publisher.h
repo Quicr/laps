@@ -15,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -61,8 +62,6 @@ namespace laps {
 
         struct MetricsSample
         {
-            MetricType type;
-            std::uint64_t connection_handle{ 0 };
             std::string json_line;
         };
 
@@ -84,7 +83,7 @@ namespace laps {
         void Run();
         void PublishSample(const MetricsSample& sample);
         void EnsureMetricsTracks();
-        quicr::FullTrackName FullTrackNameFor(MetricType type) const;
+        quicr::FullTrackName MetricsTrackName() const;
         std::string MetricsNamespaceStr() const;
         static const char* TypeName(MetricType type);
 
@@ -99,7 +98,7 @@ namespace laps {
         std::thread worker_;
 
         std::mutex tracks_mutex_;
-        std::map<MetricType, TrackState> tracks_;
+        std::optional<TrackState> metrics_track_;
         std::map<std::uint64_t, RemoteInfo> remote_by_connection_;
     };
 } // namespace laps

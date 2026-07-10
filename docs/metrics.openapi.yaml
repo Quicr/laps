@@ -1,0 +1,269 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: LAPS Metrics JSON Lines
+  version: 1.0.0
+  description: Schema for newline-delimited LAPS relay metrics published over MoQ.
+paths: {}
+x-moq:
+  namespace: metrics/<relay id>
+  track_name: laps.metrics.openapi.v1
+  content_type: application/x-ndjson
+components:
+  schemas:
+    MetricsSample:
+      description: One JSON object emitted as a line on the LAPS metrics MoQ track.
+      oneOf:
+        - $ref: '#/components/schemas/ConnectionMetrics'
+        - $ref: '#/components/schemas/SubscribeMetrics'
+        - $ref: '#/components/schemas/PublishMetrics'
+      discriminator:
+        propertyName: type
+        mapping:
+          connection: '#/components/schemas/ConnectionMetrics'
+          subscribe: '#/components/schemas/SubscribeMetrics'
+          publish: '#/components/schemas/PublishMetrics'
+
+    ConnectionMetrics:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - relay_id
+        - sample_time_us
+        - connection_handle
+        - remote_ip
+        - remote_port
+        - publish_tracks
+        - rx_dgram_unknown_track_alias
+        - rx_dgram_invalid_type
+        - rx_dgram_decode_failed
+        - rx_stream_buffer_error
+        - rx_stream_unknown_track_alias
+        - rx_stream_invalid_type
+        - invalid_ctrl_stream_msg
+        - quic
+      properties:
+        type:
+          type: string
+          const: connection
+        relay_id:
+          type: string
+        sample_time_us:
+          $ref: '#/components/schemas/UnsignedInteger'
+        connection_handle:
+          $ref: '#/components/schemas/UnsignedInteger'
+        remote_ip:
+          type: string
+        remote_port:
+          $ref: '#/components/schemas/UnsignedInteger'
+        publish_tracks:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_dgram_unknown_track_alias:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_dgram_invalid_type:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_dgram_decode_failed:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_stream_buffer_error:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_stream_unknown_track_alias:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_stream_invalid_type:
+          $ref: '#/components/schemas/UnsignedInteger'
+        invalid_ctrl_stream_msg:
+          $ref: '#/components/schemas/UnsignedInteger'
+        quic:
+          $ref: '#/components/schemas/ConnectionQuicMetrics'
+
+    SubscribeMetrics:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - relay_id
+        - sample_time_us
+        - connection_handle
+        - track_namespace
+        - track_name
+        - bytes_received
+        - objects_received
+        - subscribers
+      properties:
+        type:
+          type: string
+          const: subscribe
+        relay_id:
+          type: string
+        sample_time_us:
+          $ref: '#/components/schemas/UnsignedInteger'
+        connection_handle:
+          $ref: '#/components/schemas/UnsignedInteger'
+        track_namespace:
+          type: string
+        track_name:
+          type: string
+        bytes_received:
+          $ref: '#/components/schemas/UnsignedInteger'
+        objects_received:
+          $ref: '#/components/schemas/UnsignedInteger'
+        subscribers:
+          $ref: '#/components/schemas/UnsignedInteger'
+
+    PublishMetrics:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - relay_id
+        - sample_time_us
+        - connection_handle
+        - track_namespace
+        - track_name
+        - bytes_published
+        - objects_published
+        - objects_dropped_not_ok
+        - quic
+      properties:
+        type:
+          type: string
+          const: publish
+        relay_id:
+          type: string
+        sample_time_us:
+          $ref: '#/components/schemas/UnsignedInteger'
+        connection_handle:
+          $ref: '#/components/schemas/UnsignedInteger'
+        track_namespace:
+          type: string
+        track_name:
+          type: string
+        bytes_published:
+          $ref: '#/components/schemas/UnsignedInteger'
+        objects_published:
+          $ref: '#/components/schemas/UnsignedInteger'
+        objects_dropped_not_ok:
+          $ref: '#/components/schemas/UnsignedInteger'
+        quic:
+          $ref: '#/components/schemas/PublishQuicMetrics'
+
+    ConnectionQuicMetrics:
+      type: object
+      additionalProperties: false
+      required:
+        - cwin_congested
+        - prev_cwin_congested
+        - tx_congested
+        - tx_rate_bps
+        - rx_rate_bps
+        - tx_cwin_bytes
+        - tx_in_transit_bytes
+        - rtt_us
+        - srtt_us
+        - tx_retransmits
+        - tx_lost_pkts
+        - tx_timer_losses
+        - tx_spurious_losses
+        - rx_dgrams
+        - rx_dgrams_bytes
+        - tx_dgram_cb
+        - tx_dgram_ack
+        - tx_dgram_lost
+        - tx_dgram_spurious
+        - tx_dgram_drops
+      properties:
+        cwin_congested:
+          $ref: '#/components/schemas/UnsignedInteger'
+        prev_cwin_congested:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_congested:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_rate_bps:
+          $ref: '#/components/schemas/MinMaxAvg'
+        rx_rate_bps:
+          $ref: '#/components/schemas/MinMaxAvg'
+        tx_cwin_bytes:
+          $ref: '#/components/schemas/MinMaxAvg'
+        tx_in_transit_bytes:
+          $ref: '#/components/schemas/MinMaxAvg'
+        rtt_us:
+          $ref: '#/components/schemas/MinMaxAvg'
+        srtt_us:
+          $ref: '#/components/schemas/MinMaxAvg'
+        tx_retransmits:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_lost_pkts:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_timer_losses:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_spurious_losses:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_dgrams:
+          $ref: '#/components/schemas/UnsignedInteger'
+        rx_dgrams_bytes:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_dgram_cb:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_dgram_ack:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_dgram_lost:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_dgram_spurious:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_dgram_drops:
+          $ref: '#/components/schemas/UnsignedInteger'
+
+    PublishQuicMetrics:
+      type: object
+      additionalProperties: false
+      required:
+        - tx_buffer_drops
+        - tx_queue_discards
+        - tx_queue_expired
+        - tx_delayed_callback
+        - tx_reset_wait
+        - tx_queue_size
+        - tx_callback_ms
+        - tx_object_duration_us
+      properties:
+        tx_buffer_drops:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_queue_discards:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_queue_expired:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_delayed_callback:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_reset_wait:
+          $ref: '#/components/schemas/UnsignedInteger'
+        tx_queue_size:
+          $ref: '#/components/schemas/MinMaxAvg'
+        tx_callback_ms:
+          $ref: '#/components/schemas/MinMaxAvg'
+        tx_object_duration_us:
+          $ref: '#/components/schemas/MinMaxAvg'
+
+    MinMaxAvg:
+      type: object
+      additionalProperties: false
+      required:
+        - min
+        - max
+        - avg
+        - value_sum
+        - value_count
+      properties:
+        min:
+          $ref: '#/components/schemas/UnsignedInteger'
+        max:
+          $ref: '#/components/schemas/UnsignedInteger'
+        avg:
+          $ref: '#/components/schemas/UnsignedInteger'
+        value_sum:
+          $ref: '#/components/schemas/UnsignedInteger'
+        value_count:
+          $ref: '#/components/schemas/UnsignedInteger'
+
+    UnsignedInteger:
+      type: integer
+      minimum: 0

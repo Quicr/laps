@@ -4,13 +4,13 @@ LAPS publishes relay metrics over MoQ tracks as newline-delimited JSON. Metrics 
 
 ## Transport
 
-The metrics publisher starts when the relay starts and stops with the relay. Each `MetricsSampled()` callback serializes the sample to one JSON object plus a trailing newline and pushes it into a `quicr::SafeQueue`. The metrics thread blocks on that queue and publishes each JSON line through relay-local publish tracks.
+The metrics publisher starts when the relay starts and stops with the relay. Each `MetricsSampled()` callback serializes the sample to one JSON object plus a trailing newline and pushes it into a `quicr::SafeQueue`. The metrics thread blocks on that queue and publishes each JSON line through a relay-local publish track.
 
 The queue is bounded. If the queue is full, the oldest queued sample is dropped and the new sample is kept.
 
-The relay registers the metrics tracks as self-published tracks using connection handle `0`; it does not publish metrics back through the client connection that emitted the sample. Normal `SUBSCRIBE` and `SUBSCRIBE_TRACKS` matching then forwards metrics objects to interested subscribers the same way it forwards objects from other publishers.
+The relay registers the metrics track as a self-published track using connection handle `0`; it does not publish metrics back through the client connection that emitted the sample. Normal `SUBSCRIBE` and `SUBSCRIBE_TRACKS` matching then forwards metrics objects to interested subscribers the same way it forwards objects from other publishers.
 
-Metrics are forwarded as MoQ objects using stream track mode. Group IDs increase per metrics track, with `object_id` and `subgroup_id` set to `0`.
+Metrics are forwarded as MoQ objects using stream track mode. Group IDs increase on the metrics track, with `object_id` and `subgroup_id` set to `0`.
 
 ## Tracks
 
@@ -28,9 +28,15 @@ lapsRelay --metrics_namespace custom/metrics/namespace
 
 The relay logs the namespace on startup. Slash-separated namespace strings are converted to MoQ namespace tuple entries.
 
-Each metrics type is published on a separate track name under the metrics namespace:
+All metrics types are published on one schema-versioned track name under the metrics namespace:
 
-| Track name | Source callback |
+```text
+laps.metrics.openapi.v1
+```
+
+The track name identifies the OpenAPI schema used by every JSON line. The metric variant is identified by the JSON `type` field:
+
+| `type` | Source callback |
 | --- | --- |
 | `connection` | `ClientManager::MetricsSampled(connection_handle, ConnectionMetrics)` |
 | `subscribe` | `SubscribeTrackHandler::MetricsSampled(SubscribeTrackMetrics)` |
@@ -40,8 +46,10 @@ For example, with relay ID `relay-a`, consumers can subscribe to:
 
 ```text
 namespace: metrics/relay-a
-name: connection
+name: laps.metrics.openapi.v1
 ```
+
+The OpenAPI 3.1 schema is published in [`docs/metrics.openapi.yaml`](metrics.openapi.yaml). It defines a `MetricsSample` schema with a `type` discriminator over `connection`, `subscribe`, and `publish` payloads.
 
 ## Common Fields
 
@@ -49,7 +57,7 @@ All metrics JSON objects include:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `type` | string | Metrics type: `connection`, `subscribe`, or `publish`. |
+| `type` | string | Metrics discriminator: `connection`, `subscribe`, or `publish`. |
 | `relay_id` | string | Relay endpoint ID. |
 | `sample_time_us` | unsigned integer | Sample timestamp in microseconds since Unix epoch. |
 | `connection_handle` | unsigned integer | libquicr connection handle associated with the sample. |
@@ -80,7 +88,7 @@ Several QUIC fields use the same min/max/average shape:
 
 ## Connection Metrics
 
-Connection metrics are emitted on track name `connection`.
+Connection metrics are emitted on the schema track with `type` set to `connection`.
 
 Example:
 
@@ -133,7 +141,7 @@ Connection `quic` fields:
 
 ## Subscribe Metrics
 
-Subscribe metrics are emitted on track name `subscribe`.
+Subscribe metrics are emitted on the schema track with `type` set to `subscribe`.
 
 Example:
 
@@ -153,7 +161,7 @@ Subscribe-specific fields:
 
 ## Publish Metrics
 
-Publish metrics are emitted on track name `publish`.
+Publish metrics are emitted on the schema track with `type` set to `publish`.
 
 Example:
 
