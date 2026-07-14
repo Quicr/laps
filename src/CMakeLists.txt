@@ -44,8 +44,16 @@ set_target_properties(lapsRelay
 
 target_compile_definitions(lapsRelay PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
+add_library(relay_health_check_lib STATIC relay_health_check_internal.cpp)
+target_include_directories(relay_health_check_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(relay_health_check_lib
+        PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS OFF)
+
 add_executable(relay_health_check relay_health_check.cpp)
-target_link_libraries(relay_health_check PRIVATE quicr)
+target_link_libraries(relay_health_check PRIVATE quicr relay_health_check_lib)
 
 target_compile_options(relay_health_check
         PRIVATE
