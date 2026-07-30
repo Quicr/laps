@@ -111,12 +111,6 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
             break;
         }
 
-        // Filter out self-tracks
-        if (publisher_conn_id == GetConnectionId()) {
-            SPDLOG_DEBUG("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
-            continue;
-        }
-
         SPDLOG_DEBUG("Update track tracking: Top track {} track alias: {} from conn {}",
                      active_tracks.size(),
                      ta,
@@ -124,6 +118,11 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
         auto pub_track_it = published_tracks_.find(ta);
         if (pub_track_it == published_tracks_.end()) {
+            if (publisher_conn_id == GetConnectionId()) {
+                SPDLOG_DEBUG("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
+                continue;
+            }
+
             // Publish tracks should/must exists before this is call. They are managed by PublishTrack()
             SPDLOG_WARN("Track {} missing from publish_tracks; track alias: {} from conn {}",
                         active_tracks.size(),
