@@ -1382,9 +1382,16 @@ namespace laps {
         }
 
         if (stream_id.has_value()) {
-            it->second->StreamDataRecv(is_new_stream, *stream_id, data);
+            if (is_new_stream) {
+                quicr::InitialStreamData initial_buffer;
+                initial_buffer.buffer.Push(*data);
+                initial_buffer.source_buffers.push_back(std::move(data));
+                it->second->StreamDataRecv(*stream_id, std::move(initial_buffer));
+            } else {
+                it->second->StreamDataRecv(*stream_id, std::move(data));
+            }
         } else {
-            it->second->DgramDataRecv(data);
+            it->second->DgramDataRecv(std::move(data));
         }
     }
 
