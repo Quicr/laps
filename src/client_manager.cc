@@ -608,6 +608,8 @@ namespace laps {
         if (connection_handle)
             peer_manager_.ClientAnnounce(s_it->second->GetFullTrackName(), {}, true);
 
+        const auto publisher_handler = s_it->second;
+
         std::unique_lock<std::mutex> lock(state_.state_mutex);
 
         auto th = quicr::TrackHash(s_it->second->GetFullTrackName());
@@ -661,6 +663,11 @@ namespace laps {
         }
 
         state_.pub_subscribes_by_req_id.erase(s_it);
+        lock.unlock();
+
+        if (!have_publishers) {
+            publisher_handler->RemoveFromTrackRanking();
+        }
     }
 
     void ClientManager::UnsubscribeReceived(std::uint64_t connection_handle, uint64_t request_id)

@@ -143,24 +143,32 @@ namespace laps {
                 }
             }
 
-            // notify each subscribe namespace (aka publish namespace handler)
-            for (auto ns_it = ns_handlers_.begin(); ns_it != ns_handlers_.end();) {
-                auto& [ns_hash, conn_handlers] = *ns_it;
-                for (auto conn_it = conn_handlers.begin(); conn_it != conn_handlers.end();) {
-                    if (auto h = conn_it->second.lock()) {
-                        h->UpdateTrackRanking(flat_track_list_);
-                        ++conn_it;
-                    } else {
-                        conn_it = conn_handlers.erase(conn_it); // returns next iterator
-                    }
-                }
-                // Remove namespace entry if no handlers left
-                if (conn_handlers.empty()) {
-                    ns_it = ns_handlers_.erase(ns_it);
+            NotifyNamespaceHandlers();
+        }
+
+        void RemoveTrack(const TrackAlias track_alias)
+        {
+            bool removed = false;
+            for (auto it = ordered_tracks_.begin(); it != ordered_tracks_.end();) {
+                removed = it->second.erase(track_alias) > 0 || removed;
+                if (it->second.empty()) {
+                    it = ordered_tracks_.erase(it);
                 } else {
-                    ++ns_it;
+                    ++it;
                 }
             }
+
+            removed =
+              std::erase_if(flat_track_list_,
+                            [track_alias](const auto& track) { return std::get<0>(track) == track_alias; }) > 0 ||
+              removed;
+            track_connections_.erase(track_alias);
+
+            if (!removed) {
+                return;
+            }
+
+            NotifyNamespaceHandlers();
         }
 
         /*
@@ -189,6 +197,26 @@ namespace laps {
         }
 
       private:
+        void NotifyNamespaceHandlers()
+        {
+            for (auto ns_it = ns_handlers_.begin(); ns_it != ns_handlers_.end();) {
+                auto& conn_handlers = ns_it->second;
+                for (auto conn_it = conn_handlers.begin(); conn_it != conn_handlers.end();) {
+                    if (auto h = conn_it->second.lock()) {
+                        h->UpdateTrackRanking(flat_track_list_);
+                        ++conn_it;
+                    } else {
+                        conn_it = conn_handlers.erase(conn_it);
+                    }
+                }
+                if (conn_handlers.empty()) {
+                    ns_it = ns_handlers_.erase(ns_it);
+                } else {
+                    ++ns_it;
+                }
+            }
+        }
+
         // min(kConfigMaxTracks, max(sub_ns max_selected_tracks)) * 1.5 )
         uint64_t max_tracks_selected_{ 32 }; // Max tracks to select as candidate top-n
         uint64_t inactive_age_ms_{ 10000 };  // Age in ms of a track that is considered stale/inactive

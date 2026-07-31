@@ -69,6 +69,13 @@ namespace laps {
         }
     }
 
+    void SubscribeTrackHandler::RemoveFromTrackRanking()
+    {
+        if (auto ranking = track_ranking_.lock()) {
+            ranking->RemoveTrack(GetTrackAlias().value());
+        }
+    }
+
     void SubscribeTrackHandler::AddSubscriber(std::uint64_t conn_handle,
                                               std::uint64_t request_id,
                                               uint8_t priority,
