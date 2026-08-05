@@ -37,9 +37,9 @@ namespace laps {
         void StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data) override;
 
       private:
-        void ProcessStreamStart(uint64_t stream_id, StreamContext& stream);
+        void TryForwardInitialStreamData(uint64_t stream_id, StreamContext& stream);
 
-        bool first_data_received_{ false };
+        bool initial_stream_data_forwarded_{ false };
         std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler_;
     };
 } // namespace laps

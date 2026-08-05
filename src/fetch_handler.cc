@@ -22,21 +22,22 @@ namespace laps {
     {
         subscribe_track_metrics_.bytes_received += initial_buffer.buffer.Size();
 
-        auto [stream_it, inserted] = streams_.try_emplace(stream_id, std::move(initial_buffer.buffer));
+        auto [stream_it, inserted] =
+          streams_.try_emplace(stream_id, StreamContext{ .buffer = std::move(initial_buffer.buffer) });
         if (!inserted) {
             SPDLOG_ERROR("StreamDataRecv got new stream for existing Stream ID {}", stream_id);
             return;
         }
 
         stream_it->second.buffer.InitAny<quicr::messages::FetchHeader>();
-        ProcessStreamStart(stream_id, stream_it->second);
+        TryForwardInitialStreamData(stream_id, stream_it->second);
     }
 
     void FetchTrackHandler::StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data)
     {
         subscribe_track_metrics_.bytes_received += data->size();
 
-        if (first_data_received_) {
+        if (initial_stream_data_forwarded_) {
             publish_fetch_handler_->ForwardPublishedData(false, 0, 0, std::move(data));
             return;
         }
@@ -48,10 +49,10 @@ namespace laps {
         }
 
         stream_it->second.buffer.Push(*data);
-        ProcessStreamStart(stream_id, stream_it->second);
+        TryForwardInitialStreamData(stream_id, stream_it->second);
     }
 
-    void FetchTrackHandler::ProcessStreamStart(uint64_t stream_id, StreamContext& stream)
+    void FetchTrackHandler::TryForwardInitialStreamData(uint64_t stream_id, StreamContext& stream)
     {
         auto& f_hdr = stream.buffer.GetAny<quicr::messages::FetchHeader>();
         if (!(stream.buffer >> f_hdr)) {
@@ -73,7 +74,7 @@ namespace laps {
         }
 
         publish_fetch_handler_->ForwardPublishedData(true, 0, 0, std::move(bytes));
-        first_data_received_ = true;
+        initial_stream_data_forwarded_ = true;
         streams_.erase(stream_id);
     }
 

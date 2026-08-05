@@ -88,12 +88,13 @@ namespace laps {
         bool HasSubscribers() const { return !subscribers_.empty() || !sub_namespaces_.empty(); }
 
       private:
-        void ProcessStreamData(uint64_t stream_id, StreamContext& stream);
+        void TryProcessStreamData(uint64_t stream_id, StreamContext& stream);
 
         void ForwardReceivedData(bool is_new_stream,
                                  uint64_t group_id,
                                  uint64_t subgroup_id,
-                                 std::shared_ptr<const std::vector<uint8_t>> data);
+                                 std::shared_ptr<const std::vector<uint8_t>> data,
+                                 bool forward_to_peers = true);
 
         void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                      std::optional<quicr::Extensions> immutable_extensions);
@@ -104,10 +105,9 @@ namespace laps {
         bool is_datagram_{ false };
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
 
-        /**
-         * Map of pending stream start data buffers.
-         */
-        std::map<std::uint64_t, std::vector<std::shared_ptr<const std::vector<uint8_t>>>> pending_buffers_;
+        // Original receive buffers retained until the subgroup header is complete so they can be forwarded without
+        // copying when the track alias is unchanged.
+        std::map<std::uint64_t, std::vector<std::shared_ptr<const std::vector<uint8_t>>>> pending_source_buffers_;
 
         /**
          * @brief Map of subscribers that have subscribed to this content
