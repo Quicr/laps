@@ -11,6 +11,7 @@ add_executable(laps_test
         peering_data_header.cc
         peering_info_base.cc
         track_ranking.cc
+        relay_health_check_test.cc
 
         ../src/peering/messages/connect.cc
         ../src/peering/messages/connect_response.cc
@@ -23,7 +24,7 @@ add_executable(laps_test
 )
 target_include_directories(laps_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
-target_link_libraries(laps_test PRIVATE quicr doctest::doctest)
+target_link_libraries(laps_test PRIVATE quicr doctest::doctest relay_health_check_lib)
 
 target_compile_options(laps_test
         PRIVATE
@@ -51,3 +52,19 @@ endif ()
 
 include(${CMAKE_SOURCE_DIR}/dependencies/doctest/scripts/cmake/doctest.cmake)
 doctest_discover_tests(laps_test)
+
+# Scoped test target for relay_health_check helpers — kept separate so it stays
+# green even when broader peering tests are temporarily out of sync with
+# libquicr's evolving public API.
+add_executable(relay_health_check_test
+        main.cc
+        relay_health_check_test.cc
+)
+target_include_directories(relay_health_check_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(relay_health_check_test PRIVATE doctest::doctest relay_health_check_lib)
+set_target_properties(relay_health_check_test
+        PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS ON)
+doctest_discover_tests(relay_health_check_test)
