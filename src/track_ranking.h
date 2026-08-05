@@ -81,7 +81,7 @@ namespace laps {
             track_connections_[track_alias] = connection_id;
 
             // Rebuild if track moved buckets or new bucket was created
-            needs_rebuild = needs_rebuild || inserted;
+            needs_rebuild = needs_rebuild || inserted || track_is_new;
 
             SPDLOG_TRACE("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
                          track_alias,
