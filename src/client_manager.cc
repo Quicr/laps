@@ -1255,7 +1255,8 @@ namespace laps {
                                attrs.priority,
                                th.track_namespace_hash,
                                th.track_name_hash,
-                               attrs.new_group_request_id ? std::to_string(*attrs.new_group_request_id) : std::string("none"),
+                               attrs.new_group_request_id ? std::to_string(*attrs.new_group_request_id)
+                                                          : std::string("none"),
                                start_location.group,
                                start_location.object);
 

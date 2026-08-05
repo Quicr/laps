@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
-#include <ostream>
 #include <stdexcept>
 #include <string>
 
