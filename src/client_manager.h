@@ -117,6 +117,15 @@ namespace laps {
                              const quicr::PublishAttributes& publish_attributes,
                              std::weak_ptr<quicr::SubscribeNamespaceHandler> ns_handler) override;
 
+        /**
+         * @brief Register a relay-local publish (e.g. the internally generated metrics track)
+         *
+         * @details Unlike PublishReceived(), this is never treated as peer-originated even though it uses
+         *      the same connection_handle=0/request_id=0 sentinel internally. Use this instead of calling
+         *      PublishReceived(0, 0, ...) directly for relay-local publishes.
+         */
+        void RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes);
+
         void ProcessSubscribe(std::uint64_t connection_handle,
                               uint64_t request_id,
                               const quicr::TrackHash& th,
@@ -145,6 +154,11 @@ namespace laps {
         void MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics) override;
 
       private:
+        void PublishReceivedInternal(std::uint64_t connection_handle,
+                                     uint64_t request_id,
+                                     const quicr::PublishAttributes& publish_attributes,
+                                     bool is_from_peer);
+
         void PurgePublishState(std::uint64_t connection_handle);
 
         void FetchReceived(std::uint64_t connection_handle,

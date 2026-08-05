@@ -37,12 +37,14 @@ namespace laps {
 
     quicr::Session::Status ClientManager::Start()
     {
-        const auto status = quicr::Session::Start();
-        if (status == quicr::Session::Status::kReady) {
-            metrics_publisher_.Start();
-        }
+        /*
+         * Set up relay-local metrics track state before starting the transport thread. Session::Start()
+         * spins up the transport thread that dispatches all control/data callbacks; starting metrics
+         * publishing first avoids any chance of racing with that thread while touching ClientManager state.
+         */
+        metrics_publisher_.Start();
 
-        return status;
+        return quicr::Session::Start();
     }
 
     void ClientManager::Stop()
@@ -281,7 +283,27 @@ namespace laps {
                                         const quicr::PublishAttributes& publish_attributes,
                                         [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
     {
-        bool is_from_peer = !connection_handle && !request_id;
+        PublishReceivedInternal(connection_handle, request_id, publish_attributes, !connection_handle && !request_id);
+    }
+
+    void ClientManager::RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes)
+    {
+        PublishReceivedInternal(0, 0, publish_attributes, false);
+    }
+
+    void ClientManager::PublishReceivedInternal(std::uint64_t connection_handle,
+                                                uint64_t request_id,
+                                                const quicr::PublishAttributes& publish_attributes,
+                                                bool is_from_peer)
+    {
+        /*
+         * Peer-originated publishes and relay-local publishes (e.g. the metrics track) both use the
+         * connection_handle=0/request_id=0 sentinel because there is no real connection to resolve the
+         * publish response against. Track alias assignment and ResolvePublish()/ClientAnnounce() must be
+         * bypassed for both, independent of whether the publish is actually from-peer.
+         */
+        const bool bypass_resolve = !connection_handle && !request_id;
+
         auto th = quicr::TrackHash(publish_attributes.track_full_name);
 
         SPDLOG_LOGGER_INFO(
@@ -339,9 +361,13 @@ namespace laps {
                                                                          config_.tick_service_,
                                                                          true);
 
-        if (is_from_peer) {
-            // For peering, need to set the track alias
+        if (bypass_resolve) {
+            // ResolvePublish() normally sets the track alias against a real connection; set it explicitly
+            // since that call is skipped below.
             sub_track_handler->SetTrackAlias(publish_attributes.track_alias);
+        }
+
+        if (is_from_peer) {
             sub_track_handler->SetFromPeer();
         }
 
@@ -351,7 +377,7 @@ namespace laps {
 
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
 
-        if (!is_from_peer) {
+        if (!bypass_resolve) {
             state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
 
             // Do this before pause to maintain MOQT message sequence order

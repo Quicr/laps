@@ -213,20 +213,30 @@ namespace laps {
         }
 
         EnsureMetricsTracks();
-        worker_ = std::thread(&MetricsPublisher::Run, this);
+        worker_ = std::thread(&MetricsPublisher::WorkerRun, this);
         SPDLOG_LOGGER_INFO(config_.logger_,
-                           "Metrics publishing enabled on namespace {} name {}",
+                           "Metrics publishing enabled on namespace {} name {} (batch interval {}ms)",
                            MetricsNamespaceStr(),
-                           kMetricsSchemaTrackName);
+                           kMetricsSchemaTrackName,
+                           kBatchInterval.count());
     }
 
     void MetricsPublisher::Stop()
     {
         const bool was_running = running_.exchange(false);
-        queue_.StopWaiting();
+        {
+            std::lock_guard<std::mutex> lock(worker_mutex_);
+            worker_cv_.notify_all();
+        }
 
         if (worker_.joinable()) {
             worker_.join();
+        }
+
+        queue_.Clear();
+        {
+            std::lock_guard<std::mutex> lock(pending_batch_mutex_);
+            pending_batch_.reset();
         }
 
         if (was_running) {
@@ -342,18 +352,63 @@ namespace laps {
             SPDLOG_LOGGER_DEBUG(config_.logger_, "Metrics queue full, dropped oldest sample");
         }
 
+        /*
+         * Queue*Metrics() (and therefore this) is only ever called from MetricsSampled() callbacks, which
+         * the relay's transport dispatches on its single control/data thread. Publishing a batch touches
+         * ClientManager state and libquicr handler internals that are only safe to touch from that same
+         * thread, so the actual publish must happen here rather than on worker_. This call is cheap: almost
+         * always there's no batch ready yet and it's just a mutex check.
+         */
+        FlushPendingBatch();
+
         return pushed;
     }
 
-    void MetricsPublisher::Run()
+    void MetricsPublisher::FlushPendingBatch()
     {
+        std::optional<MetricsSample> batch;
+        {
+            std::lock_guard<std::mutex> lock(pending_batch_mutex_);
+            batch.swap(pending_batch_);
+        }
+
+        if (batch.has_value()) {
+            PublishSample(*batch);
+        }
+    }
+
+    void MetricsPublisher::WorkerRun()
+    {
+        std::unique_lock<std::mutex> lock(worker_mutex_);
         while (running_) {
-            auto sample = queue_.BlockPop();
-            if (!sample.has_value()) {
+            worker_cv_.wait_for(lock, kBatchInterval);
+            if (!running_) {
                 break;
             }
 
-            PublishSample(*sample);
+            lock.unlock();
+
+            // Coalesce whatever has queued up since the last batch into a single JSON-lines payload. This is
+            // pure CPU work: it never touches ClientManager or libquicr handler state, so it's safe here.
+            std::string batched;
+            std::size_t count = 0;
+            while (auto sample = queue_.Pop()) {
+                batched += sample->json_line;
+                ++count;
+            }
+
+            if (count > 0) {
+                std::lock_guard<std::mutex> pending_lock(pending_batch_mutex_);
+                if (pending_batch_.has_value()) {
+                    pending_batch_->json_line += batched;
+                } else {
+                    pending_batch_ = MetricsSample{ std::move(batched) };
+                }
+
+                SPDLOG_LOGGER_DEBUG(config_.logger_, "Metrics batch ready: {} samples coalesced", count);
+            }
+
+            lock.lock();
         }
     }
 
@@ -440,7 +495,7 @@ namespace laps {
                                               std::nullopt,
                                               kDefaultObjectTtl,
                                               {} };
-        server_.PublishReceived(0, 0, attrs, {});
+        server_.RegisterLocalPublish(attrs);
 
         std::lock_guard<std::mutex> lock(tracks_mutex_);
         if (!metrics_track_.has_value()) {
