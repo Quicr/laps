@@ -309,8 +309,33 @@ namespace laps {
 
     void MetricsPublisher::QueuePublishMetrics(std::uint64_t connection_handle,
                                                const quicr::FullTrackName& track_name,
-                                               std::size_t subscriber_count,
                                                const quicr::PublishTrackMetrics& metrics)
+    {
+        const auto track_namespace = track_name.NamespaceStr();
+        const auto name = track_name.NameStr();
+        const auto remote_info = LookupRemote(connection_handle);
+
+        std::ostringstream out;
+        bool first = true;
+        out << '{';
+        AppendCommonFields(
+          out, first, TypeName(MetricType::kSubscribe), config_.relay_id_, metrics.last_sample_time, connection_handle);
+        AppendStringField(out, first, "remote_endpoint_id", remote_info.endpoint_id);
+        AppendStringField(out, first, "track_namespace", track_namespace);
+        AppendStringField(out, first, "track_name", name);
+        AppendUintField(out, first, "bytes", metrics.bytes_published);
+        AppendUintField(out, first, "objects", metrics.objects_published);
+        AppendUintField(out, first, "objects_dropped_not_ok", metrics.objects_dropped_not_ok);
+        AppendRawField(out, first, "quic", SerializePublishQuic(metrics.quic));
+        out << "}\n";
+
+        QueueSample({ out.str() });
+    }
+
+    void MetricsPublisher::QueueSubscribeMetrics(std::uint64_t connection_handle,
+                                                 const quicr::FullTrackName& track_name,
+                                                 std::size_t subscriber_count,
+                                                 const quicr::SubscribeTrackMetrics& metrics)
     {
         const auto track_namespace = track_name.NamespaceStr();
         const auto name = track_name.NameStr();
@@ -324,32 +349,9 @@ namespace laps {
         AppendStringField(out, first, "remote_endpoint_id", remote_info.endpoint_id);
         AppendStringField(out, first, "track_namespace", track_namespace);
         AppendStringField(out, first, "track_name", name);
-        AppendUintField(out, first, "bytes_published", metrics.bytes_published);
-        AppendUintField(out, first, "objects_published", metrics.objects_published);
-        AppendUintField(out, first, "objects_dropped_not_ok", metrics.objects_dropped_not_ok);
+        AppendUintField(out, first, "bytes", metrics.bytes_received);
+        AppendUintField(out, first, "objects", metrics.objects_received);
         AppendUintField(out, first, "subscribers", static_cast<std::uint64_t>(subscriber_count));
-        AppendRawField(out, first, "quic", SerializePublishQuic(metrics.quic));
-        out << "}\n";
-
-        QueueSample({ out.str() });
-    }
-
-    void MetricsPublisher::QueueSubscribeMetrics(std::uint64_t connection_handle,
-                                                 const quicr::FullTrackName& track_name,
-                                                 const quicr::SubscribeTrackMetrics& metrics)
-    {
-        const auto track_namespace = track_name.NamespaceStr();
-        const auto name = track_name.NameStr();
-
-        std::ostringstream out;
-        bool first = true;
-        out << '{';
-        AppendCommonFields(
-          out, first, TypeName(MetricType::kSubscribe), config_.relay_id_, metrics.last_sample_time, connection_handle);
-        AppendStringField(out, first, "track_namespace", track_namespace);
-        AppendStringField(out, first, "track_name", name);
-        AppendUintField(out, first, "bytes_received", metrics.bytes_received);
-        AppendUintField(out, first, "objects_received", metrics.objects_received);
         out << "}\n";
 
         QueueSample({ out.str() });

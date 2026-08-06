@@ -62,20 +62,35 @@ namespace laps {
         void QueueConnectionMetrics(std::uint64_t connection_handle,
                                     std::size_t publish_track_count,
                                     const quicr::ConnectionMetrics& metrics);
+        /**
+         * @brief Queue a sample taken on a relay publish track
+         *
+         * @details Exported with type "subscribe". The relay publishes in order to send to a subscriber, so
+         *      the sample describes a subscriber of the relay, not a publisher.
+         */
         void QueuePublishMetrics(std::uint64_t connection_handle,
                                  const quicr::FullTrackName& track_name,
-                                 std::size_t subscriber_count,
                                  const quicr::PublishTrackMetrics& metrics);
+
+        /**
+         * @brief Queue a sample taken on a relay subscribe track
+         *
+         * @details Exported with type "publish". The relay subscribes in order to receive from a publisher,
+         *      so the sample describes a publisher to the relay, not a subscriber.
+         */
         void QueueSubscribeMetrics(std::uint64_t connection_handle,
                                    const quicr::FullTrackName& track_name,
+                                   std::size_t subscriber_count,
                                    const quicr::SubscribeTrackMetrics& metrics);
 
       private:
+        /// Exported metric type. Named for the remote role the sample describes, which is the inverse of the
+        /// relay-side handler that produced it.
         enum class MetricType : std::uint8_t
         {
             kConnection,
-            kSubscribe,
-            kPublish,
+            kSubscribe, ///< From a relay publish track: the relay sending to a subscriber
+            kPublish,   ///< From a relay subscribe track: the relay receiving from a publisher
         };
 
         struct MetricsSample

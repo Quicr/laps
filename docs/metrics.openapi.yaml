@@ -80,37 +80,9 @@ components:
           $ref: '#/components/schemas/ConnectionQuicMetrics'
 
     SubscribeMetrics:
-      type: object
-      additionalProperties: false
-      required:
-        - type
-        - relay_id
-        - sample_time_us
-        - connection_handle
-        - track_namespace
-        - track_name
-        - bytes_received
-        - objects_received
-      properties:
-        type:
-          type: string
-          const: subscribe
-        relay_id:
-          type: string
-        sample_time_us:
-          $ref: '#/components/schemas/UnsignedInteger'
-        connection_handle:
-          $ref: '#/components/schemas/UnsignedInteger'
-        track_namespace:
-          type: string
-        track_name:
-          type: string
-        bytes_received:
-          $ref: '#/components/schemas/UnsignedInteger'
-        objects_received:
-          $ref: '#/components/schemas/UnsignedInteger'
-
-    PublishMetrics:
+      description: >-
+        Sampled on the relay publish track that sends to a subscriber, so the sample describes a
+        subscriber of the relay.
       type: object
       additionalProperties: false
       required:
@@ -121,11 +93,52 @@ components:
         - remote_endpoint_id
         - track_namespace
         - track_name
-        - bytes_published
-        - objects_published
+        - bytes
+        - objects
         - objects_dropped_not_ok
-        - subscribers
         - quic
+      properties:
+        type:
+          type: string
+          const: subscribe
+        relay_id:
+          type: string
+        sample_time_us:
+          $ref: '#/components/schemas/UnsignedInteger'
+        connection_handle:
+          $ref: '#/components/schemas/UnsignedInteger'
+        remote_endpoint_id:
+          type: string
+        track_namespace:
+          type: string
+        track_name:
+          type: string
+        bytes:
+          $ref: '#/components/schemas/UnsignedInteger'
+        objects:
+          $ref: '#/components/schemas/UnsignedInteger'
+        objects_dropped_not_ok:
+          $ref: '#/components/schemas/UnsignedInteger'
+        quic:
+          $ref: '#/components/schemas/SubscribeQuicMetrics'
+
+    PublishMetrics:
+      description: >-
+        Sampled on the relay subscribe track that receives from a publisher, so the sample describes a
+        publisher to the relay.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - relay_id
+        - sample_time_us
+        - connection_handle
+        - remote_endpoint_id
+        - track_namespace
+        - track_name
+        - bytes
+        - objects
+        - subscribers
       properties:
         type:
           type: string
@@ -142,16 +155,12 @@ components:
           type: string
         track_name:
           type: string
-        bytes_published:
+        bytes:
           $ref: '#/components/schemas/UnsignedInteger'
-        objects_published:
-          $ref: '#/components/schemas/UnsignedInteger'
-        objects_dropped_not_ok:
+        objects:
           $ref: '#/components/schemas/UnsignedInteger'
         subscribers:
           $ref: '#/components/schemas/UnsignedInteger'
-        quic:
-          $ref: '#/components/schemas/PublishQuicMetrics'
 
     ConnectionQuicMetrics:
       type: object
@@ -219,7 +228,7 @@ components:
         tx_dgram_drops:
           $ref: '#/components/schemas/UnsignedInteger'
 
-    PublishQuicMetrics:
+    SubscribeQuicMetrics:
       type: object
       additionalProperties: false
       required:

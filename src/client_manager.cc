@@ -1473,21 +1473,6 @@ namespace laps {
         it->second->StreamClosed(stream_id, reset);
     }
 
-    std::size_t ClientManager::TrackSubscriberCount(std::uint64_t track_fullname_hash)
-    {
-        std::size_t count = 0;
-
-        std::lock_guard _(state_.state_mutex);
-
-        for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
-            if (ta_conn.first == track_fullname_hash && handler) {
-                count += handler->SubscriberCount();
-            }
-        }
-
-        return count;
-    }
-
     void ClientManager::MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics)
     {
         const auto publish_track_count = state_.PublishTrackCount(connection_handle);

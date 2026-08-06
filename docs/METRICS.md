@@ -39,8 +39,10 @@ The track name identifies the OpenAPI schema used by every JSON line. The metric
 | `type` | Source callback |
 | --- | --- |
 | `connection` | `ClientManager::MetricsSampled(connection_handle, ConnectionMetrics)` |
-| `subscribe` | `SubscribeTrackHandler::MetricsSampled(SubscribeTrackMetrics)` |
-| `publish` | `PublishTrackHandler::MetricsSampled(PublishTrackMetrics)` |
+| `subscribe` | `PublishTrackHandler::MetricsSampled(PublishTrackMetrics)` |
+| `publish` | `SubscribeTrackHandler::MetricsSampled(SubscribeTrackMetrics)` |
+
+The `type` names the remote role the sample describes, which is the inverse of the relay-side handler that produced it. The relay runs a publish track in order to send to a subscriber, so those samples are typed `subscribe`. The relay runs a subscribe track in order to receive from a publisher, so those samples are typed `publish`.
 
 For example, with relay ID `relay-a`, consumers can subscribe to:
 
@@ -63,6 +65,8 @@ All metrics JSON objects include:
 | `connection_handle` | unsigned integer | libquicr connection handle associated with the sample. |
 
 All integer values are emitted as JSON numbers.
+
+`connection_handle` and `remote_endpoint_id` are tags: every sample of every type carries both, and together they identify the remote peer the sample is about. `relay_id`, `track_namespace`, and `track_name` are tags as well. The remaining fields are measurements for the sample period.
 
 ## Min/Max/Average Objects
 
@@ -142,47 +146,27 @@ Connection `quic` fields:
 
 ## Subscribe Metrics
 
-Subscribe metrics are emitted on the schema track with `type` set to `subscribe`.
+Subscribe metrics are emitted on the schema track with `type` set to `subscribe`. They are sampled on the relay publish track that sends to the subscriber, so one sample is produced per subscriber connection per track.
 
 Example:
 
 ```json
-{"type":"subscribe","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"track_namespace":"media/live/event1","track_name":"video","bytes_received":8192,"objects_received":32}
+{"type":"subscribe","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","track_namespace":"media/live/event1","track_name":"video","bytes":16384,"objects":64,"objects_dropped_not_ok":0,"quic":{"tx_buffer_drops":0,"tx_queue_discards":0,"tx_queue_expired":0,"tx_delayed_callback":0,"tx_reset_wait":0,"tx_queue_size":{"min":0,"max":3,"avg":1,"value_sum":6,"value_count":4},"tx_callback_ms":{"min":0,"max":2,"avg":1,"value_sum":4,"value_count":4},"tx_object_duration_us":{"min":100,"max":500,"avg":250,"value_sum":1000,"value_count":4}}}
 ```
 
 Subscribe-specific fields:
 
 | Field | Description |
 | --- | --- |
-| `track_namespace` | Namespace of the subscribed content track. |
-| `track_name` | Name of the subscribed content track. |
-| `bytes_received` | Payload bytes received during the sample period. |
-| `objects_received` | Objects received during the sample period. |
-
-## Publish Metrics
-
-Publish metrics are emitted on the schema track with `type` set to `publish`.
-
-Example:
-
-```json
-{"type":"publish","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","track_namespace":"media/live/event1","track_name":"video","bytes_published":16384,"objects_published":64,"objects_dropped_not_ok":0,"subscribers":4,"quic":{"tx_buffer_drops":0,"tx_queue_discards":0,"tx_queue_expired":0,"tx_delayed_callback":0,"tx_reset_wait":0,"tx_queue_size":{"min":0,"max":3,"avg":1,"value_sum":6,"value_count":4},"tx_callback_ms":{"min":0,"max":2,"avg":1,"value_sum":4,"value_count":4},"tx_object_duration_us":{"min":100,"max":500,"avg":250,"value_sum":1000,"value_count":4}}}
-```
-
-Publish-specific fields:
-
-| Field | Description |
-| --- | --- |
-| `remote_endpoint_id` | Remote endpoint ID from the publishing client's `CLIENT_SETUP`. Empty until setup is received. |
-| `track_namespace` | Namespace of the published content track. |
-| `track_name` | Name of the published content track. |
-| `bytes_published` | Payload bytes published during the sample period. |
-| `objects_published` | Objects published during the sample period. |
+| `remote_endpoint_id` | Remote endpoint ID from the subscribing client's `CLIENT_SETUP`. Empty until setup is received. |
+| `track_namespace` | Namespace of the content track. |
+| `track_name` | Name of the content track. |
+| `bytes` | Payload bytes sent to the subscriber during the sample period. |
+| `objects` | Objects sent to the subscriber during the sample period. |
 | `objects_dropped_not_ok` | Objects dropped because the publish handler was not in a publishable state. |
-| `subscribers` | Current number of local fanout subscribers for the track. Track-level, so every publish sample for the same track in a period carries the same value. Subscribers matched through a subscribe namespace are not counted. |
 | `quic` | QUIC data-context metrics object. |
 
-Publish `quic` fields:
+Subscribe `quic` fields:
 
 | Field | Description |
 | --- | --- |
@@ -196,3 +180,24 @@ Publish `quic` fields:
 | `tx_object_duration_us` | Object time in queue in microseconds. |
 
 `tx_queue_size`, `tx_callback_ms`, and `tx_object_duration_us` use the min/max/average object shape.
+
+## Publish Metrics
+
+Publish metrics are emitted on the schema track with `type` set to `publish`. They are sampled on the relay subscribe track that receives from the publisher, so one sample is produced per publisher connection per track.
+
+Example:
+
+```json
+{"type":"publish","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","track_namespace":"media/live/event1","track_name":"video","bytes":8192,"objects":32,"subscribers":4}
+```
+
+Publish-specific fields:
+
+| Field | Description |
+| --- | --- |
+| `remote_endpoint_id` | Remote endpoint ID from the publishing client's `CLIENT_SETUP`. Empty until setup is received. |
+| `track_namespace` | Namespace of the content track. |
+| `track_name` | Name of the content track. |
+| `bytes` | Payload bytes received from the publisher during the sample period. |
+| `objects` | Objects received from the publisher during the sample period. |
+| `subscribers` | Current number of local fanout subscribers the relay is serving from this publisher's track. Subscribers matched through a subscribe namespace are not counted. |

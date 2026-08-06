@@ -155,15 +155,6 @@ namespace laps {
         void MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics) override;
 
       private:
-        /**
-         * @brief Number of subscribers being served fanout of a track
-         *
-         * @param track_fullname_hash   Full track name hash of the track
-         *
-         * @return Sum of SUBSCRIBE fanout subscribers across every publisher subscribe for the track
-         */
-        std::size_t TrackSubscriberCount(std::uint64_t track_fullname_hash);
-
         void PublishReceivedInternal(std::uint64_t connection_handle,
                                      uint64_t request_id,
                                      const quicr::PublishAttributes& publish_attributes,
