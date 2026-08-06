@@ -564,6 +564,6 @@ namespace laps {
     void SubscribeTrackHandler::MetricsSampled(const quicr::SubscribeTrackMetrics& metrics)
     {
         const auto tfn = GetFullTrackName();
-        server_.metrics_publisher_.QueueSubscribeMetrics(GetConnectionId(), tfn, subscribers_.size(), metrics);
+        server_.metrics_publisher_.QueueSubscribeMetrics(GetConnectionId(), tfn, metrics);
     }
 }

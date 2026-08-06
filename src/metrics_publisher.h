@@ -64,10 +64,10 @@ namespace laps {
                                     const quicr::ConnectionMetrics& metrics);
         void QueuePublishMetrics(std::uint64_t connection_handle,
                                  const quicr::FullTrackName& track_name,
+                                 std::size_t subscriber_count,
                                  const quicr::PublishTrackMetrics& metrics);
         void QueueSubscribeMetrics(std::uint64_t connection_handle,
                                    const quicr::FullTrackName& track_name,
-                                   std::size_t subscriber_count,
                                    const quicr::SubscribeTrackMetrics& metrics);
 
       private:

@@ -87,6 +87,13 @@ namespace laps {
 
         bool HasSubscribers() const { return !subscribers_.empty() || !sub_namespaces_.empty(); }
 
+        /**
+         * @brief Number of subscribers receiving fanout of this track via SUBSCRIBE
+         *
+         * @note Subscribers matched through a subscribe namespace are not included.
+         */
+        std::size_t SubscriberCount() const { return subscribers_.size(); }
+
       private:
         void TryProcessStreamData(uint64_t stream_id, StreamContext& stream);
 

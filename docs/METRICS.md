@@ -147,7 +147,7 @@ Subscribe metrics are emitted on the schema track with `type` set to `subscribe`
 Example:
 
 ```json
-{"type":"subscribe","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"track_namespace":"media/live/event1","track_name":"video","bytes_received":8192,"objects_received":32,"subscribers":4}
+{"type":"subscribe","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"track_namespace":"media/live/event1","track_name":"video","bytes_received":8192,"objects_received":32}
 ```
 
 Subscribe-specific fields:
@@ -158,7 +158,6 @@ Subscribe-specific fields:
 | `track_name` | Name of the subscribed content track. |
 | `bytes_received` | Payload bytes received during the sample period. |
 | `objects_received` | Objects received during the sample period. |
-| `subscribers` | Current number of local fanout subscribers for the track. |
 
 ## Publish Metrics
 
@@ -167,7 +166,7 @@ Publish metrics are emitted on the schema track with `type` set to `publish`.
 Example:
 
 ```json
-{"type":"publish","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","track_namespace":"media/live/event1","track_name":"video","bytes_published":16384,"objects_published":64,"objects_dropped_not_ok":0,"quic":{"tx_buffer_drops":0,"tx_queue_discards":0,"tx_queue_expired":0,"tx_delayed_callback":0,"tx_reset_wait":0,"tx_queue_size":{"min":0,"max":3,"avg":1,"value_sum":6,"value_count":4},"tx_callback_ms":{"min":0,"max":2,"avg":1,"value_sum":4,"value_count":4},"tx_object_duration_us":{"min":100,"max":500,"avg":250,"value_sum":1000,"value_count":4}}}
+{"type":"publish","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","track_namespace":"media/live/event1","track_name":"video","bytes_published":16384,"objects_published":64,"objects_dropped_not_ok":0,"subscribers":4,"quic":{"tx_buffer_drops":0,"tx_queue_discards":0,"tx_queue_expired":0,"tx_delayed_callback":0,"tx_reset_wait":0,"tx_queue_size":{"min":0,"max":3,"avg":1,"value_sum":6,"value_count":4},"tx_callback_ms":{"min":0,"max":2,"avg":1,"value_sum":4,"value_count":4},"tx_object_duration_us":{"min":100,"max":500,"avg":250,"value_sum":1000,"value_count":4}}}
 ```
 
 Publish-specific fields:
@@ -180,6 +179,7 @@ Publish-specific fields:
 | `bytes_published` | Payload bytes published during the sample period. |
 | `objects_published` | Objects published during the sample period. |
 | `objects_dropped_not_ok` | Objects dropped because the publish handler was not in a publishable state. |
+| `subscribers` | Current number of local fanout subscribers for the track. Track-level, so every publish sample for the same track in a period carries the same value. Subscribers matched through a subscribe namespace are not counted. |
 | `quic` | QUIC data-context metrics object. |
 
 Publish `quic` fields:

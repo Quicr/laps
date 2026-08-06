@@ -72,7 +72,9 @@ namespace laps {
     void PublishTrackHandler::MetricsSampled(const quicr::PublishTrackMetrics& metrics)
     {
         const auto tfn = GetFullTrackName();
-        server_.metrics_publisher_.QueuePublishMetrics(GetConnectionId(), tfn, metrics);
+        const auto th = quicr::TrackHash(tfn);
+        server_.metrics_publisher_.QueuePublishMetrics(
+          GetConnectionId(), tfn, server_.TrackSubscriberCount(th.track_fullname_hash), metrics);
     }
 
     bool PublishTrackHandler::SentFirstObject(uint32_t group_id, uint32_t subgroup_id)

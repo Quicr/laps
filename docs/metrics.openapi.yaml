@@ -91,7 +91,6 @@ components:
         - track_name
         - bytes_received
         - objects_received
-        - subscribers
       properties:
         type:
           type: string
@@ -110,8 +109,6 @@ components:
           $ref: '#/components/schemas/UnsignedInteger'
         objects_received:
           $ref: '#/components/schemas/UnsignedInteger'
-        subscribers:
-          $ref: '#/components/schemas/UnsignedInteger'
 
     PublishMetrics:
       type: object
@@ -127,6 +124,7 @@ components:
         - bytes_published
         - objects_published
         - objects_dropped_not_ok
+        - subscribers
         - quic
       properties:
         type:
@@ -149,6 +147,8 @@ components:
         objects_published:
           $ref: '#/components/schemas/UnsignedInteger'
         objects_dropped_not_ok:
+          $ref: '#/components/schemas/UnsignedInteger'
+        subscribers:
           $ref: '#/components/schemas/UnsignedInteger'
         quic:
           $ref: '#/components/schemas/PublishQuicMetrics'
