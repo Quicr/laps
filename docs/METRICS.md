@@ -93,13 +93,14 @@ Connection metrics are emitted on the schema track with `type` set to `connectio
 Example:
 
 ```json
-{"type":"connection","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_ip":"192.0.2.44","remote_port":54431,"publish_tracks":3,"rx_dgram_unknown_track_alias":0,"rx_dgram_invalid_type":0,"rx_dgram_decode_failed":0,"rx_stream_buffer_error":0,"rx_stream_unknown_track_alias":0,"rx_stream_invalid_type":0,"invalid_ctrl_stream_msg":0,"quic":{"cwin_congested":0,"prev_cwin_congested":0,"tx_congested":0,"tx_rate_bps":{"min":1000,"max":2000,"avg":1500,"value_sum":3000,"value_count":2},"rx_rate_bps":{"min":900,"max":1800,"avg":1350,"value_sum":2700,"value_count":2},"tx_cwin_bytes":{"min":12000,"max":16000,"avg":14000,"value_sum":28000,"value_count":2},"tx_in_transit_bytes":{"min":0,"max":8000,"avg":4000,"value_sum":8000,"value_count":2},"rtt_us":{"min":1000,"max":1400,"avg":1200,"value_sum":2400,"value_count":2},"srtt_us":{"min":1100,"max":1300,"avg":1200,"value_sum":2400,"value_count":2},"tx_retransmits":0,"tx_lost_pkts":0,"tx_timer_losses":0,"tx_spurious_losses":0,"rx_dgrams":12,"rx_dgrams_bytes":4096,"tx_dgram_cb":15,"tx_dgram_ack":14,"tx_dgram_lost":0,"tx_dgram_spurious":0,"tx_dgram_drops":0}}
+{"type":"connection","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","remote_ip":"192.0.2.44","remote_port":54431,"publish_tracks":3,"rx_dgram_unknown_track_alias":0,"rx_dgram_invalid_type":0,"rx_dgram_decode_failed":0,"rx_stream_buffer_error":0,"rx_stream_unknown_track_alias":0,"rx_stream_invalid_type":0,"invalid_ctrl_stream_msg":0,"quic":{"cwin_congested":0,"prev_cwin_congested":0,"tx_congested":0,"tx_rate_bps":{"min":1000,"max":2000,"avg":1500,"value_sum":3000,"value_count":2},"rx_rate_bps":{"min":900,"max":1800,"avg":1350,"value_sum":2700,"value_count":2},"tx_cwin_bytes":{"min":12000,"max":16000,"avg":14000,"value_sum":28000,"value_count":2},"tx_in_transit_bytes":{"min":0,"max":8000,"avg":4000,"value_sum":8000,"value_count":2},"rtt_us":{"min":1000,"max":1400,"avg":1200,"value_sum":2400,"value_count":2},"srtt_us":{"min":1100,"max":1300,"avg":1200,"value_sum":2400,"value_count":2},"tx_retransmits":0,"tx_lost_pkts":0,"tx_timer_losses":0,"tx_spurious_losses":0,"rx_dgrams":12,"rx_dgrams_bytes":4096,"tx_dgram_cb":15,"tx_dgram_ack":14,"tx_dgram_lost":0,"tx_dgram_spurious":0,"tx_dgram_drops":0}}
 ```
 
 Connection-specific fields:
 
 | Field | Description |
 | --- | --- |
+| `remote_endpoint_id` | Remote endpoint ID from the client's `CLIENT_SETUP`. Empty until setup is received. |
 | `remote_ip` | Remote client IP address recorded when the connection was accepted. Empty if unavailable. |
 | `remote_port` | Remote client UDP port recorded when the connection was accepted. `0` if unavailable. |
 | `publish_tracks` | Number of active publish tracks for this connection. |
@@ -166,13 +167,14 @@ Publish metrics are emitted on the schema track with `type` set to `publish`.
 Example:
 
 ```json
-{"type":"publish","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"track_namespace":"media/live/event1","track_name":"video","bytes_published":16384,"objects_published":64,"objects_dropped_not_ok":0,"quic":{"tx_buffer_drops":0,"tx_queue_discards":0,"tx_queue_expired":0,"tx_delayed_callback":0,"tx_reset_wait":0,"tx_queue_size":{"min":0,"max":3,"avg":1,"value_sum":6,"value_count":4},"tx_callback_ms":{"min":0,"max":2,"avg":1,"value_sum":4,"value_count":4},"tx_object_duration_us":{"min":100,"max":500,"avg":250,"value_sum":1000,"value_count":4}}}
+{"type":"publish","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","track_namespace":"media/live/event1","track_name":"video","bytes_published":16384,"objects_published":64,"objects_dropped_not_ok":0,"quic":{"tx_buffer_drops":0,"tx_queue_discards":0,"tx_queue_expired":0,"tx_delayed_callback":0,"tx_reset_wait":0,"tx_queue_size":{"min":0,"max":3,"avg":1,"value_sum":6,"value_count":4},"tx_callback_ms":{"min":0,"max":2,"avg":1,"value_sum":4,"value_count":4},"tx_object_duration_us":{"min":100,"max":500,"avg":250,"value_sum":1000,"value_count":4}}}
 ```
 
 Publish-specific fields:
 
 | Field | Description |
 | --- | --- |
+| `remote_endpoint_id` | Remote endpoint ID from the publishing client's `CLIENT_SETUP`. Empty until setup is received. |
 | `track_namespace` | Namespace of the published content track. |
 | `track_name` | Name of the published content track. |
 | `bytes_published` | Payload bytes published during the sample period. |

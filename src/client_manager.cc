@@ -638,8 +638,11 @@ namespace laps {
         PurgePublishState(connection_handle);
     }
 
-    void ClientManager::ClientSetupReceived(std::uint64_t, const quicr::ClientSetupAttributes& client_setup_attributes)
+    void ClientManager::ClientSetupReceived(std::uint64_t connection_handle,
+                                            const quicr::ClientSetupAttributes& client_setup_attributes)
     {
+        metrics_publisher_.SetConnectionEndpointId(connection_handle, client_setup_attributes.endpoint_id);
+
         SPDLOG_LOGGER_INFO(LOGGER, "Client setup received from endpoint_id: {0}", client_setup_attributes.endpoint_id);
     }
 

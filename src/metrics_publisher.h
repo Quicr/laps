@@ -56,6 +56,7 @@ namespace laps {
         void Stop();
 
         void AddConnection(std::uint64_t connection_handle, const quicr::Session::ConnectionRemoteInfo& remote);
+        void SetConnectionEndpointId(std::uint64_t connection_handle, const std::string& endpoint_id);
         void RemoveConnection(std::uint64_t connection_handle);
 
         void QueueConnectionMetrics(std::uint64_t connection_handle,
@@ -93,6 +94,9 @@ namespace laps {
         {
             std::string ip;
             std::uint16_t port{ 0 };
+
+            /// Remote MoQ endpoint ID from CLIENT_SETUP. Empty until setup is received.
+            std::string endpoint_id;
         };
 
         static constexpr std::uint32_t kQueueLimit = 5'000;
@@ -105,6 +109,8 @@ namespace laps {
         quicr::FullTrackName MetricsTrackName() const;
         std::string MetricsNamespaceStr() const;
         static const char* TypeName(MetricType type);
+
+        RemoteInfo LookupRemote(std::uint64_t connection_handle);
 
         bool QueueSample(MetricsSample sample);
 

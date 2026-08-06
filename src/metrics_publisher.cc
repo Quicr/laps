@@ -248,7 +248,15 @@ namespace laps {
                                          const quicr::Session::ConnectionRemoteInfo& remote)
     {
         std::lock_guard<std::mutex> lock(tracks_mutex_);
-        remote_by_connection_[connection_handle] = { remote.ip, remote.port };
+        auto& remote_info = remote_by_connection_[connection_handle];
+        remote_info.ip = remote.ip;
+        remote_info.port = remote.port;
+    }
+
+    void MetricsPublisher::SetConnectionEndpointId(std::uint64_t connection_handle, const std::string& endpoint_id)
+    {
+        std::lock_guard<std::mutex> lock(tracks_mutex_);
+        remote_by_connection_[connection_handle].endpoint_id = endpoint_id;
     }
 
     void MetricsPublisher::RemoveConnection(std::uint64_t connection_handle)
@@ -257,18 +265,21 @@ namespace laps {
         remote_by_connection_.erase(connection_handle);
     }
 
+    MetricsPublisher::RemoteInfo MetricsPublisher::LookupRemote(std::uint64_t connection_handle)
+    {
+        std::lock_guard<std::mutex> lock(tracks_mutex_);
+        if (const auto it = remote_by_connection_.find(connection_handle); it != remote_by_connection_.end()) {
+            return it->second;
+        }
+
+        return {};
+    }
+
     void MetricsPublisher::QueueConnectionMetrics(std::uint64_t connection_handle,
                                                   std::size_t publish_track_count,
                                                   const quicr::ConnectionMetrics& metrics)
     {
-        RemoteInfo remote_info;
-        {
-            std::lock_guard<std::mutex> lock(tracks_mutex_);
-            if (const auto remote_it = remote_by_connection_.find(connection_handle);
-                remote_it != remote_by_connection_.end()) {
-                remote_info = remote_it->second;
-            }
-        }
+        const auto remote_info = LookupRemote(connection_handle);
 
         std::ostringstream out;
         bool first = true;
@@ -279,6 +290,7 @@ namespace laps {
                            config_.relay_id_,
                            metrics.last_sample_time,
                            connection_handle);
+        AppendStringField(out, first, "remote_endpoint_id", remote_info.endpoint_id);
         AppendStringField(out, first, "remote_ip", remote_info.ip);
         AppendUintField(out, first, "remote_port", remote_info.port);
         AppendUintField(out, first, "publish_tracks", static_cast<std::uint64_t>(publish_track_count));
@@ -301,12 +313,14 @@ namespace laps {
     {
         const auto track_namespace = track_name.NamespaceStr();
         const auto name = track_name.NameStr();
+        const auto remote_info = LookupRemote(connection_handle);
 
         std::ostringstream out;
         bool first = true;
         out << '{';
         AppendCommonFields(
           out, first, TypeName(MetricType::kPublish), config_.relay_id_, metrics.last_sample_time, connection_handle);
+        AppendStringField(out, first, "remote_endpoint_id", remote_info.endpoint_id);
         AppendStringField(out, first, "track_namespace", track_namespace);
         AppendStringField(out, first, "track_name", name);
         AppendUintField(out, first, "bytes_published", metrics.bytes_published);

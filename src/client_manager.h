@@ -82,7 +82,8 @@ namespace laps {
 
         void ConnectionStatusChanged(std::uint64_t connection_handle, ConnectionStatus status) override;
 
-        void ClientSetupReceived(std::uint64_t, const quicr::ClientSetupAttributes& client_setup_attributes) override;
+        void ClientSetupReceived(std::uint64_t connection_handle,
+                                 const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
         void UnsubscribeReceived(std::uint64_t connection_handle, uint64_t request_id) override;
         void PublishDoneReceived(std::uint64_t connection_handle, uint64_t request_id) override;

@@ -32,6 +32,7 @@ components:
         - relay_id
         - sample_time_us
         - connection_handle
+        - remote_endpoint_id
         - remote_ip
         - remote_port
         - publish_tracks
@@ -53,6 +54,8 @@ components:
           $ref: '#/components/schemas/UnsignedInteger'
         connection_handle:
           $ref: '#/components/schemas/UnsignedInteger'
+        remote_endpoint_id:
+          type: string
         remote_ip:
           type: string
         remote_port:
@@ -118,6 +121,7 @@ components:
         - relay_id
         - sample_time_us
         - connection_handle
+        - remote_endpoint_id
         - track_namespace
         - track_name
         - bytes_published
@@ -134,6 +138,8 @@ components:
           $ref: '#/components/schemas/UnsignedInteger'
         connection_handle:
           $ref: '#/components/schemas/UnsignedInteger'
+        remote_endpoint_id:
+          type: string
         track_namespace:
           type: string
         track_name:
