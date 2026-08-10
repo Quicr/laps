@@ -36,6 +36,7 @@ components:
         - remote_ip
         - remote_port
         - publish_tracks
+        - subscribe_tracks
         - rx_dgram_unknown_track_alias
         - rx_dgram_invalid_type
         - rx_dgram_decode_failed
@@ -61,6 +62,8 @@ components:
         remote_port:
           $ref: '#/components/schemas/UnsignedInteger'
         publish_tracks:
+          $ref: '#/components/schemas/UnsignedInteger'
+        subscribe_tracks:
           $ref: '#/components/schemas/UnsignedInteger'
         rx_dgram_unknown_track_alias:
           $ref: '#/components/schemas/UnsignedInteger'

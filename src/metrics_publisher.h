@@ -61,6 +61,7 @@ namespace laps {
 
         void QueueConnectionMetrics(std::uint64_t connection_handle,
                                     std::size_t publish_track_count,
+                                    std::size_t subscribe_track_count,
                                     const quicr::ConnectionMetrics& metrics);
         /**
          * @brief Queue a sample taken on a relay publish track

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "publish_namespace_handler.h"
+
 #include <mutex>
 #include <quicr/session.h>
 #include <set>
@@ -7,7 +9,6 @@
 namespace laps {
     class SubscribeTrackHandler;
     class PublishTrackHandler;
-    class PublishNamespaceHandler;
 
     struct State
     {
@@ -91,20 +92,14 @@ namespace laps {
          */
         std::size_t PublishTrackCount(std::uint64_t connection_handle)
         {
-            std::size_t count = 0;
-
             std::lock_guard _(state_mutex);
 
-            for (const auto& subscribe : pub_subscribes) {
-                const auto& key = subscribe.first;
-                const auto stored_connection_handle = key.second;
-
-                if (stored_connection_handle == connection_handle) {
-                    ++count;
-                }
+            const auto& metrics = conn_state_metrics.find(connection_handle);
+            if (metrics != conn_state_metrics.end()) {
+                return metrics->second.published_tracks;
             }
 
-            return count;
+            return 0;
         }
 
         /**
@@ -116,6 +111,35 @@ namespace laps {
          * @example track_handler = subscribes[track_alias, connection_handle]
          */
         std::map<std::pair<std::uint64_t, std::uint64_t>, SubscribePublishHandlerInfo> subscribes;
+
+        struct StateMetrics
+        {
+            std::uint64_t subscribed_tracks; ///< gauge; Set to the active number of subscribes
+            std::uint64_t published_tracks;  // gauge; Set to the active number of publishes
+        };
+
+        // Key is connection ID/handle
+        std::map<std::uint64_t, StateMetrics> conn_state_metrics;
+
+        /**
+         * @brief Get the count of subscribe tracks
+         *
+         * @param connection_handle     Connection handle/id
+         *
+         * @return Number of subscribes received from the connection, including the tracks matched by each of
+         *      the connection's namespace subscribes
+         */
+        std::size_t SubscribeTrackCount(std::uint64_t connection_handle)
+        {
+            std::lock_guard _(state_mutex);
+
+            const auto& metrics = conn_state_metrics.find(connection_handle);
+            if (metrics != conn_state_metrics.end()) {
+                return metrics->second.subscribed_tracks;
+            }
+
+            return 0;
+        }
 
         /**
          * Request ID to alias mapping

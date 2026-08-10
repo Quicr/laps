@@ -277,6 +277,7 @@ namespace laps {
 
     void MetricsPublisher::QueueConnectionMetrics(std::uint64_t connection_handle,
                                                   std::size_t publish_track_count,
+                                                  std::size_t subscribe_track_count,
                                                   const quicr::ConnectionMetrics& metrics)
     {
         const auto remote_info = LookupRemote(connection_handle);
@@ -293,7 +294,8 @@ namespace laps {
         AppendStringField(out, first, "remote_endpoint_id", remote_info.endpoint_id);
         AppendStringField(out, first, "remote_ip", remote_info.ip);
         AppendUintField(out, first, "remote_port", remote_info.port);
-        AppendUintField(out, first, "publish_tracks", static_cast<std::uint64_t>(publish_track_count));
+        AppendUintField(out, first, "publish_tracks", publish_track_count);
+        AppendUintField(out, first, "subscribe_tracks", subscribe_track_count);
         AppendUintField(out, first, "rx_dgram_unknown_track_alias", metrics.rx_dgram_unknown_track_alias);
         AppendUintField(out, first, "rx_dgram_invalid_type", metrics.rx_dgram_invalid_type);
         AppendUintField(out, first, "rx_dgram_decode_failed", metrics.rx_dgram_decode_failed);

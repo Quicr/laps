@@ -433,6 +433,8 @@ namespace laps {
 
             sub_track_handler->Pause();
         }
+
+        state_.conn_state_metrics[connection_handle].published_tracks++;
     }
 
     void ClientManager::SubscribeTracksReceived(std::uint64_t connection_handle,
@@ -682,11 +684,16 @@ namespace laps {
             break;
         }
 
+        auto& metrics_pub_tarcks = state_.conn_state_metrics[connection_handle].published_tracks;
+        if (metrics_pub_tarcks > 0) {
+            metrics_pub_tarcks--;
+        }
+
         std::vector<std::pair<std::uint64_t, std::uint64_t>> unsub_list;
 
         if (!have_publishers) {
 
-            // TODO: check if subscyyribe requests detatch or not
+            // TODO: check if subscribe requests detatch or not
 
             if (!config_.detached_subs) {
                 // Find subscribers that match this publisher and unsubscribe
@@ -740,6 +747,11 @@ namespace laps {
                                 connection_handle,
                                 request_id);
             return;
+        }
+
+        auto& metric_sub_count = state_.conn_state_metrics[connection_handle].subscribed_tracks;
+        if (metric_sub_count > 0) {
+            --metric_sub_count;
         }
 
         state_.subscribe_alias_req_id.erase(ta_it);
@@ -1315,6 +1327,8 @@ namespace laps {
                                start_location.group,
                                start_location.object);
 
+            state_.conn_state_metrics[connection_handle].subscribed_tracks++;
+
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
               State::SubscribeInfo{ connection_handle,
@@ -1476,6 +1490,8 @@ namespace laps {
     void ClientManager::MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics)
     {
         const auto publish_track_count = state_.PublishTrackCount(connection_handle);
-        metrics_publisher_.QueueConnectionMetrics(connection_handle, publish_track_count, metrics);
+        const auto subscribe_track_count = state_.SubscribeTrackCount(connection_handle);
+        metrics_publisher_.QueueConnectionMetrics(
+          connection_handle, publish_track_count, subscribe_track_count, metrics);
     }
 }

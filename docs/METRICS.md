@@ -97,7 +97,7 @@ Connection metrics are emitted on the schema track with `type` set to `connectio
 Example:
 
 ```json
-{"type":"connection","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","remote_ip":"192.0.2.44","remote_port":54431,"publish_tracks":3,"rx_dgram_unknown_track_alias":0,"rx_dgram_invalid_type":0,"rx_dgram_decode_failed":0,"rx_stream_buffer_error":0,"rx_stream_unknown_track_alias":0,"rx_stream_invalid_type":0,"invalid_ctrl_stream_msg":0,"quic":{"cwin_congested":0,"prev_cwin_congested":0,"tx_congested":0,"tx_rate_bps":{"min":1000,"max":2000,"avg":1500,"value_sum":3000,"value_count":2},"rx_rate_bps":{"min":900,"max":1800,"avg":1350,"value_sum":2700,"value_count":2},"tx_cwin_bytes":{"min":12000,"max":16000,"avg":14000,"value_sum":28000,"value_count":2},"tx_in_transit_bytes":{"min":0,"max":8000,"avg":4000,"value_sum":8000,"value_count":2},"rtt_us":{"min":1000,"max":1400,"avg":1200,"value_sum":2400,"value_count":2},"srtt_us":{"min":1100,"max":1300,"avg":1200,"value_sum":2400,"value_count":2},"tx_retransmits":0,"tx_lost_pkts":0,"tx_timer_losses":0,"tx_spurious_losses":0,"rx_dgrams":12,"rx_dgrams_bytes":4096,"tx_dgram_cb":15,"tx_dgram_ack":14,"tx_dgram_lost":0,"tx_dgram_spurious":0,"tx_dgram_drops":0}}
+{"type":"connection","relay_id":"relay-a","sample_time_us":1720000000000000,"connection_handle":10,"remote_endpoint_id":"client-42","remote_ip":"192.0.2.44","remote_port":54431,"publish_tracks":3,"subscribe_tracks":5,"rx_dgram_unknown_track_alias":0,"rx_dgram_invalid_type":0,"rx_dgram_decode_failed":0,"rx_stream_buffer_error":0,"rx_stream_unknown_track_alias":0,"rx_stream_invalid_type":0,"invalid_ctrl_stream_msg":0,"quic":{"cwin_congested":0,"prev_cwin_congested":0,"tx_congested":0,"tx_rate_bps":{"min":1000,"max":2000,"avg":1500,"value_sum":3000,"value_count":2},"rx_rate_bps":{"min":900,"max":1800,"avg":1350,"value_sum":2700,"value_count":2},"tx_cwin_bytes":{"min":12000,"max":16000,"avg":14000,"value_sum":28000,"value_count":2},"tx_in_transit_bytes":{"min":0,"max":8000,"avg":4000,"value_sum":8000,"value_count":2},"rtt_us":{"min":1000,"max":1400,"avg":1200,"value_sum":2400,"value_count":2},"srtt_us":{"min":1100,"max":1300,"avg":1200,"value_sum":2400,"value_count":2},"tx_retransmits":0,"tx_lost_pkts":0,"tx_timer_losses":0,"tx_spurious_losses":0,"rx_dgrams":12,"rx_dgrams_bytes":4096,"tx_dgram_cb":15,"tx_dgram_ack":14,"tx_dgram_lost":0,"tx_dgram_spurious":0,"tx_dgram_drops":0}}
 ```
 
 Connection-specific fields:
@@ -107,7 +107,8 @@ Connection-specific fields:
 | `remote_endpoint_id` | Remote endpoint ID from the client's `CLIENT_SETUP`. Empty until setup is received. |
 | `remote_ip` | Remote client IP address recorded when the connection was accepted. Empty if unavailable. |
 | `remote_port` | Remote client UDP port recorded when the connection was accepted. `0` if unavailable. |
-| `publish_tracks` | Number of active publish tracks for this connection. |
+| `publish_tracks` | Number of tracks this connection publishes, counted from the subscribes the relay has made to the connection. |
+| `subscribe_tracks` | Number of subscribes the relay has received from this connection. A namespace subscribe contributes one per track it currently matches, not one per namespace. |
 | `rx_dgram_unknown_track_alias` | Datagrams received for an unknown track alias. |
 | `rx_dgram_invalid_type` | Datagrams with an invalid object datagram type. |
 | `rx_dgram_decode_failed` | Datagrams that failed to decode. |
