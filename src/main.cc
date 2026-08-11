@@ -107,6 +107,8 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     cfg.sub_dampen_ms_ = cli_opts["sub_dampen_ms"].as<uint32_t>();
 
     cfg.relay_id_ = cli_opts["endpoint_id"].as<std::string>();
+    cfg.metrics_namespace_ = cli_opts.count("metrics_namespace") ? cli_opts["metrics_namespace"].as<std::string>()
+                                                                 : "metrics/" + cfg.relay_id_;
 
     if (cli_opts.count("cache_key")) {
         cfg.cache_key = cli_opts["cache_key"].as<std::uint64_t>();
@@ -159,6 +161,7 @@ main(int argc, char* argv[])
             "Duration of cache objects in milliseconds",
             cxxopts::value<size_t>()->default_value("60000"))
         ("cache_key", "Value of isCached extension key", cxxopts::value<std::uint64_t>())
+        ("metrics_namespace", "Metrics publish namespace", cxxopts::value<std::string>())
         ("l,detached_subs", "Enable support for detached subscribers")
         ("disable_cache", "Disable object caching")
         ("allow_self", "Allow subscribe namespace self-subscriptions");
@@ -186,6 +189,7 @@ main(int argc, char* argv[])
     std::unique_lock<std::mutex> lock(gvars::main_mutex);
 
     quicr::ServerConfig server_config = InitConfig(result, laps_config);
+    SPDLOG_LOGGER_INFO(laps_config.logger_, "Using metrics namespace: {}", laps_config.metrics_namespace_);
 
     std::shared_ptr<peering::InfoBase> forwarding_info = std::make_shared<peering::InfoBase>();
     peering::PeerManager peer_manager(laps_config, state, forwarding_info);

@@ -25,12 +25,38 @@ namespace laps {
       , state_(state)
       , config_(config)
       , peer_manager_(peer_manager)
+      , metrics_publisher_(*this, config)
       , cache_duration_ms_(cache_duration_ms)
     {
     }
 
+    ClientManager::~ClientManager()
+    {
+        metrics_publisher_.Stop();
+    }
+
+    quicr::Session::Status ClientManager::Start()
+    {
+        /*
+         * Set up relay-local metrics track state before starting the transport thread. Session::Start()
+         * spins up the transport thread that dispatches all control/data callbacks; starting metrics
+         * publishing first avoids any chance of racing with that thread while touching ClientManager state.
+         */
+        metrics_publisher_.Start();
+
+        return quicr::Session::Start();
+    }
+
+    void ClientManager::Stop()
+    {
+        metrics_publisher_.Stop();
+        quicr::Session::Stop();
+    }
+
     void ClientManager::NewConnectionAccepted(std::uint64_t connection_handle, const ConnectionRemoteInfo& remote)
     {
+        metrics_publisher_.AddConnection(connection_handle, remote);
+
         SPDLOG_LOGGER_INFO(
           LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, remote.ip, remote.port);
     }
@@ -257,7 +283,27 @@ namespace laps {
                                         const quicr::PublishAttributes& publish_attributes,
                                         [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
     {
-        bool is_from_peer = !connection_handle && !request_id;
+        PublishReceivedInternal(connection_handle, request_id, publish_attributes, !connection_handle && !request_id);
+    }
+
+    void ClientManager::RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes)
+    {
+        PublishReceivedInternal(0, 0, publish_attributes, false);
+    }
+
+    void ClientManager::PublishReceivedInternal(std::uint64_t connection_handle,
+                                                uint64_t request_id,
+                                                const quicr::PublishAttributes& publish_attributes,
+                                                bool is_from_peer)
+    {
+        /*
+         * Peer-originated publishes and relay-local publishes (e.g. the metrics track) both use the
+         * connection_handle=0/request_id=0 sentinel because there is no real connection to resolve the
+         * publish response against. Track alias assignment and ResolvePublish()/ClientAnnounce() must be
+         * bypassed for both, independent of whether the publish is actually from-peer.
+         */
+        const bool bypass_resolve = !connection_handle && !request_id;
+
         auto th = quicr::TrackHash(publish_attributes.track_full_name);
 
         SPDLOG_LOGGER_INFO(
@@ -315,9 +361,13 @@ namespace laps {
                                                                          config_.tick_service_,
                                                                          true);
 
-        if (is_from_peer) {
-            // For peering, need to set the track alias
+        if (bypass_resolve) {
+            // ResolvePublish() normally sets the track alias against a real connection; set it explicitly
+            // since that call is skipped below.
             sub_track_handler->SetTrackAlias(publish_attributes.track_alias);
+        }
+
+        if (is_from_peer) {
             sub_track_handler->SetFromPeer();
         }
 
@@ -327,7 +377,7 @@ namespace laps {
 
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
 
-        if (!is_from_peer) {
+        if (!bypass_resolve) {
             state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
 
             // Do this before pause to maintain MOQT message sequence order
@@ -383,6 +433,8 @@ namespace laps {
 
             sub_track_handler->Pause();
         }
+
+        state_.conn_state_metrics[connection_handle].published_tracks++;
     }
 
     void ClientManager::SubscribeTracksReceived(std::uint64_t connection_handle,
@@ -553,6 +605,8 @@ namespace laps {
                 break;
         }
 
+        metrics_publisher_.RemoveConnection(connection_handle);
+
         // Remove all subscribe announces for this connection handle
         std::vector<quicr::TrackNamespace> remove_ns;
         for (auto& [ns, conns] : state_.subscribes_namespaces) {
@@ -586,8 +640,11 @@ namespace laps {
         PurgePublishState(connection_handle);
     }
 
-    void ClientManager::ClientSetupReceived(std::uint64_t, const quicr::ClientSetupAttributes& client_setup_attributes)
+    void ClientManager::ClientSetupReceived(std::uint64_t connection_handle,
+                                            const quicr::ClientSetupAttributes& client_setup_attributes)
     {
+        metrics_publisher_.SetConnectionEndpointId(connection_handle, client_setup_attributes.endpoint_id);
+
         SPDLOG_LOGGER_INFO(LOGGER, "Client setup received from endpoint_id: {0}", client_setup_attributes.endpoint_id);
     }
 
@@ -627,11 +684,16 @@ namespace laps {
             break;
         }
 
+        auto& metrics_pub_tarcks = state_.conn_state_metrics[connection_handle].published_tracks;
+        if (metrics_pub_tarcks > 0) {
+            metrics_pub_tarcks--;
+        }
+
         std::vector<std::pair<std::uint64_t, std::uint64_t>> unsub_list;
 
         if (!have_publishers) {
 
-            // TODO: check if subscyyribe requests detatch or not
+            // TODO: check if subscribe requests detatch or not
 
             if (!config_.detached_subs) {
                 // Find subscribers that match this publisher and unsubscribe
@@ -685,6 +747,11 @@ namespace laps {
                                 connection_handle,
                                 request_id);
             return;
+        }
+
+        auto& metric_sub_count = state_.conn_state_metrics[connection_handle].subscribed_tracks;
+        if (metric_sub_count > 0) {
+            --metric_sub_count;
         }
 
         state_.subscribe_alias_req_id.erase(ta_it);
@@ -1260,6 +1327,8 @@ namespace laps {
                                start_location.group,
                                start_location.object);
 
+            state_.conn_state_metrics[connection_handle].subscribed_tracks++;
+
             // record subscribe as active from this subscriber
             state_.subscribe_active_[{ track_full_name.name_space, th.track_name_hash }].emplace(
               State::SubscribeInfo{ connection_handle,
@@ -1371,6 +1440,19 @@ namespace laps {
         }
     }
 
+    bool ClientManager::PublishLocalObject(std::uint64_t track_fullname_hash,
+                                           const quicr::ObjectHeaders& object_headers,
+                                           quicr::BytesSpan data)
+    {
+        const auto it = state_.pub_subscribes.find({ track_fullname_hash, 0 });
+        if (it == state_.pub_subscribes.end() || !it->second) {
+            return false;
+        }
+
+        it->second->ObjectReceived(object_headers, data);
+        return true;
+    }
+
     void ClientManager::PeerDataReceived(std::uint64_t track_full_name_hash,
                                          bool is_new_stream,
                                          std::optional<uint64_t> stream_id,
@@ -1408,19 +1490,8 @@ namespace laps {
     void ClientManager::MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics)
     {
         const auto publish_track_count = state_.PublishTrackCount(connection_handle);
-
-        SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Metrics connection handle: {}"
-                            " rtt_us: {}"
-                            " srtt_us: {}"
-                            " rate_bps: {}"
-                            " lost pkts: {}"
-                            " publish tracks: {}",
-                            connection_handle,
-                            metrics.quic.rtt_us.max,
-                            metrics.quic.srtt_us.max,
-                            metrics.quic.tx_rate_bps.max,
-                            metrics.quic.tx_lost_pkts,
-                            publish_track_count);
+        const auto subscribe_track_count = state_.SubscribeTrackCount(connection_handle);
+        metrics_publisher_.QueueConnectionMetrics(
+          connection_handle, publish_track_count, subscribe_track_count, metrics);
     }
 }

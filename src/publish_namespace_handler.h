@@ -24,6 +24,8 @@ namespace laps {
 
         PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<timeq::tick_service> tick_service);
 
+        std::uint64_t PublishTracksCount() const { return published_tracks_.size(); }
+
         void EndSubgroup(uint64_t group_id, uint64_t subgroup_id, bool completed);
 
         quicr::PublishTrackHandler::PublishObjectStatus PublishObject(

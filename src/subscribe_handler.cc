@@ -163,6 +163,10 @@ namespace laps {
                                                quicr::BytesSpan data,
                                                std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
     {
+        if (object_headers.track_mode.has_value()) {
+            is_datagram_ = *object_headers.track_mode == quicr::TrackMode::kDatagram;
+        }
+
         auto self_connection_handle = GetConnectionId();
 
         // Update tracked properties
@@ -560,6 +564,6 @@ namespace laps {
     void SubscribeTrackHandler::MetricsSampled(const quicr::SubscribeTrackMetrics& metrics)
     {
         const auto tfn = GetFullTrackName();
-        SPDLOG_DEBUG("track: {} ({}) metrics subscribers: {} ", tfn.NamespaceStr(), tfn.NameStr(), subscribers_.size());
+        server_.metrics_publisher_.QueueSubscribeMetrics(GetConnectionId(), tfn, SubscriberCount(), metrics);
     }
 }

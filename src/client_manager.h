@@ -1,11 +1,14 @@
 #pragma once
 
+#include "metrics_publisher.h"
 #include "state.h"
 
 #include "track_ranking.h"
 #include <peering/peer_manager.h>
 #include <quicr/containers/cache.h>
+#include <quicr/messages/object.h>
 #include <quicr/session.h>
+#include <quicr/utilities/bytes.h>
 
 #include <functional>
 #include <set>
@@ -55,6 +58,10 @@ namespace laps {
                       const quicr::ServerConfig& cfg,
                       peering::PeerManager& peer_manager,
                       size_t cache_duration_ms = 60000);
+        ~ClientManager();
+
+        quicr::Session::Status Start() override;
+        void Stop() override;
 
         void NewConnectionAccepted(std::uint64_t connection_handle, const ConnectionRemoteInfo& remote) override;
 
@@ -75,7 +82,8 @@ namespace laps {
 
         void ConnectionStatusChanged(std::uint64_t connection_handle, ConnectionStatus status) override;
 
-        void ClientSetupReceived(std::uint64_t, const quicr::ClientSetupAttributes& client_setup_attributes) override;
+        void ClientSetupReceived(std::uint64_t connection_handle,
+                                 const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
         void UnsubscribeReceived(std::uint64_t connection_handle, uint64_t request_id) override;
         void PublishDoneReceived(std::uint64_t connection_handle, uint64_t request_id) override;
@@ -110,12 +118,25 @@ namespace laps {
                              const quicr::PublishAttributes& publish_attributes,
                              std::weak_ptr<quicr::SubscribeNamespaceHandler> ns_handler) override;
 
+        /**
+         * @brief Register a relay-local publish (e.g. the internally generated metrics track)
+         *
+         * @details Unlike PublishReceived(), this is never treated as peer-originated even though it uses
+         *      the same connection_handle=0/request_id=0 sentinel internally. Use this instead of calling
+         *      PublishReceived(0, 0, ...) directly for relay-local publishes.
+         */
+        void RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes);
+
         void ProcessSubscribe(std::uint64_t connection_handle,
                               uint64_t request_id,
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
                               const quicr::SubscribeAttributes&,
                               std::optional<quicr::messages::Location>);
+
+        bool PublishLocalObject(std::uint64_t track_fullname_hash,
+                                const quicr::ObjectHeaders& object_headers,
+                                quicr::BytesSpan data);
 
         void PeerDataReceived(std::uint64_t track_full_name_hash,
                               bool is_new_stream,
@@ -134,6 +155,11 @@ namespace laps {
         void MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics) override;
 
       private:
+        void PublishReceivedInternal(std::uint64_t connection_handle,
+                                     uint64_t request_id,
+                                     const quicr::PublishAttributes& publish_attributes,
+                                     bool is_from_peer);
+
         void PurgePublishState(std::uint64_t connection_handle);
 
         void FetchReceived(std::uint64_t connection_handle,
@@ -147,6 +173,7 @@ namespace laps {
         State& state_;
         const Config& config_;
         peering::PeerManager& peer_manager_;
+        MetricsPublisher metrics_publisher_;
 
         /**
          * @brief Map of atomic bools to mark if a fetch thread should be interrupted.

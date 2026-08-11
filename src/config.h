@@ -36,6 +36,7 @@ namespace laps {
         bool disable_cache{ false };
 
         std::string relay_id_;
+        std::string metrics_namespace_;
         std::string tls_cert_filename_;
         std::string tls_key_filename_;
         std::string qlog_path_;
