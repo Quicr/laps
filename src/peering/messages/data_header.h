@@ -54,7 +54,7 @@ namespace laps::peering {
         bool Deserialize(std::span<uint8_t const> serialized_data);
 
         DataHeader() = default;
-        DataHeader(SubscribeNodeSetId sns_id, std::uint64_t full_name, DataType type);
+        DataHeader(SubscribeNodeSetId sns_id, std::uint64_t full_name_hash, DataType type);
         DataHeader(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;
