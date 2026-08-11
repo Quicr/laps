@@ -5,7 +5,9 @@
 
 namespace laps::peering {
 
-    SubscribeInfo::SubscribeInfo(std::uint64_t id, NodeIdValueType source_node_id, const quicr::TrackHash& track_hash)
+    SubscribeInfo::SubscribeInfo([[maybe_unused]] std::uint64_t track_fullname_hash,
+                                 NodeIdValueType source_node_id,
+                                 const quicr::TrackHash& track_hash)
       : source_node_id(source_node_id)
       , track_hash(track_hash)
     {
