@@ -291,13 +291,13 @@ namespace laps {
                         continue;
                     }
 
-                    const auto handler =
-                      PublishTrackHandler::Create(publish_attributes.track_full_name,
-                                                  quicr::TrackMode::kStream,
-                                                  publish_attributes.default_publisher_priority,
-                                                  publish_attributes.delivery_timeout.value_or(config_.object_ttl_),
-                                                  quicr::messages::Location{ 0, 0 },
-                                                  *this);
+                    const auto handler = PublishTrackHandler::Create(
+                      publish_attributes.track_full_name,
+                      quicr::TrackMode::kStream,
+                      publish_attributes.default_publisher_priority,
+                      publish_attributes.delivery_timeout.value_or(config_.object_ttl_),
+                      publish_attributes.largest_object.value_or(quicr::messages::Location{ 0, 0 }),
+                      *this);
                     if (!handler->GetTrackAlias().has_value()) {
                         handler->SetTrackAlias(th.track_fullname_hash);
                     }
@@ -1262,7 +1262,8 @@ namespace laps {
                                attrs.priority,
                                th.track_namespace_hash,
                                th.track_name_hash,
-                               attrs.new_group_request_id ? std::to_string(*attrs.new_group_request_id) : std::string("none"),
+                               attrs.new_group_request_id ? std::to_string(*attrs.new_group_request_id)
+                                                          : std::string("none"),
                                start_location.group,
                                start_location.object);
 
@@ -1388,9 +1389,16 @@ namespace laps {
         }
 
         if (stream_id.has_value()) {
-            it->second->StreamDataRecv(is_new_stream, *stream_id, data);
+            if (is_new_stream) {
+                quicr::InitialStreamData initial_buffer;
+                initial_buffer.buffer.Push(*data);
+                initial_buffer.source_buffers.push_back(std::move(data));
+                it->second->StreamDataRecv(*stream_id, std::move(initial_buffer));
+            } else {
+                it->second->StreamDataRecv(*stream_id, std::move(data));
+            }
         } else {
-            it->second->DgramDataRecv(data);
+            it->second->DgramDataRecv(std::move(data));
         }
     }
 

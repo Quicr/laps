@@ -8,10 +8,10 @@
 
 namespace laps::peering {
 
-    DataHeader::DataHeader(SubscribeNodeSetId sns_id, std::uint64_t full_name, DataType type)
+    DataHeader::DataHeader(SubscribeNodeSetId sns_id, std::uint64_t full_name_hash, DataType type)
       : type(type)
       , sns_id(sns_id)
-      , track_full_name_hash(full_name)
+      , track_full_name_hash(full_name_hash)
     {
     }
 
