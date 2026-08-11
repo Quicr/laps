@@ -337,13 +337,13 @@ namespace laps {
                         continue;
                     }
 
-                    const auto handler =
-                      PublishTrackHandler::Create(publish_attributes.track_full_name,
-                                                  quicr::TrackMode::kStream,
-                                                  publish_attributes.default_publisher_priority,
-                                                  publish_attributes.delivery_timeout.value_or(config_.object_ttl_),
-                                                  quicr::messages::Location{ 0, 0 },
-                                                  *this);
+                    const auto handler = PublishTrackHandler::Create(
+                      publish_attributes.track_full_name,
+                      quicr::TrackMode::kStream,
+                      publish_attributes.default_publisher_priority,
+                      publish_attributes.delivery_timeout.value_or(config_.object_ttl_),
+                      publish_attributes.largest_object.value_or(quicr::messages::Location{ 0, 0 }),
+                      *this);
                     if (!handler->GetTrackAlias().has_value()) {
                         handler->SetTrackAlias(th.track_fullname_hash);
                     }

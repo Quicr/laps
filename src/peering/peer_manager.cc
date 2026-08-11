@@ -656,7 +656,8 @@ namespace laps::peering {
                     parameters.AddOptional(quicr::messages::ParameterType::kNewGroupRequest, ngr_id);
                 }
 
-                auto new_group_request = parameters.GetOptional<bool>(quicr::messages::ParameterType::kNewGroupRequest);
+                auto new_group_request =
+                  parameters.GetOptional<uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
                 if (new_group_request.has_value() && !attrs.new_group_request_id.has_value()) {
                     // Remove new group request since it's not requested but was found
                     parameters.Remove(quicr::messages::ParameterType::kNewGroupRequest);
