@@ -12,6 +12,7 @@
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 #include "subscribe_handler.h"
+#include "transport_helpers.h"
 
 #include <ranges>
 
@@ -21,44 +22,385 @@ namespace laps {
                                  const quicr::ServerConfig& cfg,
                                  peering::PeerManager& peer_manager,
                                  size_t cache_duration_ms)
-      : quicr::Session(cfg, config.tick_service_)
-      , state_(state)
+      : state_(state)
       , config_(config)
+      , server_config_(cfg)
       , peer_manager_(peer_manager)
+      , tick_service_(config.tick_service_)
       , metrics_publisher_(*this, config)
+      , session_manager_(config.tick_service_)
       , cache_duration_ms_(cache_duration_ms)
     {
     }
 
     ClientManager::~ClientManager()
     {
-        metrics_publisher_.Stop();
+        Stop();
     }
 
     quicr::Session::Status ClientManager::Start()
     {
         /*
-         * Set up relay-local metrics track state before starting the transport thread. Session::Start()
-         * spins up the transport thread that dispatches all control/data callbacks; starting metrics
-         * publishing first avoids any chance of racing with that thread while touching ClientManager state.
+         * Set up relay-local metrics track state before the server transport is listening. The transport
+         * thread dispatches all control/data callbacks; starting metrics publishing first avoids any chance
+         * of racing with that thread while touching ClientManager state.
          */
         metrics_publisher_.Start();
 
-        return quicr::Session::Start();
+        auto create_session = [this](const quicr::ServerConfig& cfg,
+                                     std::shared_ptr<quicr::Transport> transport,
+                                     std::shared_ptr<quicr::Connection> connection,
+                                     std::shared_ptr<timeq::tick_service> tick_service) {
+            return ClientSession::Create(
+              cfg, std::move(transport), std::move(connection), std::move(tick_service), *this);
+        };
+
+        auto on_new_session = [this](const std::shared_ptr<quicr::Session>& session) {
+            NewConnectionAccepted(std::static_pointer_cast<ClientSession>(session));
+        };
+
+        server_transport_ = session_manager_.AddTransport(server_config_, create_session, on_new_session);
+
+        auto transport = server_transport_.lock();
+        if (transport == nullptr) {
+            SPDLOG_LOGGER_ERROR(LOGGER, "Failed to create the client server transport");
+            return quicr::Session::Status::kFailedToConnect;
+        }
+
+        /*
+         * Drive relay teardown from the transport's close hook, chained ahead of the session manager's own
+         * handler.
+         *
+         * The session manager detaches the connection's delegate as soon as this hook runs, which drops the
+         * status notification that would otherwise reach ClientSession::StatusChanged. This hook is therefore
+         * the only close signal the relay is guaranteed to receive.
+         *
+         * It runs on the transport's network thread rather than the callback thread, so ConnectionClosed()
+         * drops the session before touching anything else, keeping relay teardown off the session that
+         * libquicr may concurrently be tearing down.
+         */
+        transport->OnConnectionClosed = [this, session_manager_closed = transport->OnConnectionClosed](
+                                          const std::shared_ptr<quicr::Connection>& connection) {
+            ConnectionClosed(connection->GetID());
+
+            if (session_manager_closed) {
+                session_manager_closed(connection);
+            }
+        };
+
+        while (transport->Status() == quicr::TransportStatus::kConnecting) {
+            SPDLOG_LOGGER_INFO(LOGGER, "Waiting for client server transport to be ready");
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        if (transport->Status() != quicr::TransportStatus::kReady) {
+            return quicr::Session::Status::kNotReady;
+        }
+
+        return quicr::Session::Status::kReady;
     }
 
     void ClientManager::Stop()
     {
+        /*
+         * Shut the transport down before anything else so its thread stops dispatching callbacks into relay
+         * state that is about to go away.
+         */
+        if (auto transport = server_transport_.lock()) {
+            transport->OnNewConnection = nullptr;
+            transport->OnConnectionClosed = nullptr;
+            transport->Shutdown();
+        }
+
         metrics_publisher_.Stop();
-        quicr::Session::Stop();
+
+        std::lock_guard<std::mutex> _(sessions_mutex_);
+        sessions_.clear();
     }
 
-    void ClientManager::NewConnectionAccepted(std::uint64_t connection_handle, const ConnectionRemoteInfo& remote)
+    std::shared_ptr<ClientSession> ClientManager::GetSession(std::uint64_t connection_handle) const
     {
-        metrics_publisher_.AddConnection(connection_handle, remote);
+        std::lock_guard<std::mutex> _(sessions_mutex_);
 
-        SPDLOG_LOGGER_INFO(
-          LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, remote.ip, remote.port);
+        const auto it = sessions_.find(connection_handle);
+        return it != sessions_.end() ? it->second.lock() : nullptr;
+    }
+
+    void ClientManager::NewConnectionAccepted(const std::shared_ptr<ClientSession>& session)
+    {
+        const auto connection_handle = session->GetConnectionHandle();
+
+        {
+            std::lock_guard<std::mutex> _(sessions_mutex_);
+            sessions_[connection_handle] = session;
+        }
+
+        const auto [ip, port] = GetPeerAddress(server_transport_.lock(), session->GetConnection());
+        metrics_publisher_.AddConnection(connection_handle, { ip, port });
+
+        SPDLOG_LOGGER_INFO(LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, ip, port);
+    }
+
+    void ClientManager::ConnectionClosed(std::uint64_t connection_handle)
+    {
+        /*
+         * Drop the session first so that every GetSession() lookup for this handle now fails. Relay teardown
+         * below walks state that still references the connection, and without this the teardown would call
+         * back into a session that libquicr is closing on another thread.
+         *
+         * The erase also serves as the guard against running twice, since the close can be reported both by
+         * the transport's close hook and by ClientSession::StatusChanged.
+         */
+        {
+            std::lock_guard<std::mutex> _(sessions_mutex_);
+
+            if (sessions_.erase(connection_handle) == 0) {
+                return;
+            }
+        }
+
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Connection closed; connection_handle: {0} ", connection_handle);
+
+        metrics_publisher_.RemoveConnection(connection_handle);
+
+        // Remove all subscribe announces for this connection handle
+        std::vector<quicr::TrackNamespace> remove_ns;
+        for (auto& [ns, conns] : state_.subscribes_namespaces) {
+            auto it = conns.find(connection_handle);
+            if (it != conns.end()) {
+                remove_ns.emplace_back(ns);
+            }
+        }
+
+        for (auto ns : remove_ns) {
+            UnsubscribeNamespaceReceived(connection_handle, ns);
+        }
+
+        // Clean up subscribe states
+        std::vector<std::pair<std::uint64_t, std::uint64_t>> unsub_list;
+        for (auto it = state_.subscribe_alias_req_id.lower_bound({ connection_handle, 0 });
+             it != state_.subscribe_alias_req_id.end();
+             it++) {
+            const auto& [key, _] = *it;
+            if (key.first != connection_handle)
+                break;
+
+            unsub_list.push_back(key);
+        }
+
+        for (auto& key : unsub_list) {
+            UnsubscribeReceived(key.first, key.second);
+        }
+
+        // Cleanup publish states
+        PurgePublishState(connection_handle);
+
+        // Drop any namespaces that were fanned out to this connection
+        for (auto it = fanout_namespaces_.begin(); it != fanout_namespaces_.end();) {
+            it = it->first.second == connection_handle ? fanout_namespaces_.erase(it) : std::next(it);
+        }
+    }
+
+    // -------------------------------------------------------------------------------
+    // Session API by connection handle
+    // -------------------------------------------------------------------------------
+
+    void ClientManager::SubscribeTrack(std::uint64_t connection_handle,
+                                       std::shared_ptr<quicr::SubscribeTrackHandler> handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->SubscribeTrack(std::move(handler));
+        }
+    }
+
+    void ClientManager::UnsubscribeTrack(std::uint64_t connection_handle,
+                                         const std::shared_ptr<quicr::SubscribeTrackHandler>& handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->UnsubscribeTrack(handler);
+        }
+    }
+
+    void ClientManager::UpdateTrackSubscription(std::uint64_t connection_handle,
+                                                std::shared_ptr<quicr::SubscribeTrackHandler> handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->UpdateTrackSubscription(std::move(handler));
+        }
+    }
+
+    void ClientManager::PublishNamespace(std::uint64_t connection_handle,
+                                         std::shared_ptr<quicr::PublishNamespaceHandler> handler,
+                                         bool passive)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->PublishNamespace(std::move(handler), passive);
+        }
+    }
+
+    void ClientManager::FetchTrack(std::uint64_t connection_handle, std::shared_ptr<quicr::FetchTrackHandler> handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->FetchTrack(std::move(handler));
+        }
+    }
+
+    void ClientManager::CancelFetchTrack(std::uint64_t connection_handle,
+                                         std::shared_ptr<quicr::FetchTrackHandler> handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->CancelFetchTrack(std::move(handler));
+        }
+    }
+
+    void ClientManager::BindPublisherTrack(std::uint64_t connection_handle,
+                                           std::uint64_t src_id,
+                                           uint64_t request_id,
+                                           const std::shared_ptr<quicr::PublishTrackHandler>& handler,
+                                           bool ephemeral)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->BindPublisherTrack(src_id, request_id, handler, ephemeral);
+        }
+    }
+
+    void ClientManager::UnbindPublisherTrack(std::uint64_t connection_handle,
+                                             std::uint64_t src_id,
+                                             const std::shared_ptr<quicr::PublishTrackHandler>& handler,
+                                             bool send_publish_done)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->UnbindPublisherTrack(src_id, handler, send_publish_done);
+        }
+    }
+
+    void ClientManager::BindFetchTrack(std::uint64_t connection_handle,
+                                       std::shared_ptr<quicr::PublishFetchHandler> handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->BindFetchTrack(std::move(handler));
+        }
+    }
+
+    void ClientManager::UnbindFetchTrack(std::uint64_t connection_handle,
+                                         const std::shared_ptr<quicr::PublishFetchHandler>& handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->UnbindFetchTrack(handler);
+        }
+    }
+
+    void ClientManager::ResolvePublish(std::uint64_t connection_handle,
+                                       uint64_t request_id,
+                                       const quicr::PublishAttributes& attributes,
+                                       const quicr::PublishResponse& response,
+                                       std::shared_ptr<quicr::SubscribeTrackHandler> handler)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->ResolvePublish(request_id, attributes, response, std::move(handler));
+        }
+    }
+
+    void ClientManager::ResolveSubscribe(std::uint64_t connection_handle,
+                                         uint64_t request_id,
+                                         uint64_t track_alias,
+                                         const quicr::RequestResponse& response)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->ResolveSubscribe(request_id, track_alias, response);
+        }
+    }
+
+    void ClientManager::ResolveSubscribeTracks(std::uint64_t connection_handle,
+                                               std::uint64_t data_ctx_id,
+                                               uint64_t request_id,
+                                               const quicr::TrackNamespace& prefix,
+                                               const quicr::SubscribeNamespaceResponse& response)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->ResolveSubscribeTracks(data_ctx_id, request_id, prefix, response);
+        }
+    }
+
+    void ClientManager::ResolveFetch(std::uint64_t connection_handle,
+                                     uint64_t request_id,
+                                     std::uint8_t priority,
+                                     std::optional<quicr::messages::GroupOrder> group_order,
+                                     const quicr::FetchResponse& response)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->ResolveFetch(request_id, priority, group_order, response);
+        }
+    }
+
+    void ClientManager::ResolvePublishNamespace(std::uint64_t connection_handle,
+                                                uint64_t request_id,
+                                                const quicr::TrackNamespace& track_namespace,
+                                                const quicr::Session::PublishNamespaceResponse& response)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->ResolvePublishNamespace(request_id, track_namespace, response);
+        }
+    }
+
+    void ClientManager::ResolveTrackStatus(std::uint64_t connection_handle,
+                                           uint64_t request_id,
+                                           const quicr::RequestResponse& response)
+    {
+        if (auto session = GetSession(connection_handle)) {
+            session->ResolveTrackStatus(request_id, response);
+        }
+    }
+
+    void ClientManager::FanoutPublishNamespace(const quicr::TrackNamespace& track_namespace,
+                                               std::uint64_t exclude_connection)
+    {
+        // TODO: Fix O(prefix namespaces) matching
+        for (const auto& [prefix, conns] : state_.subscribes_namespaces) {
+            if (!prefix.HasSamePrefix(track_namespace)) {
+                continue;
+            }
+
+            for (const auto connection_handle : std::views::keys(conns)) {
+                if (connection_handle == exclude_connection) {
+                    continue;
+                }
+
+                auto session = GetSession(connection_handle);
+                if (session == nullptr) {
+                    continue;
+                }
+
+                auto [it, is_new] = fanout_namespaces_.try_emplace({ track_namespace, connection_handle });
+                if (!is_new) {
+                    continue;
+                }
+
+                it->second = quicr::PublishNamespaceHandler::Create(track_namespace);
+                session->PublishNamespace(it->second);
+
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Publish namespace fanned out to prefix subscriber connection handle: {} for "
+                                    "namespace hash: {}",
+                                    connection_handle,
+                                    quicr::TrackHash({ track_namespace, {} }).track_namespace_hash);
+            }
+        }
+    }
+
+    void ClientManager::FanoutPublishNamespaceDone(const quicr::TrackNamespace& track_namespace)
+    {
+        for (auto it = fanout_namespaces_.lower_bound({ track_namespace, 0 }); it != fanout_namespaces_.end();) {
+            if (it->first.first != track_namespace) {
+                break;
+            }
+
+            if (auto session = GetSession(it->first.second)) {
+                session->PublishNamespaceDone(it->second);
+            }
+
+            it = fanout_namespaces_.erase(it);
+        }
     }
 
     std::vector<std::uint64_t> ClientManager::PublishNamespaceDoneReceived(std::uint64_t connection_handle,
@@ -103,7 +445,7 @@ namespace laps {
             }
         }
 
-        ResolvePublishNamespaceDone(connection_handle, request_id, sub_namespace_connections);
+        FanoutPublishNamespaceDone(track_namespace);
 
         for (auto track_alias : state_.pub_namespace_active[{ track_namespace, connection_handle }]) {
             auto ptd = state_.pub_subscribes[{ track_alias, connection_handle }];
@@ -243,29 +585,12 @@ namespace laps {
 
         state_.pub_namespace_active.try_emplace(std::make_pair(track_namespace, connection_handle));
 
-        PublishNamespaceResponse announce_response;
-        announce_response.reason_code = PublishNamespaceResponse::ReasonCode::kOk;
+        quicr::Session::PublishNamespaceResponse announce_response;
+        announce_response.reason_code = quicr::Session::PublishNamespaceResponse::ReasonCode::kOk;
 
-        std::vector<std::uint64_t> sub_annos_connections;
+        ResolvePublishNamespace(connection_handle, attrs.request_id, track_namespace, announce_response);
 
-        // TODO: Fix O(prefix namespaces) matching
-        for (const auto& [ns, conns] : state_.subscribes_namespaces) {
-            if (!ns.HasSamePrefix(track_namespace)) {
-                continue;
-            }
-
-            for (auto& [conn_handle, _] : conns) {
-                SPDLOG_DEBUG("Received publish namespace matches prefix subscribed namespace from connection handle: "
-                             "{} for namespace hash: {}",
-                             conn_handle,
-                             th.track_namespace_hash);
-
-                sub_annos_connections.emplace_back(conn_handle);
-            }
-        }
-
-        ResolvePublishNamespace(
-          connection_handle, attrs.request_id, track_namespace, sub_annos_connections, announce_response);
+        FanoutPublishNamespace(track_namespace, connection_handle);
 
         if (connection_handle) {
             subscribe_to_publisher();
@@ -583,61 +908,6 @@ namespace laps {
             state_.subscribes_namespaces.erase(it);
             track_rankings_.erase(th.track_namespace_hash);
         }
-    }
-
-    void ClientManager::ConnectionStatusChanged(std::uint64_t connection_handle, ConnectionStatus status)
-    {
-        switch (status) {
-            case ConnectionStatus::kConnected:
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Connection ready; connection_handle: {0} ", connection_handle);
-                return;
-            case ConnectionStatus::kConnecting:
-                return;
-
-            case ConnectionStatus::kNotConnected:
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Connection not connected; connection_handle: {0} ", connection_handle);
-                break;
-            case ConnectionStatus::kClosedByRemote:
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Connection closed by remote; connection_handle: {0} ", connection_handle);
-                break;
-            case ConnectionStatus::kIdleTimeout:
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Connection idle timeout; connection_handle: {0} ", connection_handle);
-                break;
-        }
-
-        metrics_publisher_.RemoveConnection(connection_handle);
-
-        // Remove all subscribe announces for this connection handle
-        std::vector<quicr::TrackNamespace> remove_ns;
-        for (auto& [ns, conns] : state_.subscribes_namespaces) {
-            auto it = conns.find(connection_handle);
-            if (it != conns.end()) {
-                remove_ns.emplace_back(ns);
-            }
-        }
-
-        for (auto ns : remove_ns) {
-            UnsubscribeNamespaceReceived(connection_handle, ns);
-        }
-
-        // Clean up subscribe states
-        std::vector<std::pair<std::uint64_t, std::uint64_t>> unsub_list;
-        for (auto it = state_.subscribe_alias_req_id.lower_bound({ connection_handle, 0 });
-             it != state_.subscribe_alias_req_id.end();
-             it++) {
-            const auto& [key, _] = *it;
-            if (key.first != connection_handle)
-                break;
-
-            unsub_list.push_back(key);
-        }
-
-        for (auto& key : unsub_list) {
-            UnsubscribeReceived(key.first, key.second);
-        }
-
-        // Cleanup publish states
-        PurgePublishState(connection_handle);
     }
 
     void ClientManager::ClientSetupReceived(std::uint64_t connection_handle,

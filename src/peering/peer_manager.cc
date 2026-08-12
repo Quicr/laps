@@ -8,6 +8,7 @@
 #include <peering/messages/data_header.h>
 
 #include "subscribe_handler.h"
+#include "transport_helpers.h"
 #include <chrono>
 
 namespace laps::peering {
@@ -394,7 +395,7 @@ namespace laps::peering {
                                       DataHeader data_header,
                                       std::shared_ptr<const std::vector<uint8_t>> data,
                                       uint64_t data_offset,
-                                      quicr::ITransport::EnqueueFlags eflags)
+                                      quicr::Transport::EnqueueFlags eflags)
     {
         std::unique_lock _(info_base_->mutex_); // TODO: See about removing this lock
         auto it = info_base_->peer_fib_.find({ peer_session_id, data_header.sns_id });
@@ -532,7 +533,7 @@ namespace laps::peering {
         auto net_data = std::make_shared<std::vector<uint8_t>>(data_header.Serialize());
         net_data->insert(net_data->end(), data->begin(), data->end());
 
-        quicr::ITransport::EnqueueFlags eflags;
+        quicr::Transport::EnqueueFlags eflags;
 
         bool set_sns_id{ false };
         switch (type) {
@@ -912,7 +913,16 @@ namespace laps::peering {
         tconfig.max_connections = 100;
 
         server_transport_ =
-          quicr::ITransport::MakeServerTransport(std::move(server), std::move(tconfig), *this, tick_service_, LOGGER);
+          quicr::Transport::MakeServerTransport(std::move(server), std::move(tconfig), tick_service_, LOGGER);
+
+        server_transport_->OnNewConnection = [this](const std::shared_ptr<quicr::Connection>& connection) {
+            NewPeerConnection(connection);
+        };
+
+        server_transport_->OnConnectionClosed = [this](const std::shared_ptr<quicr::Connection>& connection) {
+            PeerConnectionClosed(connection);
+        };
+
         server_transport_->Start();
 
         while (server_transport_->Status() == quicr::TransportStatus::kConnecting) {
@@ -932,6 +942,12 @@ namespace laps::peering {
         stop_ = true;
 
         SPDLOG_LOGGER_INFO(LOGGER, "Closing peer manager threads");
+
+        if (server_transport_ != nullptr) {
+            server_transport_->OnNewConnection = nullptr;
+            server_transport_->OnConnectionClosed = nullptr;
+            server_transport_->Shutdown();
+        }
 
         client_peer_sessions_.clear();
         server_peer_sessions_.clear();
@@ -1190,7 +1206,7 @@ namespace laps::peering {
 
     void PeerManager::CreatePeerSession(const quicr::TransportRemote& peer_config)
     {
-        auto peer_sess = std::make_shared<PeerSession>(false, 0, config_, node_info_, peer_config, *this);
+        auto peer_sess = std::make_shared<PeerSession>(false, config_, node_info_, peer_config, *this);
         peer_sess->Connect();
 
         client_peer_sessions_.try_emplace(peer_sess->GetSessionId(), std::move(peer_sess));
@@ -1233,106 +1249,66 @@ namespace laps::peering {
     }
 
     /*
-     * Delegate Implementations
+     * Server transport callbacks
      */
-    void PeerManager::OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status)
+    void PeerManager::NewPeerConnection(const std::shared_ptr<quicr::Connection>& connection)
     {
-        auto peer_it = server_peer_sessions_.find(conn_id);
-        if (peer_it == server_peer_sessions_.end()) {
-            return;
-        }
+        const auto conn_id = connection->GetID();
 
-        PeerSession::StatusValue sess_status = PeerSession::StatusValue::kConnected;
-        switch (status) {
-            case quicr::TransportStatus::kReady: {
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} is connected", conn_id);
-                break;
-            }
-            case quicr::TransportStatus::kConnecting:
-                break;
+        std::shared_ptr<PeerSession> peer_sess;
 
-            case quicr::TransportStatus::kDisconnected: {
-                sess_status = PeerSession::StatusValue::kDisconnected;
+        {
+            std::lock_guard _(mutex_);
 
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} is disconnected", conn_id);
-                break;
+            if (server_peer_sessions_.contains(conn_id)) {
+                return;
             }
 
-            case quicr::TransportStatus::kRemoteRequestClose:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} remote disconnected", conn_id);
-                break;
-
-            case quicr::TransportStatus::kShutdown:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} shutdown", conn_id);
-                break;
-
-            case quicr::TransportStatus::kIdleTimeout:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} idle timeout", conn_id);
-                break;
-
-            case quicr::TransportStatus::kShuttingDown:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} shutdown", conn_id);
-                break;
-        }
-
-        SessionChanged(peer_it->second->GetSessionId(), sess_status, peer_it->second->remote_node_info_);
-
-        server_peer_sessions_.erase(peer_it);
-    }
-
-    void PeerManager::OnNewConnection(const std::uint64_t& conn_id, const quicr::TransportRemote& remote)
-    {
-        auto peer_iter = server_peer_sessions_.find(conn_id);
-
-        if (peer_iter == server_peer_sessions_.end()) {
             SPDLOG_LOGGER_INFO(LOGGER, "New server accepted peer, conn_id: {0}", conn_id);
 
-            quicr::TransportRemote peer = remote;
-            auto [iter, inserted] = server_peer_sessions_.try_emplace(
-              conn_id, std::make_shared<PeerSession>(true, conn_id, config_, node_info_, std::move(peer), *this));
+            const auto [ip, port] = GetPeerAddress(server_transport_, connection);
+            const quicr::TransportRemote peer{ ip, port, quicr::TransportProtocol::kQuic };
 
-            peer_iter = iter;
-
-            auto& peer_sess = peer_iter->second;
-
-            peer_sess->SetTransport(server_transport_);
+            peer_sess = std::make_shared<PeerSession>(true, config_, node_info_, peer, *this);
+            peer_sess->SetConnection(server_transport_, connection);
             peer_sess->Connect();
+
+            server_peer_sessions_.emplace(conn_id, peer_sess);
         }
+
+        /*
+         * Attach last and outside the lock. Attaching replays the current connection status, which can call
+         * back into the manager.
+         */
+        connection->SetDelegate(peer_sess);
     }
 
-    void PeerManager::OnRecvStream(const std::uint64_t& conn_id,
-                                   uint64_t stream_id,
-                                   std::optional<std::uint64_t> data_ctx_id,
-                                   const bool is_bidir)
+    void PeerManager::PeerConnectionClosed(const std::shared_ptr<quicr::Connection>& connection)
     {
-        auto peer_iter = server_peer_sessions_.find(conn_id);
-        if (peer_iter != server_peer_sessions_.end()) {
-            peer_iter->second->OnRecvStream(conn_id, stream_id, data_ctx_id, is_bidir);
-        }
-    }
+        std::shared_ptr<PeerSession> peer_sess;
 
-    void PeerManager::OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id)
-    {
-        auto peer_iter = server_peer_sessions_.find(conn_id);
-        if (peer_iter != server_peer_sessions_.end()) {
-            peer_iter->second->OnRecvDgram(conn_id, data_ctx_id);
-        }
-    }
+        {
+            std::lock_guard _(mutex_);
 
-    void PeerManager::OnStreamClosed(const std::uint64_t& connection_handle,
-                                     std::uint64_t stream_id,
-                                     std::shared_ptr<quicr::StreamRxContext> rx_context,
-                                     std::optional<uint64_t> request_id,
-                                     quicr::StreamClosedFlag flag)
-    {
-        auto peer_iter = server_peer_sessions_.find(connection_handle);
-        if (peer_iter != server_peer_sessions_.end()) {
-            peer_iter->second->OnStreamClosed(connection_handle, stream_id, rx_context, request_id, flag);
+            auto peer_it = server_peer_sessions_.find(connection->GetID());
+            if (peer_it == server_peer_sessions_.end()) {
+                return;
+            }
+
+            peer_sess = std::move(peer_it->second);
+            server_peer_sessions_.erase(peer_it);
+        }
+
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} closed", connection->GetID());
+
+        /*
+         * The connection holds a weak reference to the session, so the session's own disconnect notification
+         * is not guaranteed to be delivered before the session is dropped here. Report it only when the
+         * session has not already seen the status change, to avoid withdrawing the peer's info twice.
+         */
+        if (peer_sess->Status() != PeerSession::StatusValue::kDisconnected) {
+            SessionChanged(
+              peer_sess->GetSessionId(), PeerSession::StatusValue::kDisconnected, peer_sess->remote_node_info_);
         }
     }
 

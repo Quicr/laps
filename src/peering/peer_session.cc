@@ -14,7 +14,6 @@
 namespace laps::peering {
 
     PeerSession::PeerSession(bool is_inbound,
-                             const std::uint64_t conn_id,
                              const Config& cfg,
                              const NodeInfo& node_info,
                              const quicr::TransportRemote& remote,
@@ -24,7 +23,6 @@ namespace laps::peering {
       , node_info_(node_info)
       , manager_(manager)
       , is_inbound_(is_inbound)
-      , t_conn_id_(conn_id)
     {
         if (config_.tls_cert_filename_.length() == 0) {
             transport_config_.tls_cert_filename = "";
@@ -39,6 +37,7 @@ namespace laps::peering {
     PeerSession::~PeerSession()
     {
         if (not is_inbound_) {
+            connection_ = nullptr;
             transport_ = nullptr;
         }
 
@@ -60,18 +59,26 @@ namespace laps::peering {
             return;
         }
 
-        if (transport_)
-            transport_ = nullptr;
+        connection_ = nullptr;
+        transport_ = nullptr;
 
         peer_sns_.clear();
 
         transport_ =
-          quicr::ITransport::MakeClientTransport(peer_config_, transport_config_, *this, config_.tick_service_, LOGGER);
-        t_conn_id_ = transport_->Start();
+          quicr::Transport::MakeClientTransport(peer_config_, transport_config_, config_.tick_service_, LOGGER);
+
+        connection_ = transport_->Start();
+        if (!connection_) {
+            SPDLOG_LOGGER_ERROR(LOGGER, "Failed to connect to peer {}:{}", peer_config_.host_or_ip, peer_config_.port);
+            status_ = StatusValue::kDisconnected;
+            return;
+        }
+
+        connection_->SetDelegate(shared_from_this());
 
         // Create the control data context
-        control_data_ctx_id_ = transport_->CreateDataContext(t_conn_id_, true, 0, true);
-        control_stream_id_ = transport_->CreateStream(t_conn_id_, control_data_ctx_id_, 0);
+        control_data_ctx_id_ = transport_->CreateDataContext(connection_, true, 0, true);
+        control_stream_id_ = transport_->CreateStream(connection_, control_data_ctx_id_, 0);
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_data_ctx_id_);
     }
@@ -84,10 +91,10 @@ namespace laps::peering {
         auto [it, new_ingress] = peer_sns_.try_emplace({ in_peer_session_id, in_sns_id });
         auto& sns = it->second;
 
-        if (it->second.id == 0) { // If not set, create the data context
+        if (it->second.id == 0 && IsUsable()) { // If not set, create the data context
             // TODO(tievens): Add datagram support - update transport to allow changing reliable state
             // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
-            it->second.id = transport_->CreateDataContext(t_conn_id_, true, priority, false);
+            it->second.id = transport_->CreateDataContext(connection_, true, priority, false);
         }
 
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
@@ -106,9 +113,9 @@ namespace laps::peering {
         auto [it, _] = sub_sns_.try_emplace(full_name_hash);
         auto& sns = it->second;
 
-        if (it->second.id == 0) { // If not set, create the data context
+        if (it->second.id == 0 && IsUsable()) { // If not set, create the data context
             // TODO(tievens): Update transport to have max data context ID and to wrap if reaching max
-            it->second.id = transport_->CreateDataContext(t_conn_id_, true, priority, false);
+            it->second.id = transport_->CreateDataContext(connection_, true, priority, false);
         }
 
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
@@ -134,7 +141,9 @@ namespace laps::peering {
 
             if (sns.nodes.empty()) {
                 sns_removed = true;
-                transport_->DeleteDataContext(t_conn_id_, it->second.id);
+                if (IsUsable()) {
+                    transport_->DeleteDataContext(connection_, it->second.id);
+                }
 
                 SendSns(sns, true);
 
@@ -166,7 +175,9 @@ namespace laps::peering {
 
                 if (sns.nodes.empty()) {
                     sns_removed = true;
-                    transport_->DeleteDataContext(t_conn_id_, it->second.id);
+                    if (IsUsable()) {
+                        transport_->DeleteDataContext(connection_, it->second.id);
+                    }
 
                     SendSns(sns, true);
 
@@ -180,36 +191,44 @@ namespace laps::peering {
 
     uint64_t PeerSession::CreateStream(SubscribeNodeSetId sns_id, uint8_t priority) const
     {
-        return transport_->CreateStream(t_conn_id_, sns_id, priority);
+        if (!IsUsable()) {
+            return 0;
+        }
+
+        return transport_->CreateStream(connection_, sns_id, priority);
     }
 
     void PeerSession::CloseStream(SubscribeNodeSetId sns_id, uint64_t stream_id, quicr::StreamClosedFlag flag)
     {
-        transport_->CloseStream(t_conn_id_, sns_id, stream_id, flag == quicr::StreamClosedFlag::kReset);
+        if (!IsUsable()) {
+            return;
+        }
+
+        transport_->CloseStream(connection_, sns_id, stream_id, flag == quicr::StreamClosedFlag::kReset);
     }
 
     void PeerSession::SendData(uint8_t priority,
                                uint32_t ttl,
                                SubscribeNodeSetId sns_id,
                                uint64_t stream_id,
-                               const quicr::ITransport::EnqueueFlags& eflags,
+                               const quicr::Transport::EnqueueFlags& eflags,
                                std::shared_ptr<const std::vector<uint8_t>> data)
     {
         // SPDLOG_LOGGER_DEBUG(LOGGER, "Sending data SNS id: {} data size: {}", sns_id, data.size());
 
-        if (status_ != StatusValue::kConnected)
+        if (status_ != StatusValue::kConnected || !IsUsable())
             return;
-        transport_->Enqueue(t_conn_id_, sns_id, stream_id, data, priority, ttl, 0, eflags);
+        transport_->Enqueue(connection_, sns_id, stream_id, data, priority, ttl, 0, eflags);
     }
 
     void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw) const
     {
-        if (status_ != StatusValue::kConnected)
+        if (status_ != StatusValue::kConnected || !IsUsable())
             return;
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending SNS id: {} set size: {} withdraw: {}", sns.id, sns.nodes.size(), withdraw);
 
-        transport_->Enqueue(t_conn_id_,
+        transport_->Enqueue(connection_,
                             control_data_ctx_id_,
                             control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(sns.Serialize(true, withdraw)),
@@ -219,14 +238,14 @@ namespace laps::peering {
 
     void PeerSession::SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw)
     {
-        if (status_ != StatusValue::kConnected)
+        if (status_ != StatusValue::kConnected || !IsUsable())
             return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending announce info id: {} source_node_id: {} withdraw: {}",
                             announce_info.fullname_hash,
                             announce_info.source_node_id,
                             withdraw);
-        transport_->Enqueue(t_conn_id_,
+        transport_->Enqueue(connection_,
                             control_data_ctx_id_,
                             control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(announce_info.Serialize(true, withdraw)),
@@ -236,7 +255,7 @@ namespace laps::peering {
 
     void PeerSession::SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw) const
     {
-        if (status_ != StatusValue::kConnected)
+        if (status_ != StatusValue::kConnected || !IsUsable())
             return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Sending subscribe fullname: {} source_node_id: {} withdraw: {} sub_data_size: {}",
@@ -245,7 +264,7 @@ namespace laps::peering {
                             withdraw,
                             subscribe_info.subscribe_data.size());
 
-        transport_->Enqueue(t_conn_id_,
+        transport_->Enqueue(connection_,
                             control_data_ctx_id_,
                             control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(
@@ -256,10 +275,10 @@ namespace laps::peering {
 
     void PeerSession::SendNodeInfo(const NodeInfo& node_info, bool withdraw) const
     {
-        if (status_ != StatusValue::kConnected)
+        if (status_ != StatusValue::kConnected || !IsUsable())
             return;
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending node info id: {}", NodeId().Value(node_info.id));
-        transport_->Enqueue(t_conn_id_,
+        transport_->Enqueue(connection_,
                             control_data_ctx_id_,
                             control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(node_info.Serialize(true, withdraw)),
@@ -276,7 +295,7 @@ namespace laps::peering {
         peer_sns_.clear();
 
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect length: {}", connect.Serialize().size());
-        transport_->Enqueue(t_conn_id_,
+        transport_->Enqueue(connection_,
                             control_data_ctx_id_,
                             control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(connect.Serialize()),
@@ -291,7 +310,7 @@ namespace laps::peering {
         connect_resp.node_info = node_info_;
         SPDLOG_LOGGER_DEBUG(LOGGER, "Sending connect ok length: {}", connect_resp.Serialize().size());
 
-        transport_->Enqueue(t_conn_id_,
+        transport_->Enqueue(connection_,
                             control_data_ctx_id_,
                             control_stream_id_,
                             std::make_shared<std::vector<uint8_t>>(connect_resp.Serialize()),
@@ -302,54 +321,60 @@ namespace laps::peering {
     /*
      * Delegate Implementations
      */
-    void PeerSession::OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status)
+    void PeerSession::OnConnectionStatus(const quicr::Connection::Status status)
     {
+        const auto conn_id = GetSessionId();
+
         switch (status) {
-            case quicr::TransportStatus::kReady: {
+            case quicr::Connection::Status::kReady: {
+                /*
+                 * Inbound sessions do not initiate the peering handshake; they wait for the remote connect
+                 * message and answer it with connect ok.
+                 */
+                if (is_inbound_) {
+                    status_ = StatusValue::kConnected;
+                    SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} is ready", conn_id);
+                    break;
+                }
+
                 SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} is ready, sending connect message", conn_id);
 
                 SendConnect();
                 break;
             }
-            case quicr::TransportStatus::kConnecting:
+            case quicr::Connection::Status::kConnecting:
                 break;
 
-            case quicr::TransportStatus::kDisconnected: {
+            case quicr::Connection::Status::kDisconnected: {
                 status_ = StatusValue::kDisconnected;
 
                 SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} is disconnected", conn_id);
                 break;
             }
 
-            case quicr::TransportStatus::kRemoteRequestClose:
+            case quicr::Connection::Status::kRemoteRequestClose:
                 status_ = StatusValue::kDisconnected;
 
                 SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} remote disconnected", conn_id);
                 break;
 
-            case quicr::TransportStatus::kShutdown:
+            case quicr::Connection::Status::kShutdown:
                 status_ = StatusValue::kDisconnected;
                 SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} shutdown", conn_id);
                 break;
 
-            case quicr::TransportStatus::kIdleTimeout:
+            case quicr::Connection::Status::kIdleTimeout:
                 status_ = StatusValue::kDisconnected;
                 SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} idle timeout", conn_id);
                 break;
 
-            case quicr::TransportStatus::kShuttingDown:
+            case quicr::Connection::Status::kShuttingDown:
                 status_ = StatusValue::kDisconnected;
                 SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} shutdown", conn_id);
                 break;
         }
 
         manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
-    }
-
-    void PeerSession::OnNewConnection([[maybe_unused]] const std::uint64_t& conn_id,
-                                      [[maybe_unused]] const quicr::TransportRemote& remote)
-    {
-        // Not used for outgoing connections. Incoming connections are handled by the server delegate
     }
 
     void PeerSession::ProcessControlMessage()
@@ -489,7 +514,7 @@ namespace laps::peering {
     {
         // TODO(tievens): Update to not buffer when node type is Via
 
-        quicr::ITransport::EnqueueFlags eflags;
+        quicr::Transport::EnqueueFlags eflags;
         eflags.use_reliable = stream_id.has_value(); // If stream isn't set, it's datagram
 
         // NEW STREAM - parse start of stream headers
@@ -529,14 +554,17 @@ namespace laps::peering {
         return true;
     }
 
-    void PeerSession::OnRecvStream(const std::uint64_t& conn_id,
-                                   uint64_t stream_id,
+    void PeerSession::OnRecvStream(std::uint64_t stream_id,
                                    std::optional<std::uint64_t> data_ctx_id,
                                    const bool is_bidir)
     {
-        auto rx_ctx = transport_->GetStreamRxContext(conn_id, stream_id);
+        if (!IsUsable()) {
+            return;
+        }
 
-        for (int i = 0; i < quicr::kReadLoopMaxPerStream; i++) {
+        auto rx_ctx = transport_->GetStreamRxContext(connection_, stream_id);
+
+        for (int i = 0; i < kReadLoopMaxPerStream; i++) {
             if (rx_ctx->data_queue.Empty()) {
                 break;
             }
@@ -562,12 +590,16 @@ namespace laps::peering {
         }
     }
 
-    void PeerSession::OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id)
+    void PeerSession::OnRecvDgram(std::optional<std::uint64_t> data_ctx_id)
     {
-        constexpr quicr::ITransport::EnqueueFlags eflags{ false, false, false, false };
+        constexpr quicr::Transport::EnqueueFlags eflags{ false, false, false, false };
+
+        if (!IsUsable()) {
+            return;
+        }
 
         for (int i = 0; i < 80; i++) {
-            auto data = transport_->Dequeue(conn_id, data_ctx_id);
+            auto data = transport_->Dequeue(connection_, data_ctx_id);
 
             if (!data) {
                 return;
@@ -586,34 +618,33 @@ namespace laps::peering {
     }
 
     void PeerSession::OnConnectionMetricsSampled([[maybe_unused]] const quicr::MetricsTimeStamp sample_time,
-                                                 [[maybe_unused]] const std::uint64_t conn_id,
                                                  const quicr::QuicConnectionMetrics& quic_connection_metrics)
     {
         metrics_.srtt_us = quic_connection_metrics.srtt_us.avg;
     }
 
-    void PeerSession::OnStreamClosed(const std::uint64_t& connection_handle,
-                                     std::uint64_t stream_id,
-                                     [[maybe_unused]] std::shared_ptr<quicr::StreamRxContext> rx_context,
-                                     [[maybe_unused]] std::optional<uint64_t> request_id,
+    void PeerSession::OnStreamClosed(std::uint64_t stream_id,
+                                     std::shared_ptr<quicr::StreamRxContext> rx_context,
+                                     [[maybe_unused]] std::optional<uint64_t> data_ctx_id,
                                      quicr::StreamClosedFlag flag)
     {
-        if (auto rx_ctx = transport_->GetStreamRxContext(connection_handle, stream_id)) {
-            auto& data_header = std::any_cast<DataHeader&>(rx_ctx->caller_any);
+        const auto conn_id = GetSessionId();
+
+        if (rx_context && rx_context->caller_any.has_value()) {
+            auto& data_header = std::any_cast<DataHeader&>(rx_context->caller_any);
 
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Peer stream closed conn_id {} stream id: {} flag: {} track fullname hash: {}",
-                                connection_handle,
+                                conn_id,
                                 stream_id,
                                 static_cast<int>(flag),
                                 data_header.track_full_name_hash);
-            manager_.CloseStream(
-              connection_handle, data_header.sns_id, stream_id, data_header.track_full_name_hash, flag);
+            manager_.CloseStream(conn_id, data_header.sns_id, stream_id, data_header.track_full_name_hash, flag);
 
         } else {
             SPDLOG_LOGGER_DEBUG(LOGGER,
                                 "Peer conn_id {} stream id: {} flag: {} closed without having existing state",
-                                connection_handle,
+                                conn_id,
                                 stream_id,
                                 static_cast<int>(flag));
         }

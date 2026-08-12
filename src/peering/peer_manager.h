@@ -3,6 +3,7 @@
 #pragma once
 
 #include <map>
+#include <quicr/connection.h>
 #include <quicr/containers/safe_queue.h>
 #include <quicr/transport.h>
 #include <thread>
@@ -21,7 +22,7 @@ namespace laps::peering {
      * @brief Peering manager class. Manages relay to relay (peering) forwarding of
      *      subscriber objects.
      */
-    class PeerManager : public quicr::ITransport::TransportDelegate
+    class PeerManager
     {
       public:
         friend class PeerSession;
@@ -47,7 +48,7 @@ namespace laps::peering {
                              DataHeader data_header,
                              std::shared_ptr<const std::vector<uint8_t>> data,
                              uint64_t data_offset,
-                             quicr::ITransport::EnqueueFlags eflags);
+                             quicr::Transport::EnqueueFlags eflags);
 
         void ClientDataRecv(std::uint64_t track_full_name_hash,
                             uint8_t priority,
@@ -155,27 +156,24 @@ namespace laps::peering {
                          bool reset = false);
 
         // -------------------------------------------------------------------------------
-        // QUIC Transport callbacks
-        // -------------------------------------------------------------------------------
-
-        void OnNewDataContext(const std::uint64_t&, const std::uint64_t&) override {}
-        void OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status) override;
-        void OnNewConnection(const std::uint64_t& conn_id, const quicr::TransportRemote& remote) override;
-        void OnRecvStream(const std::uint64_t& conn_id,
-                          uint64_t stream_id,
-                          std::optional<std::uint64_t> data_ctx_id,
-                          const bool is_bidir = false) override;
-        void OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id) override;
-
-        void OnStreamClosed(const std::uint64_t& connection_handle,
-                            std::uint64_t stream_id,
-                            std::shared_ptr<quicr::StreamRxContext> rx_context,
-                            std::optional<uint64_t> request_id,
-                            quicr::StreamClosedFlag flag) override;
-
-        // -------------------------------------------------------------------------------
 
       private:
+        // -------------------------------------------------------------------------------
+        // Server transport callbacks
+        // -------------------------------------------------------------------------------
+
+        /**
+         * @brief Create an inbound peer session for a server accepted connection
+         */
+        void NewPeerConnection(const std::shared_ptr<quicr::Connection>& connection);
+
+        /**
+         * @brief Remove the inbound peer session state for a closed connection
+         */
+        void PeerConnectionClosed(const std::shared_ptr<quicr::Connection>& connection);
+
+        // -------------------------------------------------------------------------------
+
         /**
          * @brief Check Thread to perform reconnects and cleanup
          * @details Thread will perform various tasks each interval
@@ -212,7 +210,7 @@ namespace laps::peering {
         /// Peer sessions that are initiated by the peer manager
         std::map<PeerSessionId, std::shared_ptr<PeerSession>> client_peer_sessions_;
 
-        std::shared_ptr<quicr::ITransport> server_transport_; /// Server Transport for inbound connections
+        std::shared_ptr<quicr::Transport> server_transport_; /// Server Transport for inbound connections
 
         std::thread check_thr_; /// Check/task thread, handles reconnects
 

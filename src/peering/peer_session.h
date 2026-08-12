@@ -4,6 +4,7 @@
 
 #include <map>
 #include <optional>
+#include <quicr/connection.h>
 #include <quicr/transport.h>
 #include <set>
 
@@ -22,7 +23,9 @@ namespace laps::peering {
      *      subscriber objects.
      *
      */
-    class PeerSession : public quicr::ITransport::TransportDelegate
+    class PeerSession
+      : public quicr::Connection::Delegate
+      , public std::enable_shared_from_this<PeerSession>
     {
       public:
         static constexpr std::size_t kControlMessageBufferSize = 4096;
@@ -46,12 +49,10 @@ namespace laps::peering {
          * @brief Constructor to create a new peer session
          *
          * @param is_inbound                True indicates the peering session is inbound (server accepted)
-         * @param conn_id                   Connection ID from the transport for the connection
          * @param cfg                       Global config
          * @param remote                    Transport remote peer config/parameters
          */
         PeerSession(const bool is_inbound,
-                    const std::uint64_t conn_id,
                     const Config& cfg,
                     const NodeInfo& node_info,
                     const quicr::TransportRemote& remote,
@@ -70,16 +71,21 @@ namespace laps::peering {
         StatusValue Status();
 
         /**
-         * @brief Set the transport
-         * @details Setting the transport is not required and should not be used for outbound connections. This
-         *     Server,incoming mode requires the server transport to be used.
+         * @brief Set the transport and accepted connection
+         *
+         * @details Only used for inbound (server accepted) sessions, which share the server transport. Outbound
+         *      sessions create their own transport and connection in Connect().
          */
-        void SetTransport(std::shared_ptr<quicr::ITransport> transport) { transport_ = transport; }
+        void SetConnection(std::shared_ptr<quicr::Transport> transport, std::shared_ptr<quicr::Connection> connection)
+        {
+            transport_ = std::move(transport);
+            connection_ = std::move(connection);
+        }
 
         /**
          * @brief Get the peer session ID
          */
-        PeerSessionId GetSessionId() const { return t_conn_id_; }
+        PeerSessionId GetSessionId() const { return connection_ ? connection_->GetID() : 0; }
 
         uint64_t CreateStream(SubscribeNodeSetId sns_id, uint8_t priority) const;
         void CloseStream(SubscribeNodeSetId sns_id, uint64_t stream_id, quicr::StreamClosedFlag flag);
@@ -91,7 +97,7 @@ namespace laps::peering {
                       uint32_t ttl,
                       SubscribeNodeSetId sns_id,
                       uint64_t stream_id,
-                      const quicr::ITransport::EnqueueFlags& eflags,
+                      const quicr::Transport::EnqueueFlags& eflags,
                       std::shared_ptr<const std::vector<uint8_t>> data);
 
         /**
@@ -151,30 +157,36 @@ namespace laps::peering {
                                                       NodeIdValueType sub_node_id);
 
         /*
-         * Delegate functions mainly for Outgoing but does include incoming
+         * Connection delegate callbacks
          */
-        void OnNewDataContext(const std::uint64_t&, const std::uint64_t&) override {}
-        void OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status) override;
-        void OnNewConnection(const std::uint64_t& conn_id, const quicr::TransportRemote& remote) override;
-        void OnRecvStream(const std::uint64_t& conn_id,
-                          uint64_t stream_id,
+        void OnConnectionStatus(quicr::Connection::Status status) override;
+
+        void OnRecvStream(std::uint64_t stream_id,
                           std::optional<std::uint64_t> data_ctx_id,
-                          const bool is_bidir = false) override;
-        void OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id) override;
+                          bool is_bidir = false) override;
+
+        void OnRecvDgram(std::optional<std::uint64_t> data_ctx_id) override;
 
         void OnConnectionMetricsSampled(const quicr::MetricsTimeStamp sample_time,
-                                        const std::uint64_t conn_id,
                                         const quicr::QuicConnectionMetrics& quic_connection_metrics) override;
 
-        void OnStreamClosed(const std::uint64_t& connection_handle,
-                            std::uint64_t stream_id,
+        void OnDataMetricsStampled(const quicr::MetricsTimeStamp,
+                                   const std::uint64_t,
+                                   const quicr::QuicDataContextMetrics&) override
+        {
+        }
+
+        void OnStreamClosed(std::uint64_t stream_id,
                             std::shared_ptr<quicr::StreamRxContext> rx_context,
-                            std::optional<uint64_t> request_id,
+                            std::optional<uint64_t> data_ctx_id,
                             quicr::StreamClosedFlag flag) override;
 
         // ---------------------------------------
 
       private:
+        /// True when the transport and connection are both present, so transport calls are safe to make
+        bool IsUsable() const { return transport_ != nullptr && connection_ != nullptr; }
+
         void SendConnect();
         void SendConnectOk() const;
 
@@ -216,12 +228,12 @@ namespace laps::peering {
         /// Key is the ingress peer session ID and SNS ID, value is the SNS egress via this peer
         std::map<std::pair<PeerSessionId, SubscribeNodeSetId>, SubscribeNodeSet> peer_sns_;
 
-        std::uint64_t t_conn_id_;                 /// Transport connection context ID (aka peer session id)
-        std::uint64_t control_data_ctx_id_;       /// Control data context ID
+        std::uint64_t control_data_ctx_id_{ 0 };  /// Control data context ID
         uint64_t control_stream_id_{ 0 };         /// control bidir stream
         std::vector<uint8_t> controL_msg_buffer_; /// Working buffer of control message being processed
 
-        std::shared_ptr<quicr::ITransport> transport_; /// Transport used for the peering connection
+        std::shared_ptr<quicr::Connection> connection_; /// Connection (aka peer session) to the peer
+        std::shared_ptr<quicr::Transport> transport_;   /// Transport used for the peering connection
     };
 
 } // namespace laps
