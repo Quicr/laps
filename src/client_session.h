@@ -50,8 +50,8 @@ namespace laps {
          * @details This is the preferred close signal, since it arrives on the callback thread alongside
          *      every other session callback. It is not reliable on its own: the session manager detaches this
          *      session from the connection when the transport reports the close, which discards any status
-         *      notification still queued for the callback thread. ClientManager::Start() therefore also
-         *      reports the close from the transport hook, and ConnectionClosed() tolerates either order.
+         *      notification still queued for the callback thread. The relay's OnSessionRemoved callback
+         *      therefore reports the close as well, and ConnectionClosed() tolerates either order.
          */
         void StatusChanged(Status status) override;
 

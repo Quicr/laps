@@ -277,6 +277,34 @@ namespace laps {
                            quicr::messages::Location start,
                            quicr::messages::FetchEndLocation end);
 
+        /**
+         * @brief Binds libquicr's per-connection sessions to the relay
+         *
+         * @details The session manager owns its callbacks, so these are kept in a separate object rather than
+         *      requiring ClientManager itself to be held by a shared pointer.
+         */
+        class SessionCallbacks : public quicr::SessionManager::Callbacks
+        {
+          public:
+            explicit SessionCallbacks(ClientManager& manager)
+              : manager_(manager)
+            {
+            }
+
+            std::shared_ptr<quicr::Session> CreateServerSession(
+              const quicr::ServerConfig& cfg,
+              std::shared_ptr<quicr::Transport> transport,
+              std::shared_ptr<quicr::Connection> connection,
+              std::shared_ptr<timeq::tick_service> tick_service) override;
+
+            void OnNewServerSession(const std::shared_ptr<quicr::Session>& session) override;
+
+            void OnSessionRemoved(const std::shared_ptr<quicr::Session>& session) override;
+
+          private:
+            ClientManager& manager_;
+        };
+
         State& state_;
         const Config& config_;
         const quicr::ServerConfig server_config_;
@@ -284,7 +312,12 @@ namespace laps {
         std::shared_ptr<timeq::tick_service> tick_service_;
         MetricsPublisher metrics_publisher_;
 
+        /// Declared before the session manager, which takes a reference to it for the lifetime of the relay
+        std::shared_ptr<SessionCallbacks> session_callbacks_;
+
         quicr::SessionManager session_manager_;
+
+        /// Listening transport for client connections, owned by the session manager
         std::weak_ptr<quicr::Transport> server_transport_;
 
         /**

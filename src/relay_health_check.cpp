@@ -127,10 +127,7 @@ namespace {
         config.transport_config.idle_timeout_ms =
           static_cast<std::uint64_t>(options.timeout.count()) * idle_multiplier;
 
-        auto [transport, session] = session_manager.AddTransport(config);
-        (void)transport;
-
-        return session.lock();
+        return session_manager.AddTransport(config).lock();
     }
 
     bool RunPubSubProbe(Session& subscriber,

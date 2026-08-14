@@ -28,7 +28,8 @@ namespace laps {
       , peer_manager_(peer_manager)
       , tick_service_(config.tick_service_)
       , metrics_publisher_(*this, config)
-      , session_manager_(config.tick_service_)
+      , session_callbacks_(std::make_shared<SessionCallbacks>(*this))
+      , session_manager_(session_callbacks_, config.tick_service_)
       , cache_duration_ms_(cache_duration_ms)
     {
     }
@@ -47,19 +48,8 @@ namespace laps {
          */
         metrics_publisher_.Start();
 
-        auto create_session = [this](const quicr::ServerConfig& cfg,
-                                     std::shared_ptr<quicr::Transport> transport,
-                                     std::shared_ptr<quicr::Connection> connection,
-                                     std::shared_ptr<timeq::tick_service> tick_service) {
-            return ClientSession::Create(
-              cfg, std::move(transport), std::move(connection), std::move(tick_service), *this);
-        };
-
-        auto on_new_session = [this](const std::shared_ptr<quicr::Session>& session) {
-            NewConnectionAccepted(std::static_pointer_cast<ClientSession>(session));
-        };
-
-        server_transport_ = session_manager_.AddTransport(server_config_, create_session, on_new_session);
+        // Sessions are created, reported and removed through session_callbacks_
+        server_transport_ = session_manager_.AddTransport(server_config_);
 
         auto transport = server_transport_.lock();
         if (transport == nullptr) {
@@ -67,37 +57,44 @@ namespace laps {
             return quicr::Session::Status::kFailedToConnect;
         }
 
-        /*
-         * Drive relay teardown from the transport's close hook, chained ahead of the session manager's own
-         * handler.
-         *
-         * The session manager detaches the connection's delegate as soon as this hook runs, which drops the
-         * status notification that would otherwise reach ClientSession::StatusChanged. This hook is therefore
-         * the only close signal the relay is guaranteed to receive.
-         *
-         * It runs on the transport's network thread rather than the callback thread, so ConnectionClosed()
-         * drops the session before touching anything else, keeping relay teardown off the session that
-         * libquicr may concurrently be tearing down.
-         */
-        transport->OnConnectionClosed = [this, session_manager_closed = transport->OnConnectionClosed](
-                                          const std::shared_ptr<quicr::Connection>& connection) {
-            ConnectionClosed(connection->GetID());
-
-            if (session_manager_closed) {
-                session_manager_closed(connection);
-            }
-        };
-
         while (transport->Status() == quicr::TransportStatus::kConnecting) {
             SPDLOG_LOGGER_INFO(LOGGER, "Waiting for client server transport to be ready");
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
         if (transport->Status() != quicr::TransportStatus::kReady) {
+            SPDLOG_LOGGER_ERROR(LOGGER, "Client server transport failed to start listening");
             return quicr::Session::Status::kNotReady;
         }
 
         return quicr::Session::Status::kReady;
+    }
+
+    std::shared_ptr<quicr::Session> ClientManager::SessionCallbacks::CreateServerSession(
+      const quicr::ServerConfig& cfg,
+      std::shared_ptr<quicr::Transport> transport,
+      std::shared_ptr<quicr::Connection> connection,
+      std::shared_ptr<timeq::tick_service> tick_service)
+    {
+        return ClientSession::Create(
+          cfg, std::move(transport), std::move(connection), std::move(tick_service), manager_);
+    }
+
+    void ClientManager::SessionCallbacks::OnNewServerSession(const std::shared_ptr<quicr::Session>& session)
+    {
+        manager_.NewConnectionAccepted(std::static_pointer_cast<ClientSession>(session));
+    }
+
+    void ClientManager::SessionCallbacks::OnSessionRemoved(const std::shared_ptr<quicr::Session>& session)
+    {
+        /*
+         * Reported on the transport's network thread, before the session is dropped. ConnectionClosed()
+         * detaches the session first so relay teardown never reaches back into it, and tolerates being
+         * called twice since ClientSession::StatusChanged can report the same close.
+         */
+        if (const auto& connection = session->GetConnection()) {
+            manager_.ConnectionClosed(connection->GetID());
+        }
     }
 
     void ClientManager::Stop()
@@ -105,6 +102,10 @@ namespace laps {
         /*
          * Shut the transport down before anything else so its thread stops dispatching callbacks into relay
          * state that is about to go away.
+         *
+         * Both hooks belong to the session manager. Clearing them gives up its session bookkeeping, which no
+         * longer matters once the relay is stopping, and keeps its own shutdown from reporting closes back
+         * into a relay whose state has already been torn down.
          */
         if (auto transport = server_transport_.lock()) {
             transport->OnNewConnection = nullptr;
