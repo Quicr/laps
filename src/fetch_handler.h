@@ -3,8 +3,7 @@
 #include "client_manager.h"
 
 #include <quicr/common.h>
-#include <quicr/fetch_track_handler.h>
-#include <quicr/object.h>
+#include <quicr/handlers/fetch_track_handler.h>
 
 namespace laps {
     /**
@@ -15,31 +14,32 @@ namespace laps {
     {
         FetchTrackHandler(const std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler,
                           const quicr::FullTrackName& full_track_name,
-                          quicr::messages::ObjectPriority priority,
-                          std::optional<quicr::messages::GroupOrder> group_order,
+                          std::uint8_t priority,
                           const quicr::messages::Location& start_location,
-                          const quicr::messages::FetchEndLocation& end_location);
+                          const quicr::messages::FetchEndLocation& end_location,
+                          quicr::messages::GroupOrder group_order);
 
       public:
         static std::shared_ptr<FetchTrackHandler> Create(
           const std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler,
           const quicr::FullTrackName& full_track_name,
-          quicr::messages::ObjectPriority priority,
-          std::optional<quicr::messages::GroupOrder> group_order,
+          std::uint8_t priority,
           const quicr::messages::Location& start_location,
-          const quicr::messages::FetchEndLocation& end_location)
+          const quicr::messages::FetchEndLocation& end_location,
+          quicr::messages::GroupOrder group_order = quicr::messages::GroupOrder::kAscending)
         {
             return std::shared_ptr<FetchTrackHandler>(new FetchTrackHandler(
-              publish_fetch_handler, full_track_name, priority, group_order, start_location, end_location));
+              publish_fetch_handler, full_track_name, priority, start_location, end_location, group_order));
         }
 
         void StatusChanged(Status status) override;
-        void StreamDataRecv(bool is_start,
-                            uint64_t stream_id,
-                            std::shared_ptr<const std::vector<uint8_t>> data) override;
+        void StreamDataRecv(uint64_t stream_id, quicr::InitialStreamData&& initial_buffer) override;
+        void StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data) override;
 
       private:
-        bool first_data_received_{ false };
+        void TryForwardInitialStreamData(uint64_t stream_id, StreamContext& stream);
+
+        bool initial_stream_data_forwarded_{ false };
         std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler_;
     };
 } // namespace laps

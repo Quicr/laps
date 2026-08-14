@@ -144,7 +144,7 @@ namespace laps::peering {
                                    subscribe_info.track_hash.track_fullname_hash);
 
                 if (client_manager_ != nullptr) {
-                    quicr::messages::SubscribeAttributes s_attrs;
+                    quicr::SubscribeAttributes s_attrs;
                     s_attrs.priority = 10;
                     s_attrs.new_group_request_id = ngr_id;
 
@@ -275,15 +275,19 @@ namespace laps::peering {
         } else { // PUBLISH
             if (!withdraw) {
                 // TODO: Add defaults to announce info from original PUBLISH, but for now it's not needed
-                quicr::messages::PublishAttributes attrs;
-                attrs.track_full_name = { announce_info.name_space, announce_info.name };
-                attrs.track_alias = announce_info.fullname_hash;
-                attrs.is_publisher_initiated = true;
-                attrs.dynamic_groups = true;
-                attrs.forward = true;
-                attrs.group_order = quicr::messages::GroupOrder::kAscending;
-                attrs.priority = 64;
-                attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
+                quicr::PublishAttributes attrs{ .track_full_name = { announce_info.name_space, announce_info.name },
+                                                .track_alias = announce_info.fullname_hash,
+                                                .auth_tokens = {},
+                                                .expires = std::nullopt,
+                                                .largest_object = std::nullopt,
+                                                .forward = true,
+                                                .default_publisher_group_order =
+                                                  quicr::messages::GroupOrder::kAscending,
+                                                .dynamic_groups = true,
+                                                .default_publisher_priority = 64,
+                                                .max_cache_duration = std::nullopt,
+                                                .delivery_timeout = kDefaultObjectTtl,
+                                                .track_properties = {} };
 
                 client_manager_->PublishReceived(0, 0, attrs, {});
             } else {
@@ -477,7 +481,7 @@ namespace laps::peering {
         return info_base_->GetAnnounceIds(full_name.name_space, full_name.name, false);
     }
 
-    void PeerManager::EndSubgroup(quicr::TrackFullNameHash track_full_name_hash,
+    void PeerManager::EndSubgroup(std::uint64_t track_full_name_hash,
                                   uint64_t group_id,
                                   uint64_t subgroup_id,
                                   bool reset)
@@ -511,7 +515,7 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::ClientDataRecv(quicr::TrackFullNameHash track_full_name_hash,
+    void PeerManager::ClientDataRecv(std::uint64_t track_full_name_hash,
                                      uint8_t priority,
                                      uint32_t ttl,
                                      DataType type,
@@ -628,7 +632,7 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientSubscribeUpdate(const quicr::FullTrackName& track_full_name,
-                                            const quicr::messages::SubscribeAttributes& attrs)
+                                            const quicr::SubscribeAttributes& attrs)
     {
         auto tfn = track_full_name;
         auto th = quicr::TrackHash(tfn);
@@ -652,30 +656,24 @@ namespace laps::peering {
                     parameters.AddOptional(quicr::messages::ParameterType::kNewGroupRequest, ngr_id);
                 }
 
-                bool has_new_group_request = false;
-                for (auto it = parameters.begin(); it != parameters.end(); ++it) {
-                    if (it->type == quicr::messages::ParameterType::kNewGroupRequest) {
-                        has_new_group_request = true;
+                auto new_group_request =
+                  parameters.GetOptional<uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
+                if (new_group_request.has_value() && !attrs.new_group_request_id.has_value()) {
+                    // Remove new group request since it's not requested but was found
+                    parameters.Remove(quicr::messages::ParameterType::kNewGroupRequest);
 
-                        if (!attrs.new_group_request_id.has_value()) {
-                            // Remove new group request since it's not requested but was found
-                            parameters.parameters.erase(it);
+                    auto sub_data = quicr::messages::Message()
+                                      .Append(request_id)
+                                      .Append(track_namespace)
+                                      .Append(track_name)
+                                      .Append(parameters);
 
-                            auto sub_data = quicr::messages::Message()
-                                              .Append(request_id)
-                                              .Append(track_namespace)
-                                              .Append(track_name)
-                                              .Append(parameters);
-
-                            const auto sub_data_bytes = sub_data.ToByteSpan();
-                            si->subscribe_data.assign(sub_data_bytes.begin(), sub_data_bytes.end());
-                        }
-                        break;
-                    }
+                    const auto sub_data_bytes = sub_data.ToByteSpan();
+                    si->subscribe_data.assign(sub_data_bytes.begin(), sub_data_bytes.end());
                 }
 
-                if (attrs.new_group_request_id.has_value() && not has_new_group_request) {
-                    parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, attrs.new_group_request_id);
+                if (attrs.new_group_request_id.has_value() && not new_group_request.has_value()) {
+                    parameters.Add(quicr::messages::ParameterType::kNewGroupRequest, *attrs.new_group_request_id);
                     auto sub_data = quicr::messages::Message()
                                       .Append(request_id)
                                       .Append(track_namespace)
@@ -712,7 +710,7 @@ namespace laps::peering {
     }
 
     void PeerManager::ClientSubscribe(const quicr::FullTrackName& track_full_name,
-                                      const quicr::messages::SubscribeAttributes& attrs,
+                                      const quicr::SubscribeAttributes& attrs,
                                       std::span<const uint8_t> subscribe_data)
     {
         auto tfn = track_full_name;
@@ -826,15 +824,10 @@ namespace laps::peering {
                                 continue;
 
                             if (auto cm = client_manager_) {
-                                quicr::messages::SubscribeAttributes s_attrs;
+                                quicr::SubscribeAttributes s_attrs;
                                 s_attrs.priority = 10;
-
-                                for (const auto& param : parameters) {
-                                    if (param.type == quicr::messages::ParameterType::kNewGroupRequest) {
-                                        s_attrs.new_group_request_id = true;
-                                        break;
-                                    }
-                                }
+                                s_attrs.new_group_request_id =
+                                  parameters.GetOptional<bool>(quicr::messages::ParameterType::kNewGroupRequest);
 
                                 SPDLOG_LOGGER_INFO(LOGGER,
                                                    "Subscribe to client manager track alias: {}",
@@ -1242,7 +1235,7 @@ namespace laps::peering {
     /*
      * Delegate Implementations
      */
-    void PeerManager::OnConnectionStatus(const quicr::TransportConnId& conn_id, const quicr::TransportStatus status)
+    void PeerManager::OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status)
     {
         auto peer_it = server_peer_sessions_.find(conn_id);
         if (peer_it == server_peer_sessions_.end()) {
@@ -1292,7 +1285,7 @@ namespace laps::peering {
         server_peer_sessions_.erase(peer_it);
     }
 
-    void PeerManager::OnNewConnection(const quicr::TransportConnId& conn_id, const quicr::TransportRemote& remote)
+    void PeerManager::OnNewConnection(const std::uint64_t& conn_id, const quicr::TransportRemote& remote)
     {
         auto peer_iter = server_peer_sessions_.find(conn_id);
 
@@ -1312,9 +1305,9 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::OnRecvStream(const quicr::TransportConnId& conn_id,
+    void PeerManager::OnRecvStream(const std::uint64_t& conn_id,
                                    uint64_t stream_id,
-                                   std::optional<quicr::DataContextId> data_ctx_id,
+                                   std::optional<std::uint64_t> data_ctx_id,
                                    const bool is_bidir)
     {
         auto peer_iter = server_peer_sessions_.find(conn_id);
@@ -1323,8 +1316,7 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::OnRecvDgram(const quicr::TransportConnId& conn_id,
-                                  std::optional<quicr::DataContextId> data_ctx_id)
+    void PeerManager::OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id)
     {
         auto peer_iter = server_peer_sessions_.find(conn_id);
         if (peer_iter != server_peer_sessions_.end()) {
@@ -1332,7 +1324,7 @@ namespace laps::peering {
         }
     }
 
-    void PeerManager::OnStreamClosed(const quicr::TransportConnId& connection_handle,
+    void PeerManager::OnStreamClosed(const std::uint64_t& connection_handle,
                                      std::uint64_t stream_id,
                                      std::shared_ptr<quicr::StreamRxContext> rx_context,
                                      std::optional<uint64_t> request_id,

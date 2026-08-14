@@ -14,7 +14,7 @@
 namespace laps::peering {
 
     PeerSession::PeerSession(bool is_inbound,
-                             const quicr::TransportConnId conn_id,
+                             const std::uint64_t conn_id,
                              const Config& cfg,
                              const NodeInfo& node_info,
                              const quicr::TransportRemote& remote,
@@ -99,7 +99,7 @@ namespace laps::peering {
         return { it->second.id, is_new };
     }
 
-    std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
+    std::pair<SubscribeNodeSetId, bool> PeerSession::AddSubscribeSourceNode(std::uint64_t full_name_hash,
                                                                             NodeIdValueType sub_node_id,
                                                                             uint8_t priority)
     {
@@ -120,7 +120,7 @@ namespace laps::peering {
         return { it->second.id, is_new };
     }
 
-    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(quicr::TrackFullNameHash full_name_hash,
+    std::pair<bool, bool> PeerSession::RemoveSubscribeSourceNode(std::uint64_t full_name_hash,
                                                                  NodeIdValueType sub_node_id)
     {
         bool node_removed{ false };
@@ -202,7 +202,7 @@ namespace laps::peering {
         transport_->Enqueue(t_conn_id_, sns_id, stream_id, data, priority, ttl, 0, eflags);
     }
 
-    void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw)
+    void PeerSession::SendSns(const SubscribeNodeSet& sns, bool withdraw) const
     {
         if (status_ != StatusValue::kConnected)
             return;
@@ -234,7 +234,7 @@ namespace laps::peering {
                             1000);
     }
 
-    void PeerSession::SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw)
+    void PeerSession::SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw) const
     {
         if (status_ != StatusValue::kConnected)
             return;
@@ -254,7 +254,7 @@ namespace laps::peering {
                             1000);
     }
 
-    void PeerSession::SendNodeInfo(const NodeInfo& node_info, bool withdraw)
+    void PeerSession::SendNodeInfo(const NodeInfo& node_info, bool withdraw) const
     {
         if (status_ != StatusValue::kConnected)
             return;
@@ -284,7 +284,7 @@ namespace laps::peering {
                             1000);
     }
 
-    void PeerSession::SendConnectOk()
+    void PeerSession::SendConnectOk() const
     {
         ConnectResponse connect_resp;
         connect_resp.error = ProtocolError::kNoError;
@@ -302,7 +302,7 @@ namespace laps::peering {
     /*
      * Delegate Implementations
      */
-    void PeerSession::OnConnectionStatus(const quicr::TransportConnId& conn_id, const quicr::TransportStatus status)
+    void PeerSession::OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status)
     {
         switch (status) {
             case quicr::TransportStatus::kReady: {
@@ -346,7 +346,8 @@ namespace laps::peering {
         manager_.SessionChanged(GetSessionId(), status_, remote_node_info_);
     }
 
-    void PeerSession::OnNewConnection(const quicr::TransportConnId& conn_id, const quicr::TransportRemote& remote)
+    void PeerSession::OnNewConnection([[maybe_unused]] const std::uint64_t& conn_id,
+                                      [[maybe_unused]] const quicr::TransportRemote& remote)
     {
         // Not used for outgoing connections. Incoming connections are handled by the server delegate
     }
@@ -484,7 +485,7 @@ namespace laps::peering {
 
     bool PeerSession::ProcessReceivedData(std::optional<uint64_t> stream_id,
                                           std::any& ctx,
-                                          std::shared_ptr<const std::vector<uint8_t>> data)
+                                          std::shared_ptr<const std::vector<uint8_t>> data) const
     {
         // TODO(tievens): Update to not buffer when node type is Via
 
@@ -528,9 +529,9 @@ namespace laps::peering {
         return true;
     }
 
-    void PeerSession::OnRecvStream(const quicr::TransportConnId& conn_id,
+    void PeerSession::OnRecvStream(const std::uint64_t& conn_id,
                                    uint64_t stream_id,
-                                   std::optional<quicr::DataContextId> data_ctx_id,
+                                   std::optional<std::uint64_t> data_ctx_id,
                                    const bool is_bidir)
     {
         auto rx_ctx = transport_->GetStreamRxContext(conn_id, stream_id);
@@ -561,8 +562,7 @@ namespace laps::peering {
         }
     }
 
-    void PeerSession::OnRecvDgram(const quicr::TransportConnId& conn_id,
-                                  std::optional<quicr::DataContextId> data_ctx_id)
+    void PeerSession::OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id)
     {
         constexpr quicr::ITransport::EnqueueFlags eflags{ false, false, false, false };
 
@@ -585,14 +585,14 @@ namespace laps::peering {
         }
     }
 
-    void PeerSession::OnConnectionMetricsSampled(const quicr::MetricsTimeStamp sample_time,
-                                                 const quicr::TransportConnId conn_id,
+    void PeerSession::OnConnectionMetricsSampled([[maybe_unused]] const quicr::MetricsTimeStamp sample_time,
+                                                 [[maybe_unused]] const std::uint64_t conn_id,
                                                  const quicr::QuicConnectionMetrics& quic_connection_metrics)
     {
         metrics_.srtt_us = quic_connection_metrics.srtt_us.avg;
     }
 
-    void PeerSession::OnStreamClosed(const quicr::TransportConnId& connection_handle,
+    void PeerSession::OnStreamClosed(const std::uint64_t& connection_handle,
                                      std::uint64_t stream_id,
                                      [[maybe_unused]] std::shared_ptr<quicr::StreamRxContext> rx_context,
                                      [[maybe_unused]] std::optional<uint64_t> request_id,

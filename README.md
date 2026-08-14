@@ -1,16 +1,32 @@
-# Latency Aware Publish Subscriber (laps) Relay
+# LAPS: Media over QUIC Transport (MOQT) Relay
 
-LAPS implements [MOQT](https://datatracker.ietf.org/doc/html/draft-ietf-moq-transport-07) client side connections to support both publishers and subscribers.
+LAPS, the Latency Aware Publish/Subscribe relay, is a [Media over QUIC Transport (MOQT)](https://github.com/moq-wg/moq-transport/) relay for low-latency publish/subscribe media delivery. It accepts MOQT publisher and subscriber client connections and forwards media tracks through a distributed relay network.
 
-LAPS is a relay implementation that implements MOQT for clients with distributed
-scale spanning a global footprint. 
+Also known as: MoQ relay, MOQT relay, Media over QUIC relay, Media over QUIC Transport relay, low-latency media relay.
 
-[Relay protocol peering](docs/relay-protocol.md) between relays uses a different protocol than MOQT that ensures
-low latency data forwarding with often less than 1ms added per relay hop.  The protocol architecture and design
-document provides indepth details.
+## What Is LAPS?
 
+LAPS implements MOQT relay behavior for publishers and subscribers and adds relay-to-relay peering for distributed media fan-out. The relay peering architecture can run as a simple mesh, or it can scale to large infrastructure by using Edge, Via, and Stub relay roles to build efficient forwarding paths between publishers and subscribers.
 
-Current MOQT version supported is draft-14. 
+[Relay protocol peering](docs/relay-protocol.md) uses a LAPS-specific protocol between relays rather than MOQT itself. This peering layer provides low-latency data forwarding, traffic engineering, and policy-aware relay selection for global deployments. The current MOQT draft support is tied to the active branch and bundled `dependencies/libquicr` revision.
+
+## MOQT Relay Features
+
+- Media over QUIC Transport (MOQT) relay support for publisher and subscriber client connections
+- Low-latency publish/subscribe forwarding for media tracks and namespaces
+- Relay-to-relay peering for distributed MOQT deployments
+- Edge, Via, and Stub relay roles for different positions in the network
+- Control peering and data peering modes for separating signaling from media forwarding
+- On-demand Via relay aggregation for bandwidth-efficient fan-out between Edge relays
+- Source-routed data forwarding with Subscribe Node Set (SNS) advertisements
+- Track ranking for selecting top tracks from subscribed namespaces
+- Docker images and a `relay_health_check` probe for monitoring a LAPS relay or another MOQT relay
+
+## Relay Peering At Scale
+
+LAPS peering is designed to solve relay-to-relay connectivity at scale. Edge relays accept MOQT client sessions and can act as origin relays, subscriber relays, or Via relays. Via relays aggregate traffic between Edge relays without carrying all publisher and subscriber state, reducing bandwidth and connection pressure during fan-out. Stub relays provide lightweight local fan-out behind NAT or firewall boundaries while the connected Edge relay represents them to the wider relay network.
+
+The peering selection algorithm can use direct hub-and-spoke forwarding when it is the best path, or inject Via relays when aggregation, congestion avoidance, alternate IP forwarding paths, regional constraints, or administrative policy call for it. Control peering distributes node, publish, and subscribe information bases; data peering forwards MOQT objects in a pipeline-friendly format with low encapsulation overhead.
 
 ### Slack
 
@@ -47,7 +63,7 @@ A developer playground for interoperability testing with Media over QUIC Transpo
 
 ```mermaid
 ---
-title: Pubic Relay Topology
+title: Public Relay Topology
 ---
 flowchart TD
    EAST["us-east-2.relay.quicr.org"] <--> WEST["us-west-2.relay.quicr.org"] 
@@ -102,6 +118,77 @@ make cert
 cd build/src
 
 ./lapsRelay
+```
+
+## Relay Health Check
+
+The `relay_health_check` program can be used to monitor `lapsRelay`, or any other MOQT relay that supports the
+same publish/subscribe behavior. The probe connects as both a publisher and subscriber, publishes a small object,
+and verifies that the subscriber receives the same payload.
+
+Build the local binary with:
+
+```
+make build
+```
+
+Run the probe directly:
+
+```
+./build/src/relay_health_check \
+  --uri moq://laps-relay:12345/relay \
+  --timeout-ms 5000 \
+  --namespace libquicr/health \
+  --message "libquicr relay health check"
+```
+
+The same settings can be supplied with environment variables:
+
+```
+LIBQUICR_RELAY_HEALTH_URI=moq://laps-relay:12345/relay \
+LIBQUICR_RELAY_HEALTH_TIMEOUT_MS=5000 \
+LIBQUICR_RELAY_HEALTH_NAMESPACE=libquicr/health \
+LIBQUICR_RELAY_HEALTH_MESSAGE="libquicr relay health check" \
+./build/src/relay_health_check
+```
+
+The probe prints `ok` on success. On failure it prints `error`; additional failure details are written after that.
+
+### Health Check Docker Image
+
+The `healthcheck.Dockerfile` image runs an HTTP wrapper around `relay_health_check`. A plain HTTP `GET` returns:
+
+```
+ok
+```
+
+or, if the probe fails:
+
+```
+error
+
+<details>
+```
+
+Build health-check images with:
+
+```
+make image-healthcheck-amd64
+make image-healthcheck-arm64
+```
+
+Run the HTTP health-check container:
+
+```
+docker run --rm -p 8080:8080 \
+  -e LIBQUICR_RELAY_HEALTH_URI=moq://laps-relay:12345/relay \
+  quicr/healthcheck:<version>-amd64
+```
+
+Check it with:
+
+```
+curl http://localhost:8080/
 ```
 
 ## Build with Docker
@@ -347,4 +434,3 @@ RUN 'journalctl -u laps.service -f' to tail laps relay log
 ## Discovery using mDNS
 
 See [docs/discovery.md](docs/discovery.md) for details on how to setup and use mDNS
-

@@ -3,9 +3,8 @@
 #include "client_manager.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/common.h>
-#include <quicr/object.h>
-#include <quicr/subscribe_track_handler.h>
+#include <quicr/handlers/subscribe_track_handler.h>
+#include <quicr/messages/object.h>
 
 #include <map>
 
@@ -20,7 +19,7 @@ namespace laps {
         static constexpr uint64_t kRefreshRankingIntervalMs = 120;
 
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
-                              quicr::messages::ObjectPriority priority,
+                              std::uint8_t priority,
                               std::optional<quicr::messages::GroupOrder> group_order,
                               ClientManager& server,
                               std::weak_ptr<timeq::tick_service> tick_service,
@@ -30,13 +29,13 @@ namespace laps {
 
         void StreamClosed(std::uint64_t stream_id, bool use_reset) override;
 
-        void StreamDataRecv(bool is_start,
-                            uint64_t stream_id,
-                            std::shared_ptr<const std::vector<uint8_t>> data) override;
+        void StreamDataRecv(uint64_t stream_id, quicr::InitialStreamData&& initial_buffer) override;
+        void StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data) override;
         void DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data) override;
         void ObjectReceived(const quicr::ObjectHeaders& object_headers,
                             quicr::BytesSpan data,
                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
+        void MetricsSampled(const quicr::SubscribeTrackMetrics& metrics) override;
 
         void StatusChanged(Status status) override;
 
@@ -58,8 +57,8 @@ namespace laps {
          * @param delivery_timeout      Subscriber delivery timeout
          * @param start_location        Subscriber requested start location
          */
-        void AddSubscriber(quicr::ConnectionHandle conn_handle,
-                           quicr::messages::RequestID request_id,
+        void AddSubscriber(std::uint64_t conn_handle,
+                           std::uint64_t request_id,
                            uint8_t priority,
                            std::chrono::milliseconds delivery_timeout,
                            quicr::messages::Location start_location);
@@ -68,7 +67,7 @@ namespace laps {
          * @brief Remove subscriber from publish fanout
          * @param conn_handle           Subscriber connection handle
          */
-        void RemoveSubscriber(quicr::ConnectionHandle conn_handle);
+        void RemoveSubscriber(std::uint64_t conn_handle);
 
         /**
          * @brief Add subscribe namespace publish namespace handler
@@ -84,15 +83,27 @@ namespace laps {
          */
         void RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler);
 
+        void RemoveFromTrackRanking();
+
         void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
 
         bool HasSubscribers() const { return !subscribers_.empty() || !sub_namespaces_.empty(); }
 
+        /**
+         * @brief Number of subscribers receiving fanout of this track via SUBSCRIBE
+         *
+         * @note Subscribers matched through a subscribe namespace are not included.
+         */
+        std::size_t SubscriberCount() const { return subscribers_.size(); }
+
       private:
+        void TryProcessStreamData(uint64_t stream_id, StreamContext& stream);
+
         void ForwardReceivedData(bool is_new_stream,
                                  uint64_t group_id,
                                  uint64_t subgroup_id,
-                                 std::shared_ptr<const std::vector<uint8_t>> data);
+                                 std::shared_ptr<const std::vector<uint8_t>> data,
+                                 bool forward_to_peers = true);
 
         void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                      std::optional<quicr::Extensions> immutable_extensions);
@@ -103,6 +114,10 @@ namespace laps {
         bool is_datagram_{ false };
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
 
+        // Original receive buffers retained until the subgroup header is complete so they can be forwarded without
+        // copying when the track alias is unchanged.
+        std::map<std::uint64_t, std::vector<std::shared_ptr<const std::vector<uint8_t>>>> pending_source_buffers_;
+
         /**
          * @brief Map of subscribers that have subscribed to this content
          *
@@ -110,13 +125,12 @@ namespace laps {
          *
          * @
          */
-        std::map<quicr::ConnectionHandle, std::shared_ptr<PublishTrackHandler>> subscribers_;
+        std::map<std::uint64_t, std::shared_ptr<PublishTrackHandler>> subscribers_;
 
         /**
          * @brief Map of publish namespace handlers by subscribe namespace full track name hash and connection handle
          */
-        std::map<quicr::TrackFullNameHash, std::map<quicr::ConnectionHandle, std::shared_ptr<PublishNamespaceHandler>>>
-          sub_namespaces_;
+        std::map<std::uint64_t, std::map<std::uint64_t, std::shared_ptr<PublishNamespaceHandler>>> sub_namespaces_;
 
         /**
          * @brief property values

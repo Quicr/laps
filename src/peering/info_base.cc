@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "info_base.h"
-#include <quicr/hash.h>
+#include <quicr/utilities/hash.h>
 
 namespace laps::peering {
     bool InfoBase::AddNode(std::shared_ptr<PeerSession> peer_session, const NodeInfo& node_info)
@@ -231,7 +231,7 @@ namespace laps::peering {
     }
 
     std::set<NodeIdValueType> InfoBase::GetAnnounceIds(quicr::TrackNamespace name_space,
-                                                       quicr::messages::TrackName name,
+                                                       std::vector<uint8_t> name,
                                                        bool exact)
     {
         std::set<NodeIdValueType> announces_ids;

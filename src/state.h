@@ -1,13 +1,14 @@
 #pragma once
 
+#include "publish_namespace_handler.h"
+
 #include <mutex>
-#include <quicr/server.h>
+#include <quicr/session.h>
 #include <set>
 
 namespace laps {
     class SubscribeTrackHandler;
     class PublishTrackHandler;
-    class PublishNamespaceHandler;
 
     struct State
     {
@@ -39,7 +40,7 @@ namespace laps {
         /**
          * Active requests by connection handle and request ID
          */
-        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, RequestTransaction> requests;
+        std::map<std::pair<std::uint64_t, std::uint64_t>, RequestTransaction> requests;
 
         /**
          * Map of subscribes (e.g., track alias) matched to a publish namespace
@@ -47,8 +48,7 @@ namespace laps {
          * @example
          *      track_alias_set = namespace_active[track_namespace_hash, connection_handle]
          */
-        std::map<std::pair<quicr::TrackNamespace, quicr::ConnectionHandle>, std::set<quicr::messages::TrackAlias>>
-          pub_namespace_active;
+        std::map<std::pair<quicr::TrackNamespace, std::uint64_t>, std::set<std::uint64_t>> pub_namespace_active;
 
         /**
          * Active publisher/announce subscribes that this relay has made to receive objects from publisher.
@@ -56,15 +56,12 @@ namespace laps {
          * @example
          *      track_delegate = pub_subscribes[track_alias, connection handle]
          */
-        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>,
-                 std::shared_ptr<SubscribeTrackHandler>>
-          pub_subscribes;
+        std::map<std::pair<std::uint64_t, std::uint64_t>, std::shared_ptr<SubscribeTrackHandler>> pub_subscribes;
 
         /**
-         * Active publisher initiated subscribes by request Id
+         * Active publisher initiated subscribes by request Id and connection handle
          */
-        std::map<std::pair<uint64_t, quicr::ConnectionHandle>, std::shared_ptr<SubscribeTrackHandler>>
-          pub_subscribes_by_req_id;
+        std::map<std::pair<uint64_t, std::uint64_t>, std::shared_ptr<SubscribeTrackHandler>> pub_subscribes_by_req_id;
 
         /**
          * @brief Subscribe Namespace by connection to publish namespace handlers
@@ -72,19 +69,38 @@ namespace laps {
          *      publish namespace handler. The publish namespace handler is used to establish publish tracks
          *      to the subscriber of the namespace
          */
-        std::map<quicr::TrackNamespace, std::map<quicr::ConnectionHandle, std::shared_ptr<PublishNamespaceHandler>>>
+        std::map<quicr::TrackNamespace, std::map<std::uint64_t, std::shared_ptr<PublishNamespaceHandler>>>
           subscribes_namespaces;
 
         struct SubscribePublishHandlerInfo
         {
             quicr::FullTrackName track_full_name;
-            quicr::messages::TrackAlias track_alias{ 0 };
-            quicr::messages::RequestID request_id{ 0 };
+            std::uint64_t track_alias{ 0 };
+            std::uint64_t request_id{ 0 };
             uint8_t priority{ 0 };
             uint32_t object_ttl{ 0 };
             std::optional<quicr::messages::GroupOrder> group_order;
             quicr::messages::Location start_location;
         };
+
+        /**
+         * @brief Get the count of publish tracks
+         *
+         * @param connection_handle     Connection handle/id
+         *
+         * @return Number of publishing tracks per the connection
+         */
+        std::size_t PublishTrackCount(std::uint64_t connection_handle)
+        {
+            std::lock_guard _(state_mutex);
+
+            const auto& metrics = conn_state_metrics.find(connection_handle);
+            if (metrics != conn_state_metrics.end()) {
+                return metrics->second.published_tracks;
+            }
+
+            return 0;
+        }
 
         /**
          * Active subscriber publish tracks for a given track, indexed (keyed) by track_alias, connection handle
@@ -94,8 +110,36 @@ namespace laps {
          *
          * @example track_handler = subscribes[track_alias, connection_handle]
          */
-        std::map<std::pair<quicr::messages::TrackAlias, quicr::ConnectionHandle>, SubscribePublishHandlerInfo>
-          subscribes;
+        std::map<std::pair<std::uint64_t, std::uint64_t>, SubscribePublishHandlerInfo> subscribes;
+
+        struct StateMetrics
+        {
+            std::uint64_t subscribed_tracks; ///< gauge; Set to the active number of subscribes
+            std::uint64_t published_tracks;  // gauge; Set to the active number of publishes
+        };
+
+        // Key is connection ID/handle
+        std::map<std::uint64_t, StateMetrics> conn_state_metrics;
+
+        /**
+         * @brief Get the count of subscribe tracks
+         *
+         * @param connection_handle     Connection handle/id
+         *
+         * @return Number of subscribes received from the connection, including the tracks matched by each of
+         *      the connection's namespace subscribes
+         */
+        std::size_t SubscribeTrackCount(std::uint64_t connection_handle)
+        {
+            std::lock_guard _(state_mutex);
+
+            const auto& metrics = conn_state_metrics.find(connection_handle);
+            if (metrics != conn_state_metrics.end()) {
+                return metrics->second.subscribed_tracks;
+            }
+
+            return 0;
+        }
 
         /**
          * Request ID to alias mapping
@@ -104,8 +148,7 @@ namespace laps {
          * @example
          *      track_alias = subscribe_alias_req_id[connection handle, request_id]
          */
-        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, quicr::messages::TrackAlias>
-          subscribe_alias_req_id;
+        std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint64_t> subscribe_alias_req_id;
 
         /**
          * Map of subscribes set by namespace and track name hash
@@ -138,6 +181,6 @@ namespace laps {
             }
         };
 
-        std::map<std::pair<quicr::TrackNamespace, quicr::TrackNameHash>, std::set<SubscribeInfo>> subscribe_active_;
+        std::map<std::pair<quicr::TrackNamespace, std::uint64_t>, std::set<SubscribeInfo>> subscribe_active_;
     };
 }

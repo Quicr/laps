@@ -16,7 +16,7 @@ GenerateFullTrackNames(int count)
         const int rvalue = std::rand();
         const auto name = std::to_string(rvalue);
         full_names.push_back(
-          { quicr::messages::TrackNamespace{ "first"s, "second"s, "third"s, "final namespace tuple"s, "r=" + name },
+          { quicr::TrackNamespace{ "first"s, "second"s, "third"s, "final namespace tuple"s, "r=" + name },
             { name.begin(), name.end() } });
     }
 
@@ -116,11 +116,10 @@ TEST_CASE("Prefix match announces")
         ib->AddAnnounce(ai);
     }
 
-    const auto ns1 =
-      quicr::messages::TrackNamespace{ "first"s, "second"s, "third"s, "final namespace tuple"s, "invalid"s };
-    const auto ns2 = quicr::messages::TrackNamespace{ "first"s, "second"s, "third"s };
-    const auto ns3 = quicr::messages::TrackNamespace{ "first"s, "second"s };
-    const auto ns4 = quicr::messages::TrackNamespace{ "first"s };
+    const auto ns1 = quicr::TrackNamespace{ "first"s, "second"s, "third"s, "final namespace tuple"s, "invalid"s };
+    const auto ns2 = quicr::TrackNamespace{ "first"s, "second"s, "third"s };
+    const auto ns3 = quicr::TrackNamespace{ "first"s, "second"s };
+    const auto ns4 = quicr::TrackNamespace{ "first"s };
 
     auto result = ib->GetAnnounceIds(ns1, {}, false);
     CHECK_EQ(result.size(), 0);

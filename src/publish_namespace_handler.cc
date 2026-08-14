@@ -22,13 +22,14 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
 
     timeq::tick_service::tick_type cur_ticks{ 0 };
     if (auto tick_svc = tick_service_.lock()) {
-        cur_ticks = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
+        cur_ticks =
+          static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
     }
     published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
-laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full_name_hash,
+laps::PublishNamespaceHandler::PublishObject(std::uint64_t track_full_name_hash,
                                              const quicr::ObjectHeaders& object_headers,
                                              quicr::BytesSpan data,
                                              std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
@@ -57,7 +58,7 @@ laps::PublishNamespaceHandler::PublishObject(quicr::TrackFullNameHash track_full
 }
 
 quicr::PublishTrackHandler::PublishObjectStatus
-laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash track_full_name_hash,
+laps::PublishNamespaceHandler::ForwardPublishedData(std::uint64_t track_full_name_hash,
                                                     bool is_new_stream,
                                                     uint64_t group_id,
                                                     uint64_t subgroup_id,
@@ -84,7 +85,7 @@ laps::PublishNamespaceHandler::ForwardPublishedData(quicr::TrackFullNameHash tra
 
 void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
-  std::span<const std::tuple<quicr::messages::TrackAlias, uint64_t, uint64_t, uint64_t>> ordered_tracks)
+  std::span<const std::tuple<std::uint64_t, uint64_t, uint64_t, uint64_t>> ordered_tracks)
 {
     if (!property_type_.has_value()) {
         return;
@@ -92,7 +93,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
     // Update latest tick for each publish track
     for (auto& [ta, insert_seq_num, latest_tick, conn_id] : ordered_tracks) {
-        SPDLOG_DEBUG("DEBUG: conn_id: {} ta: {} insert_seq_num: {} latest_tick: {}",
+        SPDLOG_TRACE("DEBUG: conn_id: {} ta: {} insert_seq_num: {} latest_tick: {}",
                      GetConnectionId(),
                      ta,
                      insert_seq_num,
@@ -112,7 +113,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
         // Filter out self-tracks
         if (publisher_conn_id == GetConnectionId()) {
-            SPDLOG_DEBUG("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
+            SPDLOG_TRACE("Skipping self-track {} (connection_id: {})", ta, publisher_conn_id);
             continue;
         }
 
@@ -159,7 +160,8 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
             timeq::tick_service::tick_type cur_tick{ 0 };
             if (auto tick_svc = tick_service_.lock()) {
-                cur_tick = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
+                cur_tick =
+                  static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
             }
 
             if (auto h = track.handler.lock()) {

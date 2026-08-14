@@ -68,15 +68,9 @@ namespace {
     };
 
     const std::vector<const char*> kAllEnvKeys = {
-        "LIBQUICR_RELAY_HEALTH_URI",
-        "LIBQUICR_RELAY_HEALTH_TIMEOUT_MS",
-        "LIBQUICR_RELAY_HEALTH_NAMESPACE",
-        "LIBQUICR_RELAY_HEALTH_NAME",
-        "LIBQUICR_RELAY_HEALTH_MESSAGE",
-        "LIBQUICR_RELAY_HEALTH_DEBUG",
-        "LIBQUICR_GATEWAY_HEALTH_ENABLED",
-        "LIBQUICR_GATEWAY_HEALTH_NAMESPACE",
-        "LIBQUICR_GATEWAY_HEALTH_NAME",
+        "LIBQUICR_RELAY_HEALTH_URI",       "LIBQUICR_RELAY_HEALTH_TIMEOUT_MS",  "LIBQUICR_RELAY_HEALTH_NAMESPACE",
+        "LIBQUICR_RELAY_HEALTH_NAME",      "LIBQUICR_RELAY_HEALTH_MESSAGE",     "LIBQUICR_RELAY_HEALTH_DEBUG",
+        "LIBQUICR_GATEWAY_HEALTH_ENABLED", "LIBQUICR_GATEWAY_HEALTH_NAMESPACE", "LIBQUICR_GATEWAY_HEALTH_NAME",
         "LIBQUICR_GATEWAY_HEALTH_MESSAGE",
     };
 
@@ -308,14 +302,8 @@ TEST_CASE("ParseOptions: gateway CLI flags override env")
     env.Set("LIBQUICR_GATEWAY_HEALTH_NAME", "env-name");
     env.Set("LIBQUICR_GATEWAY_HEALTH_MESSAGE", "env-msg");
 
-    const char* argv[] = { "relay_health_check",
-                           "--gateway",
-                           "--gateway-namespace",
-                           "cli/ns",
-                           "--gateway-name",
-                           "cli-name",
-                           "--gateway-message",
-                           "cli-msg" };
+    const char* argv[] = { "relay_health_check", "--gateway", "--gateway-namespace", "cli/ns",
+                           "--gateway-name",     "cli-name",  "--gateway-message",   "cli-msg" };
     const int argc = sizeof(argv) / sizeof(argv[0]);
 
     const auto options = ParseOptions(argc, const_cast<char**>(argv));

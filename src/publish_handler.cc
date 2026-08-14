@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "publish_handler.h"
-#include <quicr/publish_track_handler.h>
+#include <quicr/handlers/publish_track_handler.h>
 
 namespace laps {
     /**
@@ -71,18 +71,8 @@ namespace laps {
 
     void PublishTrackHandler::MetricsSampled(const quicr::PublishTrackMetrics& metrics)
     {
-        SPDLOG_DEBUG("Metrics track_alias: {0}"
-                     " objects sent: {1}"
-                     " bytes sent: {2}"
-                     " object duration us: {3}"
-                     " queue discards: {4}"
-                     " queue size: {5}",
-                     GetTrackAlias().value(),
-                     metrics.objects_published,
-                     metrics.bytes_published,
-                     metrics.quic.tx_object_duration_us.avg,
-                     metrics.quic.tx_queue_discards,
-                     metrics.quic.tx_queue_size.avg);
+        const auto tfn = GetFullTrackName();
+        server_.metrics_publisher_.QueuePublishMetrics(GetConnectionId(), tfn, metrics);
     }
 
     bool PublishTrackHandler::SentFirstObject(uint32_t group_id, uint32_t subgroup_id)

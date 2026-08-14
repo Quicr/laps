@@ -4,8 +4,8 @@
 #include "relay_health_check_internal.h"
 
 #include "quicr/client.h"
-#include "quicr/publish_track_handler.h"
-#include "quicr/subscribe_track_handler.h"
+#include "quicr/handlers/publish_track_handler.h"
+#include "quicr/handlers/subscribe_track_handler.h"
 
 #include <spdlog/spdlog.h>
 
@@ -251,34 +251,34 @@ namespace {
         auto subscriber = MakeClient("relay-health-subscriber-" + unique_suffix, options);
         auto publisher = MakeClient("relay-health-publisher-" + unique_suffix, options);
 
-        subscriber->Connect();
-        publisher->Connect();
+        subscriber->Start();
+        publisher->Start();
 
         const bool connected = WaitFor(
           [&subscriber, &publisher]() {
-              return subscriber->GetStatus() == Transport::Status::kReady &&
-                     publisher->GetStatus() == Transport::Status::kReady;
+              return subscriber->GetStatus() == Client::Status::kReady &&
+                     publisher->GetStatus() == Client::Status::kReady;
           },
           options.timeout);
         if (!connected) {
             error = "[relay] publisher and subscriber did not both connect before timeout";
-            subscriber->Disconnect();
-            publisher->Disconnect();
+            subscriber->Stop();
+            publisher->Stop();
             return false;
         }
 
         const bool relay_ok = RunPubSubProbe(*subscriber, *publisher, options, unique_suffix, error);
         if (!relay_ok) {
-            subscriber->Disconnect();
-            publisher->Disconnect();
+            subscriber->Stop();
+            publisher->Stop();
             return false;
         }
 
         if (options.gateway_enabled) {
             if (options.gateway_name.empty()) {
                 error = "[gateway] LIBQUICR_GATEWAY_HEALTH_NAME (or --gateway-name) is empty";
-                subscriber->Disconnect();
-                publisher->Disconnect();
+                subscriber->Stop();
+                publisher->Stop();
                 return false;
             }
 
@@ -293,14 +293,14 @@ namespace {
             const bool gateway_ok =
               RunSubscribeProbe(*subscriber, gateway_track, display, expected_payload, options.timeout, error);
             if (!gateway_ok) {
-                subscriber->Disconnect();
-                publisher->Disconnect();
+                subscriber->Stop();
+                publisher->Stop();
                 return false;
             }
         }
 
-        subscriber->Disconnect();
-        publisher->Disconnect();
+        subscriber->Stop();
+        publisher->Stop();
         return true;
     }
 }

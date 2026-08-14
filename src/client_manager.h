@@ -1,11 +1,14 @@
 #pragma once
 
+#include "metrics_publisher.h"
 #include "state.h"
 
 #include "track_ranking.h"
 #include <peering/peer_manager.h>
-#include <quicr/cache.h>
-#include <quicr/server.h>
+#include <quicr/containers/cache.h>
+#include <quicr/messages/object.h>
+#include <quicr/session.h>
+#include <quicr/utilities/bytes.h>
 
 #include <functional>
 #include <set>
@@ -47,7 +50,7 @@ namespace laps {
      * @brief MoQ Server
      * @details Implementation of the MoQ Server
      */
-    class ClientManager : public quicr::Server
+    class ClientManager : public quicr::Session
     {
       public:
         ClientManager(State& state,
@@ -55,92 +58,111 @@ namespace laps {
                       const quicr::ServerConfig& cfg,
                       peering::PeerManager& peer_manager,
                       size_t cache_duration_ms = 60000);
+        ~ClientManager();
 
-        void NewConnectionAccepted(quicr::ConnectionHandle connection_handle,
-                                   const ConnectionRemoteInfo& remote) override;
+        quicr::Session::Status Start() override;
+        void Stop() override;
 
-        void SubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
-                                        quicr::DataContextId data_ctx_id,
-                                        const quicr::TrackNamespace& prefix_namespace,
-                                        const quicr::messages::SubscribeNamespaceAttributes& attributes) override;
+        void NewConnectionAccepted(std::uint64_t connection_handle, const ConnectionRemoteInfo& remote) override;
 
-        void UnsubscribeNamespaceReceived(quicr::ConnectionHandle connection_handle,
+        void SubscribeTracksReceived(std::uint64_t connection_handle,
+                                     std::uint64_t data_ctx_id,
+                                     const quicr::TrackNamespace& prefix_namespace,
+                                     const quicr::SubscribeNamespaceAttributes& attributes) override;
+
+        void UnsubscribeNamespaceReceived(std::uint64_t connection_handle,
                                           const quicr::TrackNamespace& prefix_namespace) override;
 
-        std::vector<quicr::ConnectionHandle> PublishNamespaceDoneReceived(
-          quicr::ConnectionHandle connection_handle,
-          quicr::messages::RequestID request_id) override;
+        std::vector<std::uint64_t> PublishNamespaceDoneReceived(std::uint64_t connection_handle,
+                                                                std::uint64_t request_id) override;
 
-        void PublishNamespaceReceived(quicr::ConnectionHandle connection_handle,
+        void PublishNamespaceReceived(std::uint64_t connection_handle,
                                       const quicr::TrackNamespace& track_namespace,
                                       const quicr::PublishNamespaceAttributes&) override;
 
-        void ConnectionStatusChanged(quicr::ConnectionHandle connection_handle, ConnectionStatus status) override;
+        void ConnectionStatusChanged(std::uint64_t connection_handle, ConnectionStatus status) override;
 
-        ClientSetupResponse ClientSetupReceived(quicr::ConnectionHandle,
-                                                const quicr::ClientSetupAttributes& client_setup_attributes) override;
+        void ClientSetupReceived(std::uint64_t connection_handle,
+                                 const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
-        void UnsubscribeReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
-        void PublishDoneReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
+        void UnsubscribeReceived(std::uint64_t connection_handle, uint64_t request_id) override;
+        void PublishDoneReceived(std::uint64_t connection_handle, uint64_t request_id) override;
 
-        void SubscribeReceived(quicr::ConnectionHandle connection_handle,
+        void SubscribeReceived(std::uint64_t connection_handle,
                                uint64_t request_id,
                                const quicr::FullTrackName& track_full_name,
-                               const quicr::messages::SubscribeAttributes&) override;
+                               const quicr::SubscribeAttributes&) override;
 
-        void NewGroupRequested(const quicr::FullTrackName& track_full_name, quicr::messages::GroupId group_id) override;
+        void NewGroupRequested(const quicr::FullTrackName& track_full_name, std::uint64_t group_id) override;
 
-        void TrackStatusReceived(quicr::ConnectionHandle connection_handle,
+        void TrackStatusReceived(std::uint64_t connection_handle,
                                  uint64_t request_id,
                                  const quicr::FullTrackName& track_full_name) override;
 
         std::optional<quicr::messages::Location> GetLargestAvailable(const quicr::FullTrackName& track_name);
 
-        void FetchCancelReceived(quicr::ConnectionHandle connection_handle, uint64_t request_id) override;
+        void FetchCancelReceived(std::uint64_t connection_handle, uint64_t request_id) override;
 
-        void StandaloneFetchReceived(quicr::ConnectionHandle connection_handle,
+        void StandaloneFetchReceived(std::uint64_t connection_handle,
                                      uint64_t request_id,
                                      const quicr::FullTrackName& track_full_name,
-                                     const quicr::messages::StandaloneFetchAttributes& attributes) override;
+                                     const quicr::StandaloneFetchAttributes& attributes) override;
 
-        void JoiningFetchReceived(quicr::ConnectionHandle connection_handle,
+        void JoiningFetchReceived(std::uint64_t connection_handle,
                                   uint64_t request_id,
                                   const quicr::FullTrackName& track_full_name,
-                                  const quicr::messages::JoiningFetchAttributes& attributes) override;
+                                  const quicr::JoiningFetchAttributes& attributes) override;
 
-        void PublishReceived(quicr::ConnectionHandle connection_handle,
+        void PublishReceived(std::uint64_t connection_handle,
                              uint64_t request_id,
-                             const quicr::messages::PublishAttributes& publish_attributes,
+                             const quicr::PublishAttributes& publish_attributes,
                              std::weak_ptr<quicr::SubscribeNamespaceHandler> ns_handler) override;
 
-        void ProcessSubscribe(quicr::ConnectionHandle connection_handle,
+        /**
+         * @brief Register a relay-local publish (e.g. the internally generated metrics track)
+         *
+         * @details Unlike PublishReceived(), this is never treated as peer-originated even though it uses
+         *      the same connection_handle=0/request_id=0 sentinel internally. Use this instead of calling
+         *      PublishReceived(0, 0, ...) directly for relay-local publishes.
+         */
+        void RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes);
+
+        void ProcessSubscribe(std::uint64_t connection_handle,
                               uint64_t request_id,
                               const quicr::TrackHash& th,
                               const quicr::FullTrackName& track_full_name,
-                              const quicr::messages::SubscribeAttributes&,
+                              const quicr::SubscribeAttributes&,
                               std::optional<quicr::messages::Location>);
 
-        void PeerDataReceived(quicr::TrackFullNameHash track_full_name_hash,
+        bool PublishLocalObject(std::uint64_t track_fullname_hash,
+                                const quicr::ObjectHeaders& object_headers,
+                                quicr::BytesSpan data);
+
+        void PeerDataReceived(std::uint64_t track_full_name_hash,
                               bool is_new_stream,
                               std::optional<uint64_t> stream_id,
                               std::shared_ptr<const std::vector<uint8_t>> data);
 
-        void PeerUnsubscribeTrack(quicr::TrackFullNameHash track_full_name_hash);
+        void PeerUnsubscribeTrack(std::uint64_t track_full_name_hash);
 
-        void PeerStreamClosed(quicr::TrackFullNameHash track_full_name_hash, uint64_t stream_id, bool reset);
+        void PeerStreamClosed(std::uint64_t track_full_name_hash, uint64_t stream_id, bool reset);
 
         bool DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                              bool new_group_request);
 
-        void RemoveOrPausePublisherSubscribe(quicr::TrackFullNameHash track_fullname_hash);
+        void RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash);
 
-        void MetricsSampled(const quicr::ConnectionHandle connection_handle,
-                            const quicr::ConnectionMetrics& metrics) override;
+        void MetricsSampled(const std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics) override;
 
       private:
-        void PurgePublishState(quicr::ConnectionHandle connection_handle);
+        void PublishReceivedInternal(std::uint64_t connection_handle,
+                                     uint64_t request_id,
+                                     const quicr::PublishAttributes& publish_attributes,
+                                     bool is_from_peer);
 
-        void FetchReceived(quicr::ConnectionHandle connection_handle,
+        void PurgePublishState(std::uint64_t connection_handle);
+
+        void FetchReceived(std::uint64_t connection_handle,
                            uint64_t request_id,
                            const quicr::FullTrackName& track_full_name,
                            uint8_t priority,
@@ -151,16 +173,18 @@ namespace laps {
         State& state_;
         const Config& config_;
         peering::PeerManager& peer_manager_;
+        MetricsPublisher metrics_publisher_;
 
         /**
          * @brief Map of atomic bools to mark if a fetch thread should be interrupted.
          */
-        std::map<std::pair<quicr::ConnectionHandle, quicr::messages::RequestID>, std::atomic_bool> stop_fetch_;
+        std::map<std::pair<std::uint64_t, std::uint64_t>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
-        std::map<quicr::TrackFullNameHash, quicr::Cache<quicr::messages::GroupId, std::set<CacheObject>>> cache_;
+        std::map<std::uint64_t, quicr::Cache<std::uint64_t, std::set<CacheObject>>> cache_;
 
-        std::unordered_map<quicr::TrackNamespaceHash, std::shared_ptr<TrackRanking>> track_rankings_;
+        // Key is track namespace hash
+        std::unordered_map<std::uint64_t, std::shared_ptr<TrackRanking>> track_rankings_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

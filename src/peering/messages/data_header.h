@@ -5,8 +5,8 @@
 #include "peering/common.h"
 #include "subscribe_info.h"
 
-#include <quicr/detail/messages.h>
-#include <quicr/detail/uintvar.h>
+#include <quicr/messages/messages.h>
+#include <quicr/messages/uintvar.h>
 
 namespace laps::peering {
 
@@ -32,10 +32,10 @@ namespace laps::peering {
     {
       public:
         // @note: Header variables vary by type
-        uint8_t header_len{ 0 };               ///< Size of header length in bytes (up to start of payload bytes)
-        DataType type{ DataType::kNewStream }; ///< Type of the data object
-        SubscribeNodeSetId sns_id{ 0 };        ///< SNS ID used by the peer
-        quicr::TrackFullNameHash track_full_name_hash{ 0 }; ///< Full Track name (aka track alias)
+        uint8_t header_len{ 0 };                 ///< Size of header length in bytes (up to start of payload bytes)
+        DataType type{ DataType::kNewStream };   ///< Type of the data object
+        SubscribeNodeSetId sns_id{ 0 };          ///< SNS ID used by the peer
+        std::uint64_t track_full_name_hash{ 0 }; ///< Full Track name (aka track alias)
 
         uint8_t priority{ 1 }; ///< Stream only; Priority for new stream
         uint32_t ttl{ 2000 };  ///< Stream only; Time to live in millis for stream objects
@@ -54,7 +54,7 @@ namespace laps::peering {
         bool Deserialize(std::span<uint8_t const> serialized_data);
 
         DataHeader() = default;
-        DataHeader(SubscribeNodeSetId sns_id, quicr::TrackFullNameHash full_name, DataType type);
+        DataHeader(SubscribeNodeSetId sns_id, std::uint64_t full_name_hash, DataType type);
         DataHeader(std::span<uint8_t const> serialized_data);
 
         uint32_t SizeBytes() const;

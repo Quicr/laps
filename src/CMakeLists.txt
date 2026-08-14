@@ -10,6 +10,7 @@ add_executable(lapsRelay
         main.cc
         config.cc
         client_manager.cc
+        metrics_publisher.cc
         subscribe_handler.cc
         publish_handler.cc
         fetch_handler.cc
