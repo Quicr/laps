@@ -15,21 +15,21 @@ namespace laps {
         FetchTrackHandler(const std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler,
                           const quicr::FullTrackName& full_track_name,
                           std::uint8_t priority,
-                          std::optional<quicr::messages::GroupOrder> group_order,
                           const quicr::messages::Location& start_location,
-                          const quicr::messages::FetchEndLocation& end_location);
+                          const quicr::messages::FetchEndLocation& end_location,
+                          quicr::messages::GroupOrder group_order);
 
       public:
         static std::shared_ptr<FetchTrackHandler> Create(
           const std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler,
           const quicr::FullTrackName& full_track_name,
-          std::uint64_t priority,
-          std::optional<quicr::messages::GroupOrder> group_order,
+          std::uint8_t priority,
           const quicr::messages::Location& start_location,
-          const quicr::messages::FetchEndLocation& end_location)
+          const quicr::messages::FetchEndLocation& end_location,
+          quicr::messages::GroupOrder group_order = quicr::messages::GroupOrder::kAscending)
         {
             return std::shared_ptr<FetchTrackHandler>(new FetchTrackHandler(
-              publish_fetch_handler, full_track_name, priority, group_order, start_location, end_location));
+              publish_fetch_handler, full_track_name, priority, start_location, end_location, group_order));
         }
 
         void StatusChanged(Status status) override;

@@ -992,13 +992,11 @@ namespace laps {
             reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
         }
 
+        const auto resolved_group_order = group_order.value_or(quicr::messages::GroupOrder::kAscending);
+
         // TODO: Adjust the TTL to allow more time for transmission
-        auto pub_fetch_h =
-          quicr::PublishFetchHandler::Create(track_full_name,
-                                             priority,
-                                             request_id,
-                                             group_order.value_or(quicr::messages::GroupOrder::kAscending),
-                                             config_.object_ttl_);
+        auto pub_fetch_h = quicr::PublishFetchHandler::Create(
+          track_full_name, priority, request_id, resolved_group_order, config_.object_ttl_);
         BindFetchTrack(connection_handle, pub_fetch_h);
 
         stop_fetch_.try_emplace({ connection_handle, request_id }, false);
@@ -1024,9 +1022,9 @@ namespace laps {
                 auto track_handler = FetchTrackHandler::Create(pub_fetch_h,
                                                                track_full_name,
                                                                priority,
-                                                               group_order,
                                                                { .group = start.group, .object = start.object },
-                                                               { .group = end.group, .object = end.object });
+                                                               { .group = end.group, .object = end.object },
+                                                               resolved_group_order);
 
                 std::uint64_t pub_connection_handle = 0;
 
@@ -1114,11 +1112,11 @@ namespace laps {
                 largest_location,
               });
 
-            for (const auto& entry : cache_entries) {
-                for (const auto& object : *entry) {
+            const auto publish_group = [&](const std::set<CacheObject>& group) {
+                for (const auto& object : group) {
                     if (stop_fetch_[{ connection_handle, request_id }]) {
                         stop_fetch_.erase({ connection_handle, request_id });
-                        return;
+                        return false;
                     }
 
                     // Start at start object id
@@ -1126,10 +1124,10 @@ namespace laps {
                         continue;
                     }
 
-                    // Stop at end object, unless end object is zero
+                    // Skip past end object, unless end object is zero
                     if (end.object.has_value() && object.headers.group_id == end.group &&
                         object.headers.object_id > *end.object) {
-                        return;
+                        continue;
                     }
 
                     SPDLOG_LOGGER_TRACE(
@@ -1139,6 +1137,24 @@ namespace laps {
                         pub_fetch_h->PublishObject(object.headers, object.data);
                     } catch (const std::exception& e) {
                         SPDLOG_LOGGER_ERROR(LOGGER, "Caught exception sending fetch object: {}", e.what());
+                    }
+                }
+
+                return true;
+            };
+
+            // Fetch objects are delta encoded against the previously sent object, so groups have to be
+            // sent in the requested group order. Object IDs remain ascending within a group.
+            if (resolved_group_order == quicr::messages::GroupOrder::kDescending) {
+                for (auto entry_it = cache_entries.rbegin(); entry_it != cache_entries.rend(); ++entry_it) {
+                    if (!publish_group(**entry_it)) {
+                        return;
+                    }
+                }
+            } else {
+                for (const auto& entry : cache_entries) {
+                    if (!publish_group(*entry)) {
+                        return;
                     }
                 }
             }
