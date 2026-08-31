@@ -19,6 +19,18 @@ project(laps
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
+##
+## CPM
+##
+if (NOT DEFINED ENV{IDF_PATH})
+    set (CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+endif()
+
+include(CPM)
+CPMAddPackage("gh:gabime/spdlog@1.17.0")
+
+##
+
 configure_file( version_config.h.in ${CMAKE_BINARY_DIR}/generated/version_config.h )
 include_directories( ${CMAKE_BINARY_DIR}/generated/ ${CMAKE_CURRENT_SOURCE_DIR}/src)
 

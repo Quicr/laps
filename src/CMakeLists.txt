@@ -30,7 +30,7 @@ add_executable(lapsRelay
         peering/info_base.cc
 )
 
-target_link_libraries(lapsRelay PRIVATE quicr)
+target_link_libraries(lapsRelay PRIVATE quicr spdlog::spdlog)
 target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/oss )
 
 target_compile_options(lapsRelay

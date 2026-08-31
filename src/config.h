@@ -1,7 +1,7 @@
 #pragma once
 
 #include "peering/messages/node_info.h"
-#include "spdlog/sinks/stdout_color_sinks-inl.h"
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include "version_config.h"
 
 #include <list>
