@@ -194,6 +194,14 @@ namespace laps::peering {
         void PropagateNodeInfo(PeerSessionId peer_session_id, const NodeInfo& node_info, bool withdraw = false);
         std::shared_ptr<PeerSession> GetPeerSession(PeerSessionId peer_session_id);
 
+        /**
+         * @brief Finish the egress streams of a forwarding entry that is going away
+         *
+         * @details The entry owns the only handle to each stream, so the peer is told the flow ended before
+         *      the entry is dropped, rather than leaving the streams open until the connection closes.
+         */
+        static void CloseFibStreams(InfoBase::FibEntry& entry);
+
       private:
         bool stop_{ false };
         std::mutex mutex_;

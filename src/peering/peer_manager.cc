@@ -204,7 +204,12 @@ namespace laps::peering {
                                        peer_session->GetSessionId(),
                                        subscribe_info.track_hash.track_fullname_hash);
 
-                    info_base_->client_fib_.erase({ subscribe_info.track_hash.track_fullname_hash, peer_session_id });
+                    const auto cfib_it =
+                      info_base_->client_fib_.find({ subscribe_info.track_hash.track_fullname_hash, peer_session_id });
+                    if (cfib_it != info_base_->client_fib_.end()) {
+                        CloseFibStreams(cfib_it->second);
+                        info_base_->client_fib_.erase(cfib_it);
+                    }
 
                     if (not HasSubscribers(subscribe_info.track_hash.track_fullname_hash)) {
                         SPDLOG_LOGGER_INFO(LOGGER,
@@ -444,7 +449,7 @@ namespace laps::peering {
 
                 auto out_peer_sess = entry.peer_session.lock();
 
-                uint64_t out_stream_id{ 0 };
+                std::shared_ptr<quicr::Stream> out_stream;
                 if (eflags.use_reliable) {
                     auto sid_it = entry.streams.find(stream_id);
                     if (sid_it == entry.streams.end()) {
@@ -453,21 +458,17 @@ namespace laps::peering {
                             continue; // Ignore existing data and wait for start of new stream
                         }
 
-                        out_stream_id = out_peer_sess->CreateStream(entry.out_sns_id, data_header.priority);
-                        entry.streams.emplace(stream_id, out_stream_id);
+                        out_stream = out_peer_sess->CreateStream(data_header.priority);
+                        entry.streams.emplace(stream_id, out_stream);
                     } else {
-                        out_stream_id = sid_it->second;
+                        out_stream = sid_it->second;
                     }
                 }
 
                 auto data_out_shared = std::make_shared<std::vector<uint8_t>>();
                 data_out_shared->assign(data_out.begin(), data_out.end());
-                out_peer_sess->SendData(data_header.priority,
-                                        data_header.ttl,
-                                        entry.out_sns_id,
-                                        out_stream_id,
-                                        eflags,
-                                        std::move(data_out_shared));
+                out_peer_sess->SendData(
+                  data_header.priority, data_header.ttl, out_stream, eflags, std::move(data_out_shared));
             }
         } else {
             SPDLOG_LOGGER_DEBUG(config_.logger_,
@@ -507,8 +508,7 @@ namespace laps::peering {
 
                 auto stream_it = fib_entry.streams.find(in_stream_id);
                 if (stream_it != fib_entry.streams.end()) {
-                    peer_sess->CloseStream(fib_entry.out_sns_id,
-                                           stream_it->second,
+                    peer_sess->CloseStream(stream_it->second,
                                            reset ? quicr::StreamClosedFlag::kReset : quicr::StreamClosedFlag::kFin);
                     fib_entry.streams.erase(stream_it);
                 }
@@ -572,7 +572,7 @@ namespace laps::peering {
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), send_data->begin() + 2);
                 }
 
-                uint64_t out_stream_id{ 0 };
+                std::shared_ptr<quicr::Stream> out_stream;
 
                 if (eflags.use_reliable) {
                     uint64_t in_stream_id = group_id << 16 | static_cast<uint16_t>(subgroup_id);
@@ -583,10 +583,10 @@ namespace laps::peering {
                             return;
                         }
 
-                        out_stream_id = peer_sess->CreateStream(fib_entry.out_sns_id, priority);
-                        fib_entry.streams.try_emplace(in_stream_id, out_stream_id);
+                        out_stream = peer_sess->CreateStream(priority);
+                        fib_entry.streams.try_emplace(in_stream_id, out_stream);
                     } else {
-                        out_stream_id = stream_it->second;
+                        out_stream = stream_it->second;
                     }
 
                     SPDLOG_LOGGER_TRACE(
@@ -596,7 +596,7 @@ namespace laps::peering {
                       peer_sess->GetSessionId(),
                       fib_entry.out_sns_id,
                       in_stream_id,
-                      out_stream_id,
+                      out_stream ? out_stream->GetStreamId() : 0,
                       track_full_name_hash,
                       group_id,
                       subgroup_id,
@@ -604,7 +604,7 @@ namespace laps::peering {
                       net_data->size());
                 }
 
-                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, out_stream_id, eflags, send_data);
+                peer_sess->SendData(priority, ttl, out_stream, eflags, send_data);
             }
         }
     }
@@ -967,9 +967,11 @@ namespace laps::peering {
         if (withdraw) {
             auto it = info_base_->peer_fib_.find({ peer_session.GetSessionId(), sns.id });
             if (it != info_base_->peer_fib_.end()) {
-                for (const auto& [out_peer_sess_id, entry] : it->second) {
+                for (auto& [out_peer_sess_id, entry] : it->second) {
                     if (out_peer_sess_id == 0)
                         continue;
+
+                    CloseFibStreams(entry);
 
                     auto out_peer_sess = entry.peer_session.lock();
                     out_peer_sess->RemovePeerSnsSourceNode(peer_session.GetSessionId(), sns.id, 0);
@@ -1312,6 +1314,18 @@ namespace laps::peering {
         }
     }
 
+    void PeerManager::CloseFibStreams(InfoBase::FibEntry& entry)
+    {
+        const auto peer_sess = entry.peer_session.lock();
+        if (peer_sess != nullptr) {
+            for (const auto& [_, out_stream] : entry.streams) {
+                peer_sess->CloseStream(out_stream, quicr::StreamClosedFlag::kFin);
+            }
+        }
+
+        entry.streams.clear();
+    }
+
     void PeerManager::CloseStream(PeerSessionId peer_session_id,
                                   SubscribeNodeSetId sns,
                                   uint64_t stream_id,
@@ -1334,7 +1348,7 @@ namespace laps::peering {
                 auto stream_it = entry.streams.find(stream_id);
                 if (stream_it != entry.streams.end()) {
                     if (auto out_peer_sess = entry.peer_session.lock()) {
-                        out_peer_sess->CloseStream(entry.out_sns_id, stream_it->second, flag);
+                        out_peer_sess->CloseStream(stream_it->second, flag);
                         entry.streams.erase(stream_it);
                     }
                 }
@@ -1348,9 +1362,9 @@ namespace laps::peering {
             }
 
             if (auto out_peer_sess = entry.peer_session.lock()) {
-                for (const auto& [in_stream_id, out_stream_id] : entry.streams) {
-                    if (out_stream_id == stream_id) {
-                        entry.streams.erase(out_stream_id);
+                for (const auto& [in_stream_id, out_stream] : entry.streams) {
+                    if (out_stream != nullptr && out_stream->GetStreamId() == stream_id) {
+                        entry.streams.erase(in_stream_id);
                         client_manager_->PeerStreamClosed(
                           key.first, stream_id, flag == quicr::StreamClosedFlag::kReset);
                         break;

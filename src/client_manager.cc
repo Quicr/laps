@@ -341,11 +341,10 @@ namespace laps {
 
     quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode>
     ClientManager::ServerCallbacks::SubscribeTracksReceived(const std::shared_ptr<quicr::Session>& session,
-                                                            std::uint64_t data_ctx_id,
                                                             const quicr::TrackNamespace& prefix_namespace,
                                                             const quicr::SubscribeNamespaceAttributes& attributes)
     {
-        return manager_.SubscribeTracksReceived(ConnectionHandle(session), data_ctx_id, prefix_namespace, attributes);
+        return manager_.SubscribeTracksReceived(ConnectionHandle(session), prefix_namespace, attributes);
     }
 
     quicr::Reply<void, int> ClientManager::ServerCallbacks::UnsubscribeNamespaceReceived(
@@ -860,7 +859,6 @@ namespace laps {
 
     quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> ClientManager::SubscribeTracksReceived(
       std::uint64_t connection_handle,
-      [[maybe_unused]] std::uint64_t data_ctx_id,
       const quicr::TrackNamespace& prefix_namespace,
       const quicr::SubscribeNamespaceAttributes& attributes)
     {

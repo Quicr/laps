@@ -76,7 +76,6 @@ namespace laps {
 
         quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeTracksReceived(
           std::uint64_t connection_handle,
-          std::uint64_t data_ctx_id,
           const quicr::TrackNamespace& prefix_namespace,
           const quicr::SubscribeNamespaceAttributes& attributes);
 
@@ -280,7 +279,6 @@ namespace laps {
 
             quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeTracksReceived(
               const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t data_ctx_id,
               const quicr::TrackNamespace& prefix_namespace,
               const quicr::SubscribeNamespaceAttributes& attributes) override;
 
