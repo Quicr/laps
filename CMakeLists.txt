@@ -27,7 +27,6 @@ if (NOT DEFINED ENV{IDF_PATH})
 endif()
 
 include(CPM)
-CPMAddPackage("gh:gabime/spdlog@1.17.0")
 
 ##
 
@@ -60,6 +59,14 @@ add_subdirectory(dependencies)
 if(HAS_STD_VFORMAT)
     add_compile_definitions(QUICR_HAVE_STD_FORMAT)
 endif()
+
+# spdlog compiles a bundled copy of fmt by default. libquicr also links fmt::fmt
+# when std::vformat is unavailable (typical on libstdc++ / GCC < 13), so linking
+# both into lapsRelay produces duplicate fmt::v12 symbols on Linux.
+if(TARGET fmt::fmt)
+    set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "Use external fmt; avoid duplicate symbols with libquicr" FORCE)
+endif()
+CPMAddPackage("gh:gabime/spdlog@1.17.0")
 
 ###
 ### Build relay
