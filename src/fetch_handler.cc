@@ -13,7 +13,11 @@ namespace laps {
                                          std::optional<quicr::messages::GroupOrder> group_order,
                                          const quicr::messages::Location& start_location,
                                          const quicr::messages::FetchEndLocation& end_location)
-      : quicr::FetchTrackHandler(full_track_name, priority, group_order, start_location, end_location)
+      : quicr::FetchTrackHandler(full_track_name,
+                                 priority,
+                                 start_location,
+                                 end_location,
+                                 group_order.value_or(quicr::messages::GroupOrder::kAscending))
       , publish_fetch_handler_(std::move(publish_fetch_handler))
     {
     }

@@ -515,8 +515,10 @@ namespace laps {
                 default:
                     break;
             }
+            // The alias is assigned when the handler is bound to its connection, which is after a
+            // publisher-initiated subscribe is accepted, so it can still be unset here
             SPDLOG_DEBUG("Track alias: {} subscribe status change reason: {} status: {}",
-                         GetTrackAlias().value(),
+                         GetTrackAlias().value_or(0),
                          reason,
                          static_cast<int>(status));
         }

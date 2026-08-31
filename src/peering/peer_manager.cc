@@ -912,8 +912,8 @@ namespace laps::peering {
         tconfig.idle_timeout_ms = 5000;
         tconfig.max_connections = 100;
 
-        server_transport_ =
-          quicr::Transport::MakeServerTransport(std::move(server), std::move(tconfig), tick_service_, LOGGER);
+        server_transport_ = quicr::Transport::MakeServerTransport(
+          std::move(server), std::move(tconfig), tick_service_, config_.quicr_logger_);
 
         server_transport_->OnNewConnection = [this](const std::shared_ptr<quicr::Connection>& connection) {
             NewPeerConnection(connection);

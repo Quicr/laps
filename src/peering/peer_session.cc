@@ -64,8 +64,8 @@ namespace laps::peering {
 
         peer_sns_.clear();
 
-        transport_ =
-          quicr::Transport::MakeClientTransport(peer_config_, transport_config_, config_.tick_service_, LOGGER);
+        transport_ = quicr::Transport::MakeClientTransport(
+          peer_config_, transport_config_, config_.tick_service_, config_.quicr_logger_);
 
         connection_ = transport_->Start();
         if (!connection_) {

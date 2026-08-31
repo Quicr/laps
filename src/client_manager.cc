@@ -28,8 +28,7 @@ namespace laps {
       , peer_manager_(peer_manager)
       , tick_service_(config.tick_service_)
       , metrics_publisher_(*this, config)
-      , session_callbacks_(std::make_shared<SessionCallbacks>(*this))
-      , session_manager_(session_callbacks_, config.tick_service_)
+      , session_callbacks_(std::make_shared<ServerCallbacks>(*this))
       , cache_duration_ms_(cache_duration_ms)
     {
     }
@@ -48,21 +47,47 @@ namespace laps {
          */
         metrics_publisher_.Start();
 
-        // Sessions are created, reported and removed through session_callbacks_
-        server_transport_ = session_manager_.AddTransport(server_config_);
+        quicr::TransportRemote server;
+        server.host_or_ip = server_config_.server_bind_ip;
+        server.port = server_config_.server_port;
+        server.proto = quicr::TransportProtocol::kQuic; // Server mode accepts both raw QUIC and WebTransport
+        server.path = "/relay";
 
-        auto transport = server_transport_.lock();
-        if (transport == nullptr) {
+        server_transport_ = quicr::Transport::MakeServerTransport(
+          server, server_config_.transport_config, tick_service_, config_.quicr_logger_);
+
+        if (server_transport_ == nullptr) {
             SPDLOG_LOGGER_ERROR(LOGGER, "Failed to create the client server transport");
             return quicr::Session::Status::kFailedToConnect;
         }
 
-        while (transport->Status() == quicr::TransportStatus::kConnecting) {
+        server_transport_->OnNewConnection =
+          [this, transport = std::weak_ptr(server_transport_)](const std::shared_ptr<quicr::Connection>& connection) {
+              auto session = ClientSession::Create(server_config_,
+                                                   transport.lock(),
+                                                   connection,
+                                                   session_callbacks_,
+                                                   tick_service_,
+                                                   config_.quicr_logger_,
+                                                   *this);
+              connection->SetDelegate(session);
+
+              NewConnectionAccepted(session);
+          };
+
+        server_transport_->OnConnectionClosed = [this](const std::shared_ptr<quicr::Connection>& connection) {
+            connection->SetDelegate(nullptr);
+            ConnectionClosed(connection->GetID());
+        };
+
+        server_transport_->Start();
+
+        while (server_transport_->Status() == quicr::TransportStatus::kConnecting) {
             SPDLOG_LOGGER_INFO(LOGGER, "Waiting for client server transport to be ready");
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
-        if (transport->Status() != quicr::TransportStatus::kReady) {
+        if (server_transport_->Status() != quicr::TransportStatus::kReady) {
             SPDLOG_LOGGER_ERROR(LOGGER, "Client server transport failed to start listening");
             return quicr::Session::Status::kNotReady;
         }
@@ -70,47 +95,17 @@ namespace laps {
         return quicr::Session::Status::kReady;
     }
 
-    std::shared_ptr<quicr::Session> ClientManager::SessionCallbacks::CreateServerSession(
-      const quicr::ServerConfig& cfg,
-      std::shared_ptr<quicr::Transport> transport,
-      std::shared_ptr<quicr::Connection> connection,
-      std::shared_ptr<timeq::tick_service> tick_service)
-    {
-        return ClientSession::Create(
-          cfg, std::move(transport), std::move(connection), std::move(tick_service), manager_);
-    }
-
-    void ClientManager::SessionCallbacks::OnNewServerSession(const std::shared_ptr<quicr::Session>& session)
-    {
-        manager_.NewConnectionAccepted(std::static_pointer_cast<ClientSession>(session));
-    }
-
-    void ClientManager::SessionCallbacks::OnSessionRemoved(const std::shared_ptr<quicr::Session>& session)
-    {
-        /*
-         * Reported on the transport's network thread, before the session is dropped. ConnectionClosed()
-         * detaches the session first so relay teardown never reaches back into it, and tolerates being
-         * called twice since ClientSession::StatusChanged can report the same close.
-         */
-        if (const auto& connection = session->GetConnection()) {
-            manager_.ConnectionClosed(connection->GetID());
-        }
-    }
-
     void ClientManager::Stop()
     {
         /*
          * Shut the transport down before anything else so its thread stops dispatching callbacks into relay
-         * state that is about to go away.
-         *
-         * Both hooks belong to the session manager. Clearing them gives up its session bookkeeping, which no
-         * longer matters once the relay is stopping, and keeps its own shutdown from reporting closes back
-         * into a relay whose state has already been torn down.
+         * state that is about to go away. Clearing the hooks first keeps the shutdown itself from reporting
+         * new connections or closes into a relay whose state is already being torn down.
          */
-        if (auto transport = server_transport_.lock()) {
-            transport->OnNewConnection = nullptr;
-            transport->OnConnectionClosed = nullptr;
-            transport->Shutdown();
+        if (server_transport_ != nullptr) {
+            server_transport_->OnNewConnection = nullptr;
+            server_transport_->OnConnectionClosed = nullptr;
+            server_transport_->Shutdown();
         }
 
         metrics_publisher_.Stop();
@@ -124,7 +119,7 @@ namespace laps {
         std::lock_guard<std::mutex> _(sessions_mutex_);
 
         const auto it = sessions_.find(connection_handle);
-        return it != sessions_.end() ? it->second.lock() : nullptr;
+        return it != sessions_.end() ? it->second : nullptr;
     }
 
     void ClientManager::NewConnectionAccepted(const std::shared_ptr<ClientSession>& session)
@@ -136,7 +131,7 @@ namespace laps {
             sessions_[connection_handle] = session;
         }
 
-        const auto [ip, port] = GetPeerAddress(server_transport_.lock(), session->GetConnection());
+        const auto [ip, port] = GetPeerAddress(server_transport_, session->GetConnection());
         metrics_publisher_.AddConnection(connection_handle, { ip, port });
 
         SPDLOG_LOGGER_INFO(LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, ip, port);
@@ -150,7 +145,9 @@ namespace laps {
          * back into a session that libquicr is closing on another thread.
          *
          * The erase also serves as the guard against running twice, since the close can be reported both by
-         * the transport's close hook and by ClientSession::StatusChanged.
+         * the transport's close hook and by a session status change. When a status change reports it, the
+         * session is kept alive by the callback that libquicr is running it from, so releasing the relay's
+         * reference here cannot destroy a session that is still in use.
          */
         {
             std::lock_guard<std::mutex> _(sessions_mutex_);
@@ -291,66 +288,166 @@ namespace laps {
         }
     }
 
-    void ClientManager::ResolvePublish(std::uint64_t connection_handle,
-                                       uint64_t request_id,
-                                       const quicr::PublishAttributes& attributes,
-                                       const quicr::PublishResponse& response,
-                                       std::shared_ptr<quicr::SubscribeTrackHandler> handler)
+    // -------------------------------------------------------------------------------
+    // Session request callbacks
+    // -------------------------------------------------------------------------------
+
+    std::uint64_t ClientManager::ServerCallbacks::ConnectionHandle(const std::shared_ptr<quicr::Session>& session)
     {
-        if (auto session = GetSession(connection_handle)) {
-            session->ResolvePublish(request_id, attributes, response, std::move(handler));
+        if (session == nullptr) {
+            return 0;
         }
+
+        const auto& connection = session->GetConnection();
+        return connection != nullptr ? connection->GetID() : 0;
     }
 
-    void ClientManager::ResolveSubscribe(std::uint64_t connection_handle,
-                                         uint64_t request_id,
-                                         uint64_t track_alias,
-                                         const quicr::RequestResponse& response)
+    void ClientManager::ServerCallbacks::StatusChanged(const std::shared_ptr<quicr::Session>& session,
+                                                       quicr::Session::Status)
     {
-        if (auto session = GetSession(connection_handle)) {
-            session->ResolveSubscribe(request_id, track_alias, response);
+        /*
+         * The session status follows the connection, so the connection status says whether the connection is
+         * going away. This is not the only close signal: the transport's close hook reports it as well, and
+         * ConnectionClosed() tolerates either order.
+         */
+        const auto& connection = session != nullptr ? session->GetConnection() : nullptr;
+        if (connection == nullptr) {
+            return;
         }
+
+        switch (connection->GetStatus()) {
+            case quicr::Connection::Status::kReady:
+            case quicr::Connection::Status::kConnecting:
+            case quicr::Connection::Status::kShuttingDown:
+                return;
+
+            case quicr::Connection::Status::kRemoteRequestClose:
+            case quicr::Connection::Status::kDisconnected:
+            case quicr::Connection::Status::kIdleTimeout:
+            case quicr::Connection::Status::kShutdown:
+                break;
+        }
+
+        manager_.ConnectionClosed(connection->GetID());
     }
 
-    void ClientManager::ResolveSubscribeTracks(std::uint64_t connection_handle,
-                                               std::uint64_t data_ctx_id,
-                                               uint64_t request_id,
-                                               const quicr::TrackNamespace& prefix,
-                                               const quicr::SubscribeNamespaceResponse& response)
+    quicr::Reply<void, int> ClientManager::ServerCallbacks::ClientSetupReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      const quicr::ClientSetupAttributes& client_setup_attributes)
     {
-        if (auto session = GetSession(connection_handle)) {
-            session->ResolveSubscribeTracks(data_ctx_id, request_id, prefix, response);
-        }
+        manager_.ClientSetupReceived(ConnectionHandle(session), client_setup_attributes);
+        return {};
     }
 
-    void ClientManager::ResolveFetch(std::uint64_t connection_handle,
-                                     uint64_t request_id,
-                                     std::uint8_t priority,
-                                     std::optional<quicr::messages::GroupOrder> group_order,
-                                     const quicr::FetchResponse& response)
+    quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode>
+    ClientManager::ServerCallbacks::SubscribeTracksReceived(const std::shared_ptr<quicr::Session>& session,
+                                                            std::uint64_t data_ctx_id,
+                                                            const quicr::TrackNamespace& prefix_namespace,
+                                                            const quicr::SubscribeNamespaceAttributes& attributes)
     {
-        if (auto session = GetSession(connection_handle)) {
-            session->ResolveFetch(request_id, priority, group_order, response);
-        }
+        return manager_.SubscribeTracksReceived(ConnectionHandle(session), data_ctx_id, prefix_namespace, attributes);
     }
 
-    void ClientManager::ResolvePublishNamespace(std::uint64_t connection_handle,
-                                                uint64_t request_id,
-                                                const quicr::TrackNamespace& track_namespace,
-                                                const quicr::Session::PublishNamespaceResponse& response)
+    quicr::Reply<void, int> ClientManager::ServerCallbacks::UnsubscribeNamespaceReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      const quicr::TrackNamespace& prefix_namespace)
     {
-        if (auto session = GetSession(connection_handle)) {
-            session->ResolvePublishNamespace(request_id, track_namespace, response);
-        }
+        manager_.UnsubscribeNamespaceReceived(ConnectionHandle(session), prefix_namespace);
+        return {};
     }
 
-    void ClientManager::ResolveTrackStatus(std::uint64_t connection_handle,
-                                           uint64_t request_id,
-                                           const quicr::RequestResponse& response)
+    quicr::Reply<void, quicr::PublishNamespaceErrorCode> ClientManager::ServerCallbacks::PublishNamespaceReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      const quicr::TrackNamespace& track_namespace,
+      const quicr::PublishNamespaceAttributes& attributes)
     {
-        if (auto session = GetSession(connection_handle)) {
-            session->ResolveTrackStatus(request_id, response);
-        }
+        manager_.PublishNamespaceReceived(ConnectionHandle(session), track_namespace, attributes);
+        return {};
+    }
+
+    quicr::Reply<void, quicr::PublishNamespaceErrorCode> ClientManager::ServerCallbacks::PublishNamespaceDoneReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      std::uint64_t request_id)
+    {
+        manager_.PublishNamespaceDoneReceived(ConnectionHandle(session), request_id);
+        return {};
+    }
+
+    quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> ClientManager::ServerCallbacks::PublishReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      std::uint64_t request_id,
+      const quicr::PublishAttributes& publish_attributes,
+      std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
+    {
+        return manager_.PublishReceived(
+          ConnectionHandle(session), request_id, publish_attributes, std::move(sub_ns_handler));
+    }
+
+    quicr::Reply<void, int> ClientManager::ServerCallbacks::PublishDoneReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      std::uint64_t request_id)
+    {
+        manager_.PublishDoneReceived(ConnectionHandle(session), request_id);
+        return {};
+    }
+
+    quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> ClientManager::ServerCallbacks::SubscribeReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      std::uint64_t request_id,
+      const quicr::FullTrackName& track_full_name,
+      const quicr::SubscribeAttributes& subscribe_attributes)
+    {
+        return manager_.SubscribeReceived(ConnectionHandle(session), request_id, track_full_name, subscribe_attributes);
+    }
+
+    quicr::Reply<void, int> ClientManager::ServerCallbacks::UnsubscribeReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      std::uint64_t request_id)
+    {
+        manager_.UnsubscribeReceived(ConnectionHandle(session), request_id);
+        return {};
+    }
+
+    quicr::Reply<void, int> ClientManager::ServerCallbacks::NewGroupRequested(
+      const quicr::FullTrackName& track_full_name,
+      std::uint64_t group_id)
+    {
+        manager_.NewGroupRequested(track_full_name, group_id);
+        return {};
+    }
+
+    quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> ClientManager::ServerCallbacks::TrackStatusReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      std::uint64_t request_id,
+      const quicr::FullTrackName& track_full_name)
+    {
+        return manager_.TrackStatusReceived(ConnectionHandle(session), request_id, track_full_name);
+    }
+
+    quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode>
+    ClientManager::ServerCallbacks::StandaloneFetchReceived(const std::shared_ptr<quicr::Session>& session,
+                                                            std::uint64_t request_id,
+                                                            const quicr::FullTrackName& track_full_name,
+                                                            const quicr::StandaloneFetchAttributes& attributes)
+    {
+        return manager_.StandaloneFetchReceived(ConnectionHandle(session), request_id, track_full_name, attributes);
+    }
+
+    quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode>
+    ClientManager::ServerCallbacks::JoiningFetchReceived(const std::shared_ptr<quicr::Session>& session,
+                                                         std::uint64_t request_id,
+                                                         const quicr::FullTrackName& track_full_name,
+                                                         const quicr::JoiningFetchAttributes& attributes)
+    {
+        return manager_.JoiningFetchReceived(ConnectionHandle(session), request_id, track_full_name, attributes);
+    }
+
+    quicr::Reply<void, quicr::FetchErrorCode> ClientManager::ServerCallbacks::FetchCancelReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      std::uint64_t request_id)
+    {
+        manager_.FetchCancelReceived(ConnectionHandle(session), request_id);
+        return {};
     }
 
     void ClientManager::FanoutPublishNamespace(const quicr::TrackNamespace& track_namespace,
@@ -404,8 +501,7 @@ namespace laps {
         }
     }
 
-    std::vector<std::uint64_t> ClientManager::PublishNamespaceDoneReceived(std::uint64_t connection_handle,
-                                                                           uint64_t request_id)
+    void ClientManager::PublishNamespaceDoneReceived(std::uint64_t connection_handle, std::uint64_t request_id)
     {
 
         auto it = state_.requests.find({ connection_handle, request_id });
@@ -416,7 +512,7 @@ namespace laps {
               connection_handle,
               request_id);
 
-            return {};
+            return;
         }
 
         SPDLOG_LOGGER_DEBUG(LOGGER,
@@ -428,23 +524,6 @@ namespace laps {
         auto th = quicr::TrackHash({ track_namespace, {} });
 
         peer_manager_.ClientAnnounce({ track_namespace, {} }, {}, true, true);
-
-        // TODO: Fix O(prefix namespaces) matching
-        std::vector<std::uint64_t> sub_namespace_connections;
-        for (const auto& [ns, conns] : state_.subscribes_namespaces) {
-            if (!ns.HasSamePrefix(track_namespace)) {
-                continue;
-            }
-
-            for (auto conn_handle : std::views::keys(conns)) {
-                SPDLOG_DEBUG("Received publish namespace done matches prefix subscribed from connection handle: {} for "
-                             "namespace hash: {}",
-                             conn_handle,
-                             th.track_namespace_hash);
-
-                sub_namespace_connections.emplace_back(conn_handle);
-            }
-        }
 
         FanoutPublishNamespaceDone(track_namespace);
 
@@ -468,8 +547,6 @@ namespace laps {
 
         if (connection_handle)
             peer_manager_.ClientUnannounce({ track_namespace, {} });
-
-        return sub_namespace_connections;
     }
 
     void ClientManager::PurgePublishState(std::uint64_t connection_handle)
@@ -586,11 +663,11 @@ namespace laps {
 
         state_.pub_namespace_active.try_emplace(std::make_pair(track_namespace, connection_handle));
 
-        quicr::Session::PublishNamespaceResponse announce_response;
-        announce_response.reason_code = quicr::Session::PublishNamespaceResponse::ReasonCode::kOk;
-
-        ResolvePublishNamespace(connection_handle, attrs.request_id, track_namespace, announce_response);
-
+        /*
+         * The announcing connection is acknowledged by libquicr once this callback returns, which also mirrors
+         * the namespace back to a matching prefix subscription on that same connection. Every other prefix
+         * subscriber is the relay's own work.
+         */
         FanoutPublishNamespace(track_namespace, connection_handle);
 
         if (connection_handle) {
@@ -604,12 +681,14 @@ namespace laps {
         }
     }
 
-    void ClientManager::PublishReceived(std::uint64_t connection_handle,
-                                        uint64_t request_id,
-                                        const quicr::PublishAttributes& publish_attributes,
-                                        [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
+    quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> ClientManager::PublishReceived(
+      std::uint64_t connection_handle,
+      uint64_t request_id,
+      const quicr::PublishAttributes& publish_attributes,
+      [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
     {
-        PublishReceivedInternal(connection_handle, request_id, publish_attributes, !connection_handle && !request_id);
+        return PublishReceivedInternal(
+          connection_handle, request_id, publish_attributes, !connection_handle && !request_id);
     }
 
     void ClientManager::RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes)
@@ -617,10 +696,11 @@ namespace laps {
         PublishReceivedInternal(0, 0, publish_attributes, false);
     }
 
-    void ClientManager::PublishReceivedInternal(std::uint64_t connection_handle,
-                                                uint64_t request_id,
-                                                const quicr::PublishAttributes& publish_attributes,
-                                                bool is_from_peer)
+    quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> ClientManager::PublishReceivedInternal(
+      std::uint64_t connection_handle,
+      uint64_t request_id,
+      const quicr::PublishAttributes& publish_attributes,
+      bool is_from_peer)
     {
         /*
          * Peer-originated publishes and relay-local publishes (e.g. the metrics track) both use the
@@ -640,9 +720,6 @@ namespace laps {
           request_id,
           publish_attributes.track_full_name.NamespaceStr(),
           publish_attributes.track_full_name.NameStr());
-
-        quicr::PublishResponse publish_response;
-        publish_response.reason_code = quicr::PublishResponse::ReasonCode::kOk;
 
         // PublishTrack within publish namespace handler if matched
         for (auto& [tn, conns] : state_.subscribes_namespaces) {
@@ -688,8 +765,8 @@ namespace laps {
                                                                          true);
 
         if (bypass_resolve) {
-            // ResolvePublish() normally sets the track alias against a real connection; set it explicitly
-            // since that call is skipped below.
+            // Accepting the publish normally binds the handler to its connection, which is what assigns the
+            // track alias. There is no connection here, so set it explicitly.
             sub_track_handler->SetTrackAlias(publish_attributes.track_alias);
         }
 
@@ -705,9 +782,6 @@ namespace laps {
 
         if (!bypass_resolve) {
             state_.pub_subscribes_by_req_id[{ request_id, connection_handle }] = sub_track_handler;
-
-            // Do this before pause to maintain MOQT message sequence order
-            ResolvePublish(connection_handle, request_id, publish_attributes, publish_response, sub_track_handler);
 
             /*
              * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and
@@ -751,22 +825,44 @@ namespace laps {
             sub_track_handler->SetTrackRanking(rank_it->second);
         }
 
+        /*
+         * Accept the publish, but only ask the publisher to forward data if the relay has somewhere to send it.
+         * The handler is not bound to the connection until the accept is processed, so Pause() cannot send the
+         * update itself; answering the publish with forward off does the same thing in one less message. The
+         * handler is still marked paused so that gaining a subscriber resumes forwarding.
+         */
+        std::optional<bool> forward = std::nullopt;
         if (!has_subs) {
             SPDLOG_LOGGER_INFO(LOGGER,
                                "No subscribers, pause publish connection handle: {0} using track alias: {1}",
                                connection_handle,
                                th.track_fullname_hash);
 
-            sub_track_handler->Pause();
+            if (bypass_resolve) {
+                sub_track_handler->Pause();
+            } else {
+                forward = false;
+                sub_track_handler->MarkPaused();
+            }
         }
 
         state_.conn_state_metrics[connection_handle].published_tracks++;
+
+        return quicr::PublishResponse{ { .subscriber_priority = std::nullopt,
+                                         .group_order = std::nullopt,
+                                         .filter = {},
+                                         .forward = forward,
+                                         .subgroup_delivery_timeout = std::nullopt,
+                                         .object_delivery_timeout = std::nullopt,
+                                         .new_group_request_id = std::nullopt },
+                                       sub_track_handler };
     }
 
-    void ClientManager::SubscribeTracksReceived(std::uint64_t connection_handle,
-                                                std::uint64_t data_ctx_id,
-                                                const quicr::TrackNamespace& prefix_namespace,
-                                                const quicr::SubscribeNamespaceAttributes& attributes)
+    quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> ClientManager::SubscribeTracksReceived(
+      std::uint64_t connection_handle,
+      [[maybe_unused]] std::uint64_t data_ctx_id,
+      const quicr::TrackNamespace& prefix_namespace,
+      const quicr::SubscribeNamespaceAttributes& attributes)
     {
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
@@ -817,11 +913,6 @@ namespace laps {
             }
         }
 
-        const quicr::SubscribeNamespaceResponse response = { .reason_code =
-                                                               quicr::SubscribeNamespaceResponse::ReasonCode::kOk,
-                                                             .namespaces = std::move(matched_ns) };
-        ResolveSubscribeTracks(connection_handle, data_ctx_id, attributes.request_id, prefix_namespace, response);
-
         // TODO: Need to change this to use what peering is using to prefix match instead of O(n) over all publish
         //  subscribes
         for (const auto& [ta_conn, handler] : state_.pub_subscribes) {
@@ -863,6 +954,8 @@ namespace laps {
                   quicr::TrackHash(track_full_name).track_fullname_hash);
             }
         }
+
+        return matched_ns;
     }
 
     void ClientManager::UnsubscribeNamespaceReceived(std::uint64_t connection_handle,
@@ -1107,9 +1200,10 @@ namespace laps {
         }
     }
 
-    void ClientManager::TrackStatusReceived(std::uint64_t connection_handle,
-                                            uint64_t request_id,
-                                            const quicr::FullTrackName& track_full_name)
+    quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> ClientManager::TrackStatusReceived(
+      std::uint64_t connection_handle,
+      uint64_t request_id,
+      const quicr::FullTrackName& track_full_name)
     {
         auto th = quicr::TrackHash(track_full_name);
 
@@ -1130,44 +1224,27 @@ namespace laps {
             }
 
             if (it->first.second != connection_handle) {
-                ResolveTrackStatus(connection_handle,
-                                   request_id,
-                                   {
-                                     quicr::RequestResponse::ReasonCode::kOk,
-                                     it->second->IsPublisherInitiated(),
-                                     std::nullopt,
-                                     largest,
-                                   });
-                return;
+                return quicr::RequestResponse{
+                    .is_publisher_initiated = it->second->IsPublisherInitiated(),
+                    .largest_location = largest,
+                };
             }
         }
 
-        ResolveTrackStatus(connection_handle,
-                           request_id,
-                           {
-                             quicr::RequestResponse::ReasonCode::kDoesNotExist,
-                             false,
-                             "Track does not exist",
-                             std::nullopt,
-                           });
+        return quicr::Unexpected<quicr::Error<quicr::RequestErrorCode>>(quicr::RequestErrorCode::kDoesNotExist,
+                                                                        "Track does not exist");
     }
 
-    void ClientManager::SubscribeReceived(std::uint64_t connection_handle,
-                                          uint64_t request_id,
-                                          const quicr::FullTrackName& track_full_name,
-                                          const quicr::SubscribeAttributes& attrs)
+    quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> ClientManager::SubscribeReceived(
+      std::uint64_t connection_handle,
+      uint64_t request_id,
+      const quicr::FullTrackName& track_full_name,
+      const quicr::SubscribeAttributes& attrs)
     {
         auto th = quicr::TrackHash(track_full_name);
 
         auto it = state_.subscribes.find({ th.track_fullname_hash, connection_handle });
         if (it != state_.subscribes.end()) {
-            ResolveSubscribe(connection_handle,
-                             request_id,
-                             th.track_fullname_hash,
-                             { .reason_code = quicr::RequestResponse::ReasonCode::kNotSupported,
-                               .is_publisher_initiated = false,
-                               .error_reason = "Duplicate subscribe" });
-
             SPDLOG_LOGGER_INFO(
               LOGGER,
               "Duplicate subscribe connection handle: {0} request_id: {1} track alias: {2} priority: {3}",
@@ -1176,7 +1253,8 @@ namespace laps {
               th.track_fullname_hash,
               attrs.priority);
 
-            return;
+            return quicr::Unexpected<quicr::Error<quicr::RequestErrorCode>>(
+              quicr::RequestErrorCode::kDuplicateSubscription, "Duplicate subscribe");
         }
 
         SPDLOG_LOGGER_INFO(LOGGER,
@@ -1191,18 +1269,18 @@ namespace laps {
                            track_full_name.NameStr());
 
         auto largest = GetLargestAvailable(track_full_name);
-        if (largest.has_value()) {
-            ResolveSubscribe(
-              connection_handle,
-              request_id,
-              th.track_fullname_hash,
-              { quicr::RequestResponse::ReasonCode::kOk, attrs.is_publisher_initiated, std::nullopt, largest });
-        } else {
-            ResolveSubscribe(
-              connection_handle, request_id, th.track_fullname_hash, { quicr::RequestResponse::ReasonCode::kOk });
-        }
 
+        /*
+         * libquicr sends the SUBSCRIBE_OK once this returns, so the subscriber cannot be forwarded anything
+         * before it is acknowledged: the work below only arranges for forwarding, and the objects themselves
+         * are not available until the publisher sends them.
+         */
         ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs, largest);
+
+        return quicr::RequestResponse{
+            .is_publisher_initiated = attrs.is_publisher_initiated,
+            .largest_location = largest,
+        };
     }
 
     std::optional<quicr::messages::Location> ClientManager::GetLargestAvailable(const quicr::FullTrackName& track_name)
@@ -1227,52 +1305,38 @@ namespace laps {
         return quicr::messages::Location{ .group = largest_group_id.value(), .object = largest_object_id.value() };
     }
 
-    void ClientManager::FetchReceived(std::uint64_t connection_handle,
-                                      uint64_t request_id,
-                                      const quicr::FullTrackName& track_full_name,
-                                      uint8_t priority,
-                                      std::optional<quicr::messages::GroupOrder> group_order,
-                                      quicr::messages::Location start,
-                                      quicr::messages::FetchEndLocation end)
+    quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> ClientManager::FetchReceived(
+      std::uint64_t connection_handle,
+      uint64_t request_id,
+      const quicr::FullTrackName& track_full_name,
+      uint8_t priority,
+      std::optional<quicr::messages::GroupOrder> group_order,
+      quicr::messages::Location start,
+      quicr::messages::FetchEndLocation end)
     {
-        auto reason_code = quicr::FetchResponse::ReasonCode::kOk;
-        std::optional<quicr::messages::Location> largest_location = std::nullopt;
-        auto th = quicr::TrackHash(track_full_name);
+        using Reply = quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode>;
+        using Result = Reply::ResultType;
+        using Failure = quicr::Unexpected<quicr::Error<quicr::FetchErrorCode>>;
 
-        auto cache_entry_it = cache_.find(th.track_fullname_hash);
-        if (cache_entry_it != cache_.end()) {
-            auto& [_, cache] = *cache_entry_it;
-            if (const auto& latest_group = cache.Last(); latest_group && !latest_group->empty()) {
-                const auto& latest_object = *std::prev(latest_group->end());
-                largest_location = { latest_object.headers.group_id, latest_object.headers.object_id };
-            }
-        }
+        const auto th = quicr::TrackHash(track_full_name);
+        const auto resolved_group_order = group_order.value_or(quicr::messages::GroupOrder::kAscending);
 
+        const auto largest_location = GetLargestAvailable(track_full_name);
+
+        const auto cache_entry_it = cache_.find(th.track_fullname_hash);
+        auto cache_entries = cache_entry_it != cache_.end() ? cache_entry_it->second.Get(start.group, end.group)
+                                                            : std::vector<std::shared_ptr<std::set<CacheObject>>>{};
+
+        // Why the cache cannot answer the fetch, which is the error reported if the publisher cannot either
+        std::optional<quicr::FetchErrorCode> cache_miss = std::nullopt;
         if (!largest_location.has_value()) {
             // TODO: This changes to send an empty object instead of REQUEST_ERROR
-            reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
+            cache_miss = quicr::FetchErrorCode::kNoObjects;
         } else if (start.group > end.group || largest_location->group < start.group) {
-            reason_code = quicr::FetchResponse::ReasonCode::kInvalidRange;
+            cache_miss = quicr::FetchErrorCode::kInvalidRange;
+        } else if (cache_entries.empty()) {
+            cache_miss = quicr::FetchErrorCode::kNoObjects;
         }
-
-        const auto& cache_entries = cache_entry_it != cache_.end()
-                                      ? cache_entry_it->second.Get(start.group, end.group)
-                                      : std::vector<std::shared_ptr<std::set<CacheObject>>>{};
-
-        if (cache_entries.empty() && reason_code == quicr::FetchResponse::ReasonCode::kOk) {
-            reason_code = quicr::FetchResponse::ReasonCode::kNoObjects;
-        }
-
-        // TODO: Adjust the TTL to allow more time for transmission
-        auto pub_fetch_h =
-          quicr::PublishFetchHandler::Create(track_full_name,
-                                             priority,
-                                             request_id,
-                                             group_order.value_or(quicr::messages::GroupOrder::kAscending),
-                                             config_.object_ttl_);
-        BindFetchTrack(connection_handle, pub_fetch_h);
-
-        stop_fetch_.try_emplace({ connection_handle, request_id }, false);
 
         SPDLOG_LOGGER_DEBUG(LOGGER,
                             "Fetch received conn_id: {} request_id: {} range start group: {} start object: {} end "
@@ -1285,13 +1349,20 @@ namespace laps {
                             end.object.value_or(0),
                             largest_location.has_value() ? largest_location.value().group : 0);
 
-        std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
-            defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
+        // TODO: Adjust the TTL to allow more time for transmission
+        auto pub_fetch_h = quicr::PublishFetchHandler::Create(
+          track_full_name, priority, request_id, resolved_group_order, config_.object_ttl_);
+        BindFetchTrack(connection_handle, pub_fetch_h);
 
-            auto rc = reason_code;
+        stop_fetch_.try_emplace({ connection_handle, request_id }, false);
 
-            if (rc != quicr::FetchResponse::ReasonCode::kOk) {
-                // Try to see if original publisher can provide the data
+        if (cache_miss.has_value()) {
+            /*
+             * Nothing usable is cached, so the publisher is asked for the range instead. Whether the fetch can
+             * be answered at all is only known once the publisher responds, so the reply is deferred to keep
+             * that wait off the session's thread.
+             */
+            return Reply::Defer([=, this]() -> Result {
                 auto track_handler = FetchTrackHandler::Create(pub_fetch_h,
                                                                track_full_name,
                                                                priority,
@@ -1299,91 +1370,85 @@ namespace laps {
                                                                { .group = start.group, .object = start.object },
                                                                { .group = end.group, .object = end.object });
 
-                std::uint64_t pub_connection_handle = 0;
-
                 // Find the publisher connection handle to send the fetch request
                 // TODO: Add peering support
+                std::uint64_t pub_connection_handle = 0;
                 {
                     std::lock_guard _(state_.state_mutex);
-                    for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
-                         it != state_.pub_subscribes.end();
-                         ++it) {
-                        auto& track_alias = it->first.first;
-                        auto& pub_conn_id = it->first.second;
 
-                        if (track_alias != th.track_fullname_hash) {
-                            rc = quicr::FetchResponse::ReasonCode::kNoObjects;
-                            break;
-                        }
-
-                        pub_connection_handle = pub_conn_id;
-                        break; // TODO: Support multiple publishers
+                    const auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+                    if (it != state_.pub_subscribes.end() && it->first.first == th.track_fullname_hash) {
+                        pub_connection_handle = it->first.second; // TODO: Support multiple publishers
                     }
                 }
 
-                if (pub_connection_handle) {
-                    SPDLOG_LOGGER_DEBUG(LOGGER,
-                                        "Fetch received conn_id: {} request_id: {}, sending to publisher conn_id: {}",
-                                        connection_handle,
-                                        request_id,
-                                        pub_connection_handle);
-                    FetchTrack(pub_connection_handle, track_handler);
-
-                    for (int to = 0; to < kFetchUpstreamMaxWaitMs; to += 5) {
-                        if (track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kPendingResponse &&
-                            track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kNotSubscribed) {
-                            break;
-                        }
-                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                    }
-
-                    switch (track_handler->GetStatus()) {
-                        case quicr::FetchTrackHandler::Status::kDoneByFin:
-                            [[fallthrough]];
-                        case quicr::FetchTrackHandler::Status::kOk:
-                            rc = quicr::FetchResponse::ReasonCode::kOk;
-                            break;
-                        case quicr::FetchTrackHandler::Status::kError:
-                            rc = quicr::FetchResponse::ReasonCode::kNoObjects;
-                            break;
-                        default:
-                            rc = quicr::FetchResponse::ReasonCode::kInternalError;
-                            break;
-                    }
+                if (pub_connection_handle == 0) {
+                    UnbindFetchTrack(connection_handle, pub_fetch_h);
+                    return Failure(*cache_miss, "Cannot process fetch");
                 }
 
-                ResolveFetch(connection_handle,
-                             request_id,
-                             priority,
-                             group_order,
-                             {
-                               rc,
-                               rc == quicr::FetchResponse::ReasonCode::kOk ? std::nullopt
-                                                                           : std::make_optional("Cannot process fetch"),
-                               track_handler->GetLatestLocation(),
-                             });
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Fetch received conn_id: {} request_id: {}, sending to publisher conn_id: {}",
+                                    connection_handle,
+                                    request_id,
+                                    pub_connection_handle);
+                FetchTrack(pub_connection_handle, track_handler);
 
-                while (track_handler->GetStatus() == quicr::FetchTrackHandler::Status::kOk) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                for (int to = 0; to < kFetchUpstreamMaxWaitMs; to += 5) {
+                    if (track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kPendingResponse &&
+                        track_handler->GetStatus() != quicr::FetchTrackHandler::Status::kNotSubscribed) {
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 }
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-                CancelFetchTrack(pub_connection_handle, track_handler);
-                return;
-            }
+                /*
+                 * The publisher keeps forwarding through pub_fetch_h after this reply is answered, so its
+                 * teardown waits on the upstream fetch from a thread of its own.
+                 */
+                std::thread([=, this] {
+                    defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
 
-            SPDLOG_LOGGER_DEBUG(
-              LOGGER, "Fetch received conn_id: {} request_id: {}, using cache", connection_handle, request_id);
-            ResolveFetch(
-              connection_handle,
-              request_id,
-              priority,
-              group_order,
-              {
-                rc,
-                rc == quicr::FetchResponse::ReasonCode::kOk ? std::nullopt : std::make_optional("Cannot process fetch"),
-                largest_location,
-              });
+                    while (track_handler->GetStatus() == quicr::FetchTrackHandler::Status::kOk) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    }
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                    CancelFetchTrack(pub_connection_handle, track_handler);
+                }).detach();
+
+                switch (track_handler->GetStatus()) {
+                    case quicr::FetchTrackHandler::Status::kDoneByFin:
+                        [[fallthrough]];
+                    case quicr::FetchTrackHandler::Status::kOk:
+                        break;
+
+                    case quicr::FetchTrackHandler::Status::kError:
+                        return Failure(quicr::FetchErrorCode::kNoObjects, "Cannot process fetch");
+
+                    default:
+                        return Failure(quicr::FetchErrorCode::kInternalError, "Cannot process fetch");
+                }
+
+                const auto upstream_largest = track_handler->GetLatestLocation();
+                if (!upstream_largest.has_value()) {
+                    return Failure(quicr::FetchErrorCode::kNoObjects, "Cannot process fetch");
+                }
+
+                return quicr::FetchResponse{ upstream_largest, resolved_group_order };
+            });
+        }
+
+        SPDLOG_LOGGER_DEBUG(
+          LOGGER, "Fetch received conn_id: {} request_id: {}, using cache", connection_handle, request_id);
+
+        /*
+         * The cached objects are sent from their own thread so that the reply below can be answered right away,
+         * which is what sends the FETCH_OK. The objects go out on a stream of their own, so they are not
+         * ordered against that FETCH_OK either way.
+         */
+        std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
+            defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
 
             for (const auto& entry : cache_entries) {
                 for (const auto& object : *entry) {
@@ -1416,41 +1481,37 @@ namespace laps {
         });
 
         retrieve_cache_thread.detach();
+
+        return quicr::FetchResponse{ largest_location, resolved_group_order };
     }
 
-    void ClientManager::StandaloneFetchReceived(std::uint64_t connection_handle,
-                                                uint64_t request_id,
-                                                const quicr::FullTrackName& track_full_name,
-                                                const quicr::StandaloneFetchAttributes& attributes)
+    quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> ClientManager::StandaloneFetchReceived(
+      std::uint64_t connection_handle,
+      uint64_t request_id,
+      const quicr::FullTrackName& track_full_name,
+      const quicr::StandaloneFetchAttributes& attributes)
     {
-        FetchReceived(connection_handle,
-                      request_id,
-                      track_full_name,
-                      attributes.priority,
-                      attributes.group_order,
-                      attributes.start_location,
-                      attributes.end_location);
+        return FetchReceived(connection_handle,
+                             request_id,
+                             track_full_name,
+                             attributes.priority,
+                             attributes.group_order,
+                             attributes.start_location,
+                             attributes.end_location);
     }
 
-    void ClientManager::JoiningFetchReceived(std::uint64_t connection_handle,
-                                             uint64_t request_id,
-                                             const quicr::FullTrackName& track_full_name,
-                                             const quicr::JoiningFetchAttributes& attributes)
+    quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> ClientManager::JoiningFetchReceived(
+      std::uint64_t connection_handle,
+      uint64_t request_id,
+      const quicr::FullTrackName& track_full_name,
+      const quicr::JoiningFetchAttributes& attributes)
     {
-        std::optional<quicr::messages::Location> largest_location = GetLargestAvailable(track_full_name);
+        const auto largest_location = GetLargestAvailable(track_full_name);
 
         // No largest location is an error.
         if (!largest_location.has_value()) {
-            ResolveFetch(connection_handle,
-                         request_id,
-                         attributes.priority,
-                         attributes.group_order,
-                         {
-                           quicr::FetchResponse::ReasonCode::kInvalidRange,
-                           "No objects available for joining fetch",
-                           std::nullopt,
-                         });
-            return;
+            return quicr::Unexpected<quicr::Error<quicr::FetchErrorCode>>(quicr::FetchErrorCode::kInvalidRange,
+                                                                          "No objects available for joining fetch");
         }
 
         uint64_t joining_start = 0;
@@ -1461,13 +1522,13 @@ namespace laps {
             joining_start = attributes.joining_start;
         }
 
-        FetchReceived(connection_handle,
-                      request_id,
-                      track_full_name,
-                      attributes.priority,
-                      attributes.group_order,
-                      { joining_start, 0 },
-                      { largest_location->group, std::nullopt });
+        return FetchReceived(connection_handle,
+                             request_id,
+                             track_full_name,
+                             attributes.priority,
+                             attributes.group_order,
+                             { joining_start, 0 },
+                             { largest_location->group, std::nullopt });
     }
 
     void ClientManager::FetchCancelReceived(std::uint64_t connection_handle, uint64_t request_id)

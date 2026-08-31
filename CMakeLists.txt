@@ -55,6 +55,12 @@ endif()
 ###
 add_subdirectory(dependencies)
 
+# quicr/log.h picks between std::format and fmt on this definition, which libquicr only defines for its own
+# sources. The relay logs through quicr::Logger, so it has to make the same choice libquicr did.
+if(HAS_STD_VFORMAT)
+    add_compile_definitions(QUICR_HAVE_STD_FORMAT)
+endif()
+
 ###
 ### Build relay
 ###
