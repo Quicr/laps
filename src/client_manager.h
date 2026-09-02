@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client_session.h"
+#include "client_manager.h"
 #include "metrics_publisher.h"
 #include "state.h"
 
@@ -10,10 +10,11 @@
 #include <quicr/messages/object.h>
 #include <quicr/session.h>
 #include <quicr/session_callbacks.h>
-#include <quicr/transport.h>
+#include <quicr/session_manager.h>
 #include <quicr/utilities/bytes.h>
 
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <set>
 
@@ -55,6 +56,9 @@ namespace laps {
      * @details Implementation of the MoQ Server
      */
     class ClientManager
+      : public quicr::Session::ServerCallbacks
+      , public quicr::SessionManager::Callbacks
+      , public std::enable_shared_from_this<ClientManager>
     {
       public:
         ClientManager(State& state,
@@ -67,74 +71,7 @@ namespace laps {
         quicr::Session::Status Start();
         void Stop();
 
-        // -------------------------------------------------------------------------------
-        // Per-connection callbacks, invoked by ServerCallbacks
-        //
-        // Callbacks that answer a MoQT request return a quicr::Reply, which libquicr resolves into the OK or
-        // ERROR message once the callback returns. Deferred replies are used where answering needs to block.
-        // -------------------------------------------------------------------------------
-
-        quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeTracksReceived(
-          std::uint64_t connection_handle,
-          const quicr::TrackNamespace& prefix_namespace,
-          const quicr::SubscribeNamespaceAttributes& attributes);
-
-        void UnsubscribeNamespaceReceived(std::uint64_t connection_handle,
-                                          const quicr::TrackNamespace& prefix_namespace);
-
-        void PublishNamespaceDoneReceived(std::uint64_t connection_handle, std::uint64_t request_id);
-
-        void PublishNamespaceReceived(std::uint64_t connection_handle,
-                                      const quicr::TrackNamespace& track_namespace,
-                                      const quicr::PublishNamespaceAttributes&);
-
-        void ClientSetupReceived(std::uint64_t connection_handle,
-                                 const quicr::ClientSetupAttributes& client_setup_attributes);
-
-        void UnsubscribeReceived(std::uint64_t connection_handle, uint64_t request_id);
-        void PublishDoneReceived(std::uint64_t connection_handle, uint64_t request_id);
-
-        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> SubscribeReceived(
-          std::uint64_t connection_handle,
-          uint64_t request_id,
-          const quicr::FullTrackName& track_full_name,
-          const quicr::SubscribeAttributes&);
-
-        void NewGroupRequested(const quicr::FullTrackName& track_full_name, std::uint64_t group_id);
-
-        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> TrackStatusReceived(
-          std::uint64_t connection_handle,
-          uint64_t request_id,
-          const quicr::FullTrackName& track_full_name);
-
         std::optional<quicr::messages::Location> GetLargestAvailable(const quicr::FullTrackName& track_name);
-
-        void FetchCancelReceived(std::uint64_t connection_handle, uint64_t request_id);
-
-        quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> StandaloneFetchReceived(
-          std::uint64_t connection_handle,
-          uint64_t request_id,
-          const quicr::FullTrackName& track_full_name,
-          const quicr::StandaloneFetchAttributes& attributes);
-
-        quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> JoiningFetchReceived(
-          std::uint64_t connection_handle,
-          uint64_t request_id,
-          const quicr::FullTrackName& track_full_name,
-          const quicr::JoiningFetchAttributes& attributes);
-
-        quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceived(
-          std::uint64_t connection_handle,
-          uint64_t request_id,
-          const quicr::PublishAttributes& publish_attributes,
-          std::weak_ptr<quicr::SubscribeNamespaceHandler> ns_handler);
-
-        void MetricsSampled(std::uint64_t connection_handle, const quicr::ConnectionMetrics& metrics);
-
-        /**
-         * @brief Tear down all relay state belonging to a closed connection
-         */
-        void ConnectionClosed(std::uint64_t connection_handle);
 
         // -------------------------------------------------------------------------------
         // Session API by connection handle
@@ -181,8 +118,8 @@ namespace laps {
          * @brief Register a relay-local publish (e.g. the internally generated metrics track)
          *
          * @details Unlike PublishReceived(), this is never treated as peer-originated even though it uses
-         *      the same connection_handle=0/request_id=0 sentinel internally. Use this instead of calling
-         *      PublishReceived(0, 0, ...) directly for relay-local publishes.
+         *      a nullptr session and request_id=0 internally. Use this instead of calling
+         *      PublishReceived(nullptr, 0, ...) directly for relay-local publishes.
          */
         void RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes);
 
@@ -211,16 +148,97 @@ namespace laps {
 
         void RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash);
 
+        friend class peering::PeerManager;
+
       private:
+        /**
+         * @brief Connection handle of the session that received a request, or zero if it is already gone
+         */
+        static std::uint64_t ConnectionHandle(const std::shared_ptr<quicr::Session>& session);
+
+        // -- quicr::Session::ServerCallbacks -------------------------------------------------------
+
+        void MetricsSampled(const std::shared_ptr<quicr::Session>& session,
+                            const quicr::ConnectionMetrics& metrics) override;
+
+        quicr::Reply<void, int> ClientSetupReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          const quicr::ClientSetupAttributes& client_setup_attributes) override;
+
+        quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeTracksReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          const quicr::TrackNamespace& prefix_namespace,
+          const quicr::SubscribeNamespaceAttributes& attributes) override;
+
+        quicr::Reply<void, int> UnsubscribeNamespaceReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          const quicr::TrackNamespace& prefix_namespace) override;
+
+        quicr::Reply<void, quicr::PublishNamespaceErrorCode> PublishNamespaceReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          const quicr::TrackNamespace& track_namespace,
+          const quicr::PublishNamespaceAttributes& attributes) override;
+
+        quicr::Reply<void, quicr::PublishNamespaceErrorCode> PublishNamespaceDoneReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          std::uint64_t request_id) override;
+
+        quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          std::uint64_t request_id,
+          const quicr::PublishAttributes& publish_attributes,
+          std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler) override;
+
+        quicr::Reply<void, int> PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
+                                                    std::uint64_t request_id) override;
+
+        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> SubscribeReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          std::uint64_t request_id,
+          const quicr::FullTrackName& track_full_name,
+          const quicr::SubscribeAttributes& subscribe_attributes) override;
+
+        quicr::Reply<void, int> UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
+                                                    std::uint64_t request_id) override;
+
+        quicr::Reply<void, int> NewGroupRequested(const quicr::FullTrackName& track_full_name,
+                                                  std::uint64_t group_id) override;
+
+        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> TrackStatusReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          std::uint64_t request_id,
+          const quicr::FullTrackName& track_full_name) override;
+
+        quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> StandaloneFetchReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          std::uint64_t request_id,
+          const quicr::FullTrackName& track_full_name,
+          const quicr::StandaloneFetchAttributes& attributes) override;
+
+        quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> JoiningFetchReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          std::uint64_t request_id,
+          const quicr::FullTrackName& track_full_name,
+          const quicr::JoiningFetchAttributes& attributes) override;
+
+        quicr::Reply<void, quicr::FetchErrorCode> FetchCancelReceived(const std::shared_ptr<quicr::Session>& session,
+                                                                      std::uint64_t request_id) override;
+
+        // -- quicr::SessionManager::Callbacks ------------------------------------------------------
+
+        void OnNewServerSession(const std::shared_ptr<quicr::Session>& new_session) override;
+
+        void OnSessionRemoved(const std::shared_ptr<quicr::Session>& session) override;
+
         /**
          * @brief Session for a connection handle, or nullptr when the connection is gone
          */
-        std::shared_ptr<ClientSession> GetSession(std::uint64_t connection_handle) const;
+        std::shared_ptr<quicr::Session> GetSession(std::uint64_t connection_handle) const;
 
         /**
          * @brief Set up relay state for a newly accepted connection
          */
-        void NewConnectionAccepted(const std::shared_ptr<ClientSession>& session);
+        void NewConnectionAccepted(const std::shared_ptr<quicr::Session>& session);
 
         /**
          * @brief Send a publish namespace to every connection that subscribed to a matching prefix
@@ -255,97 +273,6 @@ namespace laps {
           quicr::messages::Location start,
           quicr::messages::FetchEndLocation end);
 
-        /**
-         * @brief Request callbacks for every client session
-         *
-         * @details libquicr passes the session that received the request to each callback. The relay's state
-         *      spans all connections, so these only translate the session into its connection handle and hand
-         *      the request to ClientManager. The sessions hold the callbacks, so they live in a separate object
-         *      rather than requiring ClientManager itself to be held by a shared pointer.
-         */
-        class ServerCallbacks : public quicr::Session::ServerCallbacks
-        {
-          public:
-            explicit ServerCallbacks(ClientManager& manager)
-              : manager_(manager)
-            {
-            }
-
-            void StatusChanged(const std::shared_ptr<quicr::Session>& session, quicr::Session::Status status) override;
-
-            quicr::Reply<void, int> ClientSetupReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              const quicr::ClientSetupAttributes& client_setup_attributes) override;
-
-            quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeTracksReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              const quicr::TrackNamespace& prefix_namespace,
-              const quicr::SubscribeNamespaceAttributes& attributes) override;
-
-            quicr::Reply<void, int> UnsubscribeNamespaceReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              const quicr::TrackNamespace& prefix_namespace) override;
-
-            quicr::Reply<void, quicr::PublishNamespaceErrorCode> PublishNamespaceReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              const quicr::TrackNamespace& track_namespace,
-              const quicr::PublishNamespaceAttributes& attributes) override;
-
-            quicr::Reply<void, quicr::PublishNamespaceErrorCode> PublishNamespaceDoneReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t request_id) override;
-
-            quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t request_id,
-              const quicr::PublishAttributes& publish_attributes,
-              std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler) override;
-
-            quicr::Reply<void, int> PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
-                                                        std::uint64_t request_id) override;
-
-            quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> SubscribeReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t request_id,
-              const quicr::FullTrackName& track_full_name,
-              const quicr::SubscribeAttributes& subscribe_attributes) override;
-
-            quicr::Reply<void, int> UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
-                                                        std::uint64_t request_id) override;
-
-            quicr::Reply<void, int> NewGroupRequested(const quicr::FullTrackName& track_full_name,
-                                                      std::uint64_t group_id) override;
-
-            quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> TrackStatusReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t request_id,
-              const quicr::FullTrackName& track_full_name) override;
-
-            quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> StandaloneFetchReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t request_id,
-              const quicr::FullTrackName& track_full_name,
-              const quicr::StandaloneFetchAttributes& attributes) override;
-
-            quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> JoiningFetchReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t request_id,
-              const quicr::FullTrackName& track_full_name,
-              const quicr::JoiningFetchAttributes& attributes) override;
-
-            quicr::Reply<void, quicr::FetchErrorCode> FetchCancelReceived(
-              const std::shared_ptr<quicr::Session>& session,
-              std::uint64_t request_id) override;
-
-          private:
-            /**
-             * @brief Connection handle of the session that received a request, or zero if it is already gone
-             */
-            static std::uint64_t ConnectionHandle(const std::shared_ptr<quicr::Session>& session);
-
-            ClientManager& manager_;
-        };
-
         State& state_;
         const Config& config_;
         const quicr::ServerConfig server_config_;
@@ -353,26 +280,16 @@ namespace laps {
         std::shared_ptr<timeq::tick_service> tick_service_;
         MetricsPublisher metrics_publisher_;
 
-        /// Held by every session for the lifetime of the relay
-        std::shared_ptr<ServerCallbacks> session_callbacks_;
+        std::unique_ptr<quicr::SessionManager> session_manager_;
 
         /**
-         * @brief Listening transport for client connections
+         * @brief Weak references to sessions by connection handle
          *
-         * @details The relay creates the sessions itself, rather than through quicr::SessionManager, so that it
-         *      can own the listening transport. The transport is needed for the peer address of each
-         *      connection, which is not reported with the connection itself.
-         */
-        std::shared_ptr<quicr::Transport> server_transport_;
-
-        /**
-         * @brief Sessions by connection handle, one per client connection
-         *
-         * @details Every callback is handed the session that it belongs to, so relay code only looks a session
-         *      up here to act on a connection it is not currently handling a request for.
+         * @details SessionManager owns the sessions. The relay only keeps weak references so it can look up a
+         *      session for a connection it is not currently handling a request for.
          */
         mutable std::mutex sessions_mutex_;
-        std::map<std::uint64_t, std::shared_ptr<ClientSession>> sessions_;
+        std::map<std::uint64_t, std::weak_ptr<quicr::Session>> sessions_;
 
         /// Fanned out publish namespaces, key is announced namespace and the subscriber connection handle
         std::map<std::pair<quicr::TrackNamespace, std::uint64_t>, std::shared_ptr<quicr::PublishNamespaceHandler>>

@@ -274,9 +274,9 @@ namespace laps::peering {
         if (announce_info.flags & 1) { // PUBLISH_NAMESPACE
             if (!withdraw) {
                 client_manager_->PublishNamespaceReceived(
-                  0, announce_info.name_space, { .request_id = th.track_namespace_hash });
+                  nullptr, announce_info.name_space, { .request_id = th.track_namespace_hash });
             } else {
-                client_manager_->PublishNamespaceDoneReceived(0, th.track_namespace_hash);
+                client_manager_->PublishNamespaceDoneReceived(nullptr, th.track_namespace_hash);
             }
         } else { // PUBLISH
             if (!withdraw) {
@@ -295,10 +295,10 @@ namespace laps::peering {
                                                 .delivery_timeout = kDefaultObjectTtl,
                                                 .track_properties = {} };
 
-                client_manager_->PublishReceived(0, 0, attrs, {});
+                client_manager_->PublishReceived(nullptr, 0, attrs, {});
             } else {
                 // TODO: Signal to client manager that the publish is done
-                client_manager_->PublishDoneReceived(0, 0);
+                client_manager_->PublishDoneReceived(nullptr, 0);
             }
         }
 

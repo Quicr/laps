@@ -206,8 +206,12 @@ main(int argc, char* argv[])
         // Wait until told to terminate
         gvars::cv.wait(lock, [&]() { return gvars::terminate; });
 
-        // Unlock the mutex
         lock.unlock();
+
+        // Stop transport before releasing external shared_ptr refs; SessionManager holds a
+        // shared_ptr back to ClientManager via callbacks and would otherwise prevent destruction.
+        server->Stop();
+        peer_manager.SetClientManager(nullptr);
     } catch (const std::invalid_argument& e) {
         std::cerr << "Invalid argument: " << e.what() << std::endl;
         result_code = EXIT_FAILURE;
