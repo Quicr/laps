@@ -131,32 +131,61 @@ namespace laps {
 
     void ClientManager::PurgePublishState(std::uint64_t connection_handle)
     {
-        std::lock_guard<std::mutex> _(state_.state_mutex);
+        // Snapshot of tracks to remove from top-n.
+        std::vector<std::shared_ptr<SubscribeTrackHandler>> top_n_removal;
 
-        std::vector<std::pair<std::uint64_t, std::uint64_t>> pub_subs;
-        for (const auto& [key, _] : state_.pub_subscribes) {
-            if (key.second == connection_handle) {
-                pub_subs.push_back(key);
+        {
+            std::lock_guard<std::mutex> _(state_.state_mutex);
+
+            // Collect publisher subscriptions for this connection.
+            std::vector<std::pair<std::uint64_t, std::uint64_t>> pub_subs;
+            for (const auto& [key, _] : state_.pub_subscribes) {
+                if (key.second == connection_handle) {
+                    pub_subs.push_back(key);
+                }
+            }
+
+            for (const auto& remove_key : pub_subs) {
+                auto handler = state_.pub_subscribes.at(remove_key);
+                state_.pub_subscribes.erase(remove_key);
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Purge publish state for track hash: {} connection handle: {}",
+                                    remove_key.first,
+                                    remove_key.second);
+
+                // Remove from top-n if no other connection publishes this track.
+                const auto next = state_.pub_subscribes.lower_bound({ remove_key.first, 0 });
+                if (next == state_.pub_subscribes.end() || next->first.first != remove_key.first) {
+                    top_n_removal.emplace_back(std::move(handler));
+                }
+            }
+
+            // Clear pub_subscribes_by_req_id for this connection.
+            for (auto it = state_.pub_subscribes_by_req_id.begin(); it != state_.pub_subscribes_by_req_id.end();) {
+                if (it->first.second != connection_handle) {
+                    ++it;
+                    continue;
+                }
+                it = state_.pub_subscribes_by_req_id.erase(it);
+            }
+
+            std::vector<std::pair<quicr::TrackNamespace, std::uint64_t>> anno_remove_list;
+            for (const auto& [key, _] : state_.pub_namespace_active) {
+                if (key.second == connection_handle) {
+                    anno_remove_list.push_back(key);
+                }
+            }
+
+            for (const auto& remove_key : anno_remove_list) {
+                state_.pub_namespace_active.erase(remove_key);
             }
         }
 
-        for (const auto& remove_key : pub_subs) {
-            state_.pub_subscribes.erase(remove_key);
-            SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Purge publish state for track_alias: {} connection handle: {}",
-                                remove_key.first,
-                                remove_key.second);
-        }
-
-        std::vector<std::pair<quicr::TrackNamespace, std::uint64_t>> anno_remove_list;
-        for (const auto& [key, _] : state_.pub_namespace_active) {
-            if (key.second == connection_handle) {
-                anno_remove_list.push_back(key);
+        // Now remove these tracks from the top-n ranking outside the lock.
+        for (const auto& handler : top_n_removal) {
+            if (handler) {
+                handler->RemoveFromTrackRanking();
             }
-        }
-
-        for (const auto& remove_key : anno_remove_list) {
-            state_.pub_namespace_active.erase(remove_key);
         }
     }
 
