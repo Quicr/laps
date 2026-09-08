@@ -13,6 +13,7 @@ WORKDIR /ws
 
 COPY ./Makefile ./
 COPY ./CMakeLists.txt ./
+COPY ./cmake ./cmake
 COPY ./version_config.h.in ./
 COPY ./dependencies ./dependencies
 COPY ./src ./src
