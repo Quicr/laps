@@ -92,6 +92,8 @@ namespace laps {
          */
         void RemoveSubscribeNamespace(std::shared_ptr<PublishNamespaceHandler> handler);
 
+        void RemoveFromTrackRanking();
+
         void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
 
         bool HasSubscribers() const { return !subscribers_.empty() || !sub_namespaces_.empty(); }

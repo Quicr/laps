@@ -418,32 +418,61 @@ namespace laps {
 
     void ClientManager::PurgePublishState(std::uint64_t connection_handle)
     {
-        std::lock_guard<std::mutex> _(state_.state_mutex);
+        // Snapshot of tracks to remove from top-n.
+        std::vector<std::shared_ptr<SubscribeTrackHandler>> top_n_removal;
 
-        std::vector<std::pair<std::uint64_t, std::uint64_t>> pub_subs;
-        for (const auto& [key, _] : state_.pub_subscribes) {
-            if (key.second == connection_handle) {
-                pub_subs.push_back(key);
+        {
+            std::lock_guard<std::mutex> _(state_.state_mutex);
+
+            // Collect publisher subscriptions for this connection.
+            std::vector<std::pair<std::uint64_t, std::uint64_t>> pub_subs;
+            for (const auto& [key, _] : state_.pub_subscribes) {
+                if (key.second == connection_handle) {
+                    pub_subs.push_back(key);
+                }
+            }
+
+            for (const auto& remove_key : pub_subs) {
+                auto handler = state_.pub_subscribes.at(remove_key);
+                state_.pub_subscribes.erase(remove_key);
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "Purge publish state for track hash: {} connection handle: {}",
+                                    remove_key.first,
+                                    remove_key.second);
+
+                // Remove from top-n if no other connection publishes this track.
+                const auto next = state_.pub_subscribes.lower_bound({ remove_key.first, 0 });
+                if (next == state_.pub_subscribes.end() || next->first.first != remove_key.first) {
+                    top_n_removal.emplace_back(std::move(handler));
+                }
+            }
+
+            // Clear pub_subscribes_by_req_id for this connection.
+            for (auto it = state_.pub_subscribes_by_req_id.begin(); it != state_.pub_subscribes_by_req_id.end();) {
+                if (it->first.second != connection_handle) {
+                    ++it;
+                    continue;
+                }
+                it = state_.pub_subscribes_by_req_id.erase(it);
+            }
+
+            std::vector<std::pair<quicr::TrackNamespace, std::uint64_t>> anno_remove_list;
+            for (const auto& [key, _] : state_.pub_namespace_active) {
+                if (key.second == connection_handle) {
+                    anno_remove_list.push_back(key);
+                }
+            }
+
+            for (const auto& remove_key : anno_remove_list) {
+                state_.pub_namespace_active.erase(remove_key);
             }
         }
 
-        for (const auto& remove_key : pub_subs) {
-            state_.pub_subscribes.erase(remove_key);
-            SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "Purge publish state for track_alias: {} connection handle: {}",
-                                remove_key.first,
-                                remove_key.second);
-        }
-
-        std::vector<std::pair<quicr::TrackNamespace, std::uint64_t>> anno_remove_list;
-        for (const auto& [key, _] : state_.pub_namespace_active) {
-            if (key.second == connection_handle) {
-                anno_remove_list.push_back(key);
+        // Now remove these tracks from the top-n ranking outside the lock.
+        for (const auto& handler : top_n_removal) {
+            if (handler) {
+                handler->RemoveFromTrackRanking();
             }
-        }
-
-        for (const auto& remove_key : anno_remove_list) {
-            state_.pub_namespace_active.erase(remove_key);
         }
     }
 
@@ -911,6 +940,8 @@ namespace laps {
         if (connection_handle)
             peer_manager_.ClientAnnounce(s_it->second->GetFullTrackName(), {}, true);
 
+        const auto publisher_handler = s_it->second;
+
         std::unique_lock<std::mutex> lock(state_.state_mutex);
 
         auto th = quicr::TrackHash(s_it->second->GetFullTrackName());
@@ -971,6 +1002,11 @@ namespace laps {
         }
 
         state_.pub_subscribes_by_req_id.erase(s_it);
+        lock.unlock();
+
+        if (!have_publishers) {
+            publisher_handler->RemoveFromTrackRanking();
+        }
 
         return {};
     }
@@ -1258,9 +1294,9 @@ namespace laps {
                 auto track_handler = FetchTrackHandler::Create(pub_fetch_h,
                                                                track_full_name,
                                                                priority,
-                                                               group_order,
                                                                { .group = start.group, .object = start.object },
-                                                               { .group = end.group, .object = end.object });
+                                                               { .group = end.group, .object = end.object },
+                                                               resolved_group_order);
 
                 // Find the publisher connection handle to send the fetch request
                 // TODO: Add peering support
@@ -1342,11 +1378,11 @@ namespace laps {
         std::thread retrieve_cache_thread([=, cache_entries = std::move(cache_entries), this] {
             defer(UnbindFetchTrack(connection_handle, pub_fetch_h));
 
-            for (const auto& entry : cache_entries) {
-                for (const auto& object : *entry) {
+            const auto publish_group = [&](const std::set<CacheObject>& group) {
+                for (const auto& object : group) {
                     if (stop_fetch_[{ connection_handle, request_id }]) {
                         stop_fetch_.erase({ connection_handle, request_id });
-                        return;
+                        return false;
                     }
 
                     // Start at start object id
@@ -1354,10 +1390,10 @@ namespace laps {
                         continue;
                     }
 
-                    // Stop at end object, unless end object is zero
+                    // Skip past end object, unless end object is zero
                     if (end.object.has_value() && object.headers.group_id == end.group &&
                         object.headers.object_id > *end.object) {
-                        return;
+                        continue;
                     }
 
                     SPDLOG_LOGGER_TRACE(
@@ -1367,6 +1403,24 @@ namespace laps {
                         pub_fetch_h->PublishObject(object.headers, object.data);
                     } catch (const std::exception& e) {
                         SPDLOG_LOGGER_ERROR(LOGGER, "Caught exception sending fetch object: {}", e.what());
+                    }
+                }
+
+                return true;
+            };
+
+            // Fetch objects are delta encoded against the previously sent object, so groups have to be
+            // sent in the requested group order. Object IDs remain ascending within a group.
+            if (resolved_group_order == quicr::messages::GroupOrder::kDescending) {
+                for (auto entry_it = cache_entries.rbegin(); entry_it != cache_entries.rend(); ++entry_it) {
+                    if (!publish_group(**entry_it)) {
+                        return;
+                    }
+                }
+            } else {
+                for (const auto& entry : cache_entries) {
+                    if (!publish_group(*entry)) {
+                        return;
                     }
                 }
             }
