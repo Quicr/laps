@@ -89,6 +89,14 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     }
 
     cfg.debug = cli_opts["debug"].as<bool>();
+    const auto transport_name = cli_opts["transport"].as<std::string>();
+    const auto transport_backend = ParseTransportBackend(transport_name);
+    if (!transport_backend) {
+        SPDLOG_LOGGER_ERROR(cfg.logger_, "Unknown transport '{}'; expected 'msquic' or 'picoquic'", transport_name);
+        exit(EXIT_FAILURE);
+    }
+    cfg.transport_backend = *transport_backend;
+    SPDLOG_LOGGER_INFO(cfg.logger_, "Using QUIC transport: {}", transport_name);
     cfg.tls_cert_filename_ = cli_opts["cert"].as<std::string>();
     cfg.tls_key_filename_ = cli_opts["key"].as<std::string>();
 
@@ -119,6 +127,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     config.server_port = cli_opts["port"].as<uint16_t>();
 
     config.transport_config.debug = cfg.debug;
+    config.transport_config.transport_backend = cfg.transport_backend;
     config.transport_config.tls_cert_filename = cfg.tls_cert_filename_;
     config.transport_config.tls_key_filename = cfg.tls_key_filename_;
     config.transport_config.quic_qlog_path = qlog_path;
@@ -152,6 +161,8 @@ main(int argc, char* argv[])
         ("c,cert", "Certificate file", cxxopts::value<std::string>()->default_value("./server-cert.pem"))
         ("k,key", "Certificate key file", cxxopts::value<std::string>()->default_value("./server-key.pem"))
         ("q,qlog", "Enable qlog using path", cxxopts::value<std::string>())
+        ("transport", "QUIC implementation: msquic or picoquic",
+            cxxopts::value<std::string>()->default_value(std::string(kDefaultTransportBackendName)))
         ("s,sub_dampen_ms", "Subscription update dampen interval in milliseconds",
             cxxopts::value<uint32_t>()->default_value(std::to_string(kDefaultCacheTimeQueueMaxDuration)))
         ("t,object_ttl", "Object TTL in milliseconds",

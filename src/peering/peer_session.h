@@ -250,6 +250,7 @@ namespace laps::peering {
             .time_queue_init_queue_size = config_.peering.init_queue_size,
             .time_queue_max_duration = config_.object_ttl_ * 2,
             .debug = config_.debug,
+            .transport_backend = config_.transport_backend,
         };
 
         /// Map of all subscriber source nodes, indexed by subscribe full track name hash (aka track alias)

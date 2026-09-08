@@ -5,6 +5,8 @@ option(LAPS_INSTALL "Install the laps Components" ON)
 
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
 
+option(QUICR_BUILD_MSQUIC "Build libquicr with MsQuic support" ON)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -15,7 +17,7 @@ set (CMAKE_POLICY_VERSION_MINIMUM 3.5)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.18.14
+        VERSION 0.18.15
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 

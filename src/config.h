@@ -6,13 +6,20 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <list>
+#include <optional>
 #include <quicr/config.h>
 #include <quicr/log.h>
 #include <spdlog/spdlog.h>
+#include <string_view>
 #include <timeq/tick_service.h>
 
 namespace laps {
 #define LOGGER config_.logger_
+    constexpr std::string_view kDefaultTransportBackendName{ "msquic" };
+    constexpr quicr::TransportBackend kDefaultTransportBackend{ quicr::TransportBackend::kMsQuic };
+
+    std::optional<quicr::TransportBackend> ParseTransportBackend(std::string_view name);
+
     constexpr uint16_t kDefaultClientPort = 33435;
     constexpr uint16_t kDefaultPeerPort = 33434;
     constexpr uint64_t kDefaultPeerCheckIntervalMs = 5'000;
@@ -39,6 +46,7 @@ namespace laps {
         bool detached_subs{ false };
         bool allow_self{ false };
         bool disable_cache{ false };
+        quicr::TransportBackend transport_backend{ kDefaultTransportBackend };
 
         std::string relay_id_;
         std::string metrics_namespace_;

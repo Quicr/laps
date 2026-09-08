@@ -109,6 +109,18 @@ xcode-select --install
 ```
 make build
 ```
+
+This experimental branch builds MsQuic support and selects it by default. Point CMake at an installed MsQuic
+package when configuring:
+
+```
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/msquic/install
+cmake --build build --parallel 8
+```
+
+Use `--transport picoquic` to run the same binary with picoquic instead. The accepted values are `msquic` and
+`picoquic`.
+
 ### Running tests
 
 Run relay:

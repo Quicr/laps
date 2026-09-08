@@ -3,6 +3,8 @@
 
 add_executable(laps_test
         main.cc
+        config.cc
+        ../src/config.cc
         peering_node.cc
         peering_connect.cc
         peering_subscribe.cc

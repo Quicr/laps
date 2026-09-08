@@ -9,6 +9,17 @@
 
 namespace laps {
 
+    std::optional<quicr::TransportBackend> ParseTransportBackend(std::string_view name)
+    {
+        if (name == "msquic") {
+            return quicr::TransportBackend::kMsQuic;
+        }
+        if (name == "picoquic") {
+            return quicr::TransportBackend::kPicoQuic;
+        }
+        return std::nullopt;
+    }
+
     Config::Config()
       : logger_(spdlog::stderr_color_mt("lapsRelay"))
       , quicr_logger_(std::make_shared<SpdlogLogger>(logger_))
