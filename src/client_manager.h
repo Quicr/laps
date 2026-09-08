@@ -161,7 +161,7 @@ namespace laps {
         void MetricsSampled(const std::shared_ptr<quicr::Session>& session,
                             const quicr::ConnectionMetrics& metrics) override;
 
-        quicr::Reply<void, int> ClientSetupReceived(
+        quicr::Reply<void, quicr::ErrorCode> ClientSetupReceived(
           const std::shared_ptr<quicr::Session>& session,
           const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
@@ -170,7 +170,7 @@ namespace laps {
           const quicr::TrackNamespace& prefix_namespace,
           const quicr::SubscribeNamespaceAttributes& attributes) override;
 
-        quicr::Reply<void, int> UnsubscribeNamespaceReceived(
+        quicr::Reply<void, quicr::ErrorCode> UnsubscribeNamespaceReceived(
           const std::shared_ptr<quicr::Session>& session,
           const quicr::TrackNamespace& prefix_namespace) override;
 
@@ -189,7 +189,7 @@ namespace laps {
           const quicr::PublishAttributes& publish_attributes,
           std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler) override;
 
-        quicr::Reply<void, int> PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
+        quicr::Reply<void, quicr::ErrorCode> PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
                                                     std::uint64_t request_id) override;
 
         quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> SubscribeReceived(
@@ -198,10 +198,10 @@ namespace laps {
           const quicr::FullTrackName& track_full_name,
           const quicr::SubscribeAttributes& subscribe_attributes) override;
 
-        quicr::Reply<void, int> UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
+        quicr::Reply<void, quicr::ErrorCode> UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
                                                     std::uint64_t request_id) override;
 
-        quicr::Reply<void, int> NewGroupRequested(const quicr::FullTrackName& track_full_name,
+        quicr::Reply<void, quicr::ErrorCode> NewGroupRequested(const quicr::FullTrackName& track_full_name,
                                                   std::uint64_t group_id) override;
 
         quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> TrackStatusReceived(

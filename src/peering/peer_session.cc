@@ -62,6 +62,7 @@ namespace laps::peering {
         connection_ = nullptr;
         transport_ = nullptr;
         control_stream_ = nullptr;
+        control_stream_id_.reset();
 
         peer_sns_.clear();
         rx_stream_headers_.clear();
@@ -80,8 +81,9 @@ namespace laps::peering {
 
         // The peer answers on the same stream, so the control exchange needs a bidirectional one
         control_stream_ = transport_->CreateRequestStream(connection_);
+        control_stream_id_.reset();
 
-        SPDLOG_LOGGER_DEBUG(LOGGER, "Control stream ID {0}", control_stream_ ? control_stream_->GetStreamId() : 0);
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Created control stream for peer session");
     }
 
     SubscribeNodeSetId PeerSession::NextSnsId()
@@ -555,6 +557,7 @@ namespace laps::peering {
          */
         if (is_bidir && stream != nullptr) {
             control_stream_ = stream;
+            control_stream_id_ = stream_id;
         }
 
         for (int i = 0; i < kReadLoopMaxPerStream; i++) {
@@ -621,8 +624,9 @@ namespace laps::peering {
     {
         const auto conn_id = GetSessionId();
 
-        if (control_stream_ != nullptr && control_stream_->GetStreamId() == stream_id) {
+        if (control_stream_ != nullptr && control_stream_id_.has_value() && *control_stream_id_ == stream_id) {
             control_stream_ = nullptr;
+            control_stream_id_.reset();
         }
 
         if (const auto header_it = rx_stream_headers_.find(stream_id); header_it != rx_stream_headers_.end()) {

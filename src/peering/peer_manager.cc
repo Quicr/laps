@@ -591,12 +591,11 @@ namespace laps::peering {
 
                     SPDLOG_LOGGER_TRACE(
                       LOGGER,
-                      "Data object send, peer_session: {} egress SNS_ID: {} in stream_id: {} out "
-                      "stream_id: {} tfn_hash: {} group_id: {} subgroup_id: {} streams: {} data len: {}",
+                      "Data object send, peer_session: {} egress SNS_ID: {} in stream_id: {} tfn_hash: {} "
+                      "group_id: {} subgroup_id: {} streams: {} data len: {}",
                       peer_sess->GetSessionId(),
                       fib_entry.out_sns_id,
                       in_stream_id,
-                      out_stream ? out_stream->GetStreamId() : 0,
                       track_full_name_hash,
                       group_id,
                       subgroup_id,
@@ -1362,13 +1361,11 @@ namespace laps::peering {
             }
 
             if (auto out_peer_sess = entry.peer_session.lock()) {
-                for (const auto& [in_stream_id, out_stream] : entry.streams) {
-                    if (out_stream != nullptr && out_stream->GetStreamId() == stream_id) {
-                        entry.streams.erase(in_stream_id);
-                        client_manager_->PeerStreamClosed(
-                          key.first, stream_id, flag == quicr::StreamClosedFlag::kReset);
-                        break;
-                    }
+                if (const auto stream_it = entry.streams.find(stream_id); stream_it != entry.streams.end()) {
+                    out_peer_sess->CloseStream(stream_it->second, flag);
+                    entry.streams.erase(stream_it);
+                    client_manager_->PeerStreamClosed(
+                      key.first, stream_id, flag == quicr::StreamClosedFlag::kReset);
                 }
             }
         }

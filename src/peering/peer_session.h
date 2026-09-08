@@ -5,7 +5,6 @@
 #include <map>
 #include <optional>
 #include <quicr/connection.h>
-#include <quicr/stream.h>
 #include <quicr/transport.h>
 #include <set>
 
@@ -270,6 +269,9 @@ namespace laps::peering {
          *      message it receives, so both sides send on the one stream.
          */
         std::shared_ptr<quicr::Stream> control_stream_;
+
+        /// QUIC stream ID of the control stream, learned from the first bidirectional receive callback
+        std::optional<std::uint64_t> control_stream_id_;
 
         std::vector<uint8_t> controL_msg_buffer_; /// Working buffer of control message being processed
 

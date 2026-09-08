@@ -270,7 +270,7 @@ namespace laps {
         return connection != nullptr ? connection->GetID() : 0;
     }
 
-    quicr::Reply<void, int> ClientManager::NewGroupRequested(const quicr::FullTrackName& track_full_name,
+    quicr::Reply<void, quicr::ErrorCode> ClientManager::NewGroupRequested(const quicr::FullTrackName& track_full_name,
                                                              std::uint64_t group_id)
     {
         auto th = quicr::TrackHash(track_full_name);
@@ -830,7 +830,7 @@ namespace laps {
         return matched_ns;
     }
 
-    quicr::Reply<void, int> ClientManager::UnsubscribeNamespaceReceived(
+    quicr::Reply<void, quicr::ErrorCode> ClientManager::UnsubscribeNamespaceReceived(
       const std::shared_ptr<quicr::Session>& session,
       const quicr::TrackNamespace& prefix_namespace)
     {
@@ -880,7 +880,7 @@ namespace laps {
         return {};
     }
 
-    quicr::Reply<void, int> ClientManager::ClientSetupReceived(
+    quicr::Reply<void, quicr::ErrorCode> ClientManager::ClientSetupReceived(
       const std::shared_ptr<quicr::Session>& session,
       const quicr::ClientSetupAttributes& client_setup_attributes)
     {
@@ -892,7 +892,7 @@ namespace laps {
         return {};
     }
 
-    quicr::Reply<void, int> ClientManager::PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
+    quicr::Reply<void, quicr::ErrorCode> ClientManager::PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
                                                                uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
@@ -975,7 +975,7 @@ namespace laps {
         return {};
     }
 
-    quicr::Reply<void, int> ClientManager::UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
+    quicr::Reply<void, quicr::ErrorCode> ClientManager::UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
                                                                uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
