@@ -8,6 +8,7 @@
 #include <peering/messages/data_header.h>
 
 #include "subscribe_handler.h"
+#include "transport_helpers.h"
 #include <chrono>
 
 namespace laps::peering {
@@ -203,7 +204,12 @@ namespace laps::peering {
                                        peer_session->GetSessionId(),
                                        subscribe_info.track_hash.track_fullname_hash);
 
-                    info_base_->client_fib_.erase({ subscribe_info.track_hash.track_fullname_hash, peer_session_id });
+                    const auto cfib_it =
+                      info_base_->client_fib_.find({ subscribe_info.track_hash.track_fullname_hash, peer_session_id });
+                    if (cfib_it != info_base_->client_fib_.end()) {
+                        CloseFibStreams(cfib_it->second);
+                        info_base_->client_fib_.erase(cfib_it);
+                    }
 
                     if (not HasSubscribers(subscribe_info.track_hash.track_fullname_hash)) {
                         SPDLOG_LOGGER_INFO(LOGGER,
@@ -268,9 +274,9 @@ namespace laps::peering {
         if (announce_info.flags & 1) { // PUBLISH_NAMESPACE
             if (!withdraw) {
                 client_manager_->PublishNamespaceReceived(
-                  0, announce_info.name_space, { .request_id = th.track_namespace_hash });
+                  nullptr, announce_info.name_space, { .request_id = th.track_namespace_hash });
             } else {
-                client_manager_->PublishNamespaceDoneReceived(0, th.track_namespace_hash);
+                client_manager_->PublishNamespaceDoneReceived(nullptr, th.track_namespace_hash);
             }
         } else { // PUBLISH
             if (!withdraw) {
@@ -289,10 +295,10 @@ namespace laps::peering {
                                                 .delivery_timeout = kDefaultObjectTtl,
                                                 .track_properties = {} };
 
-                client_manager_->PublishReceived(0, 0, attrs, {});
+                client_manager_->PublishReceived(nullptr, 0, attrs, {});
             } else {
                 // TODO: Signal to client manager that the publish is done
-                client_manager_->PublishDoneReceived(0, 0);
+                client_manager_->PublishDoneReceived(nullptr, 0);
             }
         }
 
@@ -394,7 +400,7 @@ namespace laps::peering {
                                       DataHeader data_header,
                                       std::shared_ptr<const std::vector<uint8_t>> data,
                                       uint64_t data_offset,
-                                      quicr::ITransport::EnqueueFlags eflags)
+                                      quicr::Transport::EnqueueFlags eflags)
     {
         std::unique_lock _(info_base_->mutex_); // TODO: See about removing this lock
         auto it = info_base_->peer_fib_.find({ peer_session_id, data_header.sns_id });
@@ -443,7 +449,7 @@ namespace laps::peering {
 
                 auto out_peer_sess = entry.peer_session.lock();
 
-                uint64_t out_stream_id{ 0 };
+                std::shared_ptr<quicr::Stream> out_stream;
                 if (eflags.use_reliable) {
                     auto sid_it = entry.streams.find(stream_id);
                     if (sid_it == entry.streams.end()) {
@@ -452,21 +458,17 @@ namespace laps::peering {
                             continue; // Ignore existing data and wait for start of new stream
                         }
 
-                        out_stream_id = out_peer_sess->CreateStream(entry.out_sns_id, data_header.priority);
-                        entry.streams.emplace(stream_id, out_stream_id);
+                        out_stream = out_peer_sess->CreateStream(data_header.priority);
+                        entry.streams.emplace(stream_id, out_stream);
                     } else {
-                        out_stream_id = sid_it->second;
+                        out_stream = sid_it->second;
                     }
                 }
 
                 auto data_out_shared = std::make_shared<std::vector<uint8_t>>();
                 data_out_shared->assign(data_out.begin(), data_out.end());
-                out_peer_sess->SendData(data_header.priority,
-                                        data_header.ttl,
-                                        entry.out_sns_id,
-                                        out_stream_id,
-                                        eflags,
-                                        std::move(data_out_shared));
+                out_peer_sess->SendData(
+                  data_header.priority, data_header.ttl, out_stream, eflags, std::move(data_out_shared));
             }
         } else {
             SPDLOG_LOGGER_DEBUG(config_.logger_,
@@ -506,8 +508,7 @@ namespace laps::peering {
 
                 auto stream_it = fib_entry.streams.find(in_stream_id);
                 if (stream_it != fib_entry.streams.end()) {
-                    peer_sess->CloseStream(fib_entry.out_sns_id,
-                                           stream_it->second,
+                    peer_sess->CloseStream(stream_it->second,
                                            reset ? quicr::StreamClosedFlag::kReset : quicr::StreamClosedFlag::kFin);
                     fib_entry.streams.erase(stream_it);
                 }
@@ -532,7 +533,7 @@ namespace laps::peering {
         auto net_data = std::make_shared<std::vector<uint8_t>>(data_header.Serialize());
         net_data->insert(net_data->end(), data->begin(), data->end());
 
-        quicr::ITransport::EnqueueFlags eflags;
+        quicr::Transport::EnqueueFlags eflags;
 
         bool set_sns_id{ false };
         switch (type) {
@@ -571,7 +572,7 @@ namespace laps::peering {
                     std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), send_data->begin() + 2);
                 }
 
-                uint64_t out_stream_id{ 0 };
+                std::shared_ptr<quicr::Stream> out_stream;
 
                 if (eflags.use_reliable) {
                     uint64_t in_stream_id = group_id << 16 | static_cast<uint16_t>(subgroup_id);
@@ -582,20 +583,19 @@ namespace laps::peering {
                             return;
                         }
 
-                        out_stream_id = peer_sess->CreateStream(fib_entry.out_sns_id, priority);
-                        fib_entry.streams.try_emplace(in_stream_id, out_stream_id);
+                        out_stream = peer_sess->CreateStream(priority);
+                        fib_entry.streams.try_emplace(in_stream_id, out_stream);
                     } else {
-                        out_stream_id = stream_it->second;
+                        out_stream = stream_it->second;
                     }
 
                     SPDLOG_LOGGER_TRACE(
                       LOGGER,
-                      "Data object send, peer_session: {} egress SNS_ID: {} in stream_id: {} out "
-                      "stream_id: {} tfn_hash: {} group_id: {} subgroup_id: {} streams: {} data len: {}",
+                      "Data object send, peer_session: {} egress SNS_ID: {} in stream_id: {} tfn_hash: {} "
+                      "group_id: {} subgroup_id: {} streams: {} data len: {}",
                       peer_sess->GetSessionId(),
                       fib_entry.out_sns_id,
                       in_stream_id,
-                      out_stream_id,
                       track_full_name_hash,
                       group_id,
                       subgroup_id,
@@ -603,7 +603,7 @@ namespace laps::peering {
                       net_data->size());
                 }
 
-                peer_sess->SendData(priority, ttl, fib_entry.out_sns_id, out_stream_id, eflags, send_data);
+                peer_sess->SendData(priority, ttl, out_stream, eflags, send_data);
             }
         }
     }
@@ -911,8 +911,17 @@ namespace laps::peering {
         tconfig.idle_timeout_ms = 5000;
         tconfig.max_connections = 100;
 
-        server_transport_ =
-          quicr::ITransport::MakeServerTransport(std::move(server), std::move(tconfig), *this, tick_service_, LOGGER);
+        server_transport_ = quicr::Transport::MakeServerTransport(
+          std::move(server), std::move(tconfig), tick_service_, config_.quicr_logger_);
+
+        server_transport_->OnNewConnection = [this](const std::shared_ptr<quicr::Connection>& connection) {
+            NewPeerConnection(connection);
+        };
+
+        server_transport_->OnConnectionClosed = [this](const std::shared_ptr<quicr::Connection>& connection) {
+            PeerConnectionClosed(connection);
+        };
+
         server_transport_->Start();
 
         while (server_transport_->Status() == quicr::TransportStatus::kConnecting) {
@@ -933,6 +942,12 @@ namespace laps::peering {
 
         SPDLOG_LOGGER_INFO(LOGGER, "Closing peer manager threads");
 
+        if (server_transport_ != nullptr) {
+            server_transport_->OnNewConnection = nullptr;
+            server_transport_->OnConnectionClosed = nullptr;
+            server_transport_->Shutdown();
+        }
+
         client_peer_sessions_.clear();
         server_peer_sessions_.clear();
 
@@ -951,9 +966,11 @@ namespace laps::peering {
         if (withdraw) {
             auto it = info_base_->peer_fib_.find({ peer_session.GetSessionId(), sns.id });
             if (it != info_base_->peer_fib_.end()) {
-                for (const auto& [out_peer_sess_id, entry] : it->second) {
+                for (auto& [out_peer_sess_id, entry] : it->second) {
                     if (out_peer_sess_id == 0)
                         continue;
+
+                    CloseFibStreams(entry);
 
                     auto out_peer_sess = entry.peer_session.lock();
                     out_peer_sess->RemovePeerSnsSourceNode(peer_session.GetSessionId(), sns.id, 0);
@@ -1190,7 +1207,7 @@ namespace laps::peering {
 
     void PeerManager::CreatePeerSession(const quicr::TransportRemote& peer_config)
     {
-        auto peer_sess = std::make_shared<PeerSession>(false, 0, config_, node_info_, peer_config, *this);
+        auto peer_sess = std::make_shared<PeerSession>(false, config_, node_info_, peer_config, *this);
         peer_sess->Connect();
 
         client_peer_sessions_.try_emplace(peer_sess->GetSessionId(), std::move(peer_sess));
@@ -1233,107 +1250,79 @@ namespace laps::peering {
     }
 
     /*
-     * Delegate Implementations
+     * Server transport callbacks
      */
-    void PeerManager::OnConnectionStatus(const std::uint64_t& conn_id, const quicr::TransportStatus status)
+    void PeerManager::NewPeerConnection(const std::shared_ptr<quicr::Connection>& connection)
     {
-        auto peer_it = server_peer_sessions_.find(conn_id);
-        if (peer_it == server_peer_sessions_.end()) {
-            return;
-        }
+        const auto conn_id = connection->GetID();
 
-        PeerSession::StatusValue sess_status = PeerSession::StatusValue::kConnected;
-        switch (status) {
-            case quicr::TransportStatus::kReady: {
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} is connected", conn_id);
-                break;
-            }
-            case quicr::TransportStatus::kConnecting:
-                break;
+        std::shared_ptr<PeerSession> peer_sess;
 
-            case quicr::TransportStatus::kDisconnected: {
-                sess_status = PeerSession::StatusValue::kDisconnected;
+        {
+            std::lock_guard _(mutex_);
 
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} is disconnected", conn_id);
-                break;
+            if (server_peer_sessions_.contains(conn_id)) {
+                return;
             }
 
-            case quicr::TransportStatus::kRemoteRequestClose:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} remote disconnected", conn_id);
-                break;
-
-            case quicr::TransportStatus::kShutdown:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} shutdown", conn_id);
-                break;
-
-            case quicr::TransportStatus::kIdleTimeout:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} idle timeout", conn_id);
-                break;
-
-            case quicr::TransportStatus::kShuttingDown:
-                sess_status = PeerSession::StatusValue::kDisconnected;
-                SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} shutdown", conn_id);
-                break;
-        }
-
-        SessionChanged(peer_it->second->GetSessionId(), sess_status, peer_it->second->remote_node_info_);
-
-        server_peer_sessions_.erase(peer_it);
-    }
-
-    void PeerManager::OnNewConnection(const std::uint64_t& conn_id, const quicr::TransportRemote& remote)
-    {
-        auto peer_iter = server_peer_sessions_.find(conn_id);
-
-        if (peer_iter == server_peer_sessions_.end()) {
             SPDLOG_LOGGER_INFO(LOGGER, "New server accepted peer, conn_id: {0}", conn_id);
 
-            quicr::TransportRemote peer = remote;
-            auto [iter, inserted] = server_peer_sessions_.try_emplace(
-              conn_id, std::make_shared<PeerSession>(true, conn_id, config_, node_info_, std::move(peer), *this));
+            const auto [ip, port] = GetPeerAddress(server_transport_, connection);
+            const quicr::TransportRemote peer{ ip, port, quicr::TransportProtocol::kQuic };
 
-            peer_iter = iter;
-
-            auto& peer_sess = peer_iter->second;
-
-            peer_sess->SetTransport(server_transport_);
+            peer_sess = std::make_shared<PeerSession>(true, config_, node_info_, peer, *this);
+            peer_sess->SetConnection(server_transport_, connection);
             peer_sess->Connect();
+
+            server_peer_sessions_.emplace(conn_id, peer_sess);
+        }
+
+        /*
+         * Attach last and outside the lock. Attaching replays the current connection status, which can call
+         * back into the manager.
+         */
+        connection->SetDelegate(peer_sess);
+    }
+
+    void PeerManager::PeerConnectionClosed(const std::shared_ptr<quicr::Connection>& connection)
+    {
+        std::shared_ptr<PeerSession> peer_sess;
+
+        {
+            std::lock_guard _(mutex_);
+
+            auto peer_it = server_peer_sessions_.find(connection->GetID());
+            if (peer_it == server_peer_sessions_.end()) {
+                return;
+            }
+
+            peer_sess = std::move(peer_it->second);
+            server_peer_sessions_.erase(peer_it);
+        }
+
+        SPDLOG_LOGGER_DEBUG(LOGGER, "Peer conn_id {0} closed", connection->GetID());
+
+        /*
+         * The connection holds a weak reference to the session, so the session's own disconnect notification
+         * is not guaranteed to be delivered before the session is dropped here. Report it only when the
+         * session has not already seen the status change, to avoid withdrawing the peer's info twice.
+         */
+        if (peer_sess->Status() != PeerSession::StatusValue::kDisconnected) {
+            SessionChanged(
+              peer_sess->GetSessionId(), PeerSession::StatusValue::kDisconnected, peer_sess->remote_node_info_);
         }
     }
 
-    void PeerManager::OnRecvStream(const std::uint64_t& conn_id,
-                                   uint64_t stream_id,
-                                   std::optional<std::uint64_t> data_ctx_id,
-                                   const bool is_bidir)
+    void PeerManager::CloseFibStreams(InfoBase::FibEntry& entry)
     {
-        auto peer_iter = server_peer_sessions_.find(conn_id);
-        if (peer_iter != server_peer_sessions_.end()) {
-            peer_iter->second->OnRecvStream(conn_id, stream_id, data_ctx_id, is_bidir);
+        const auto peer_sess = entry.peer_session.lock();
+        if (peer_sess != nullptr) {
+            for (const auto& [_, out_stream] : entry.streams) {
+                peer_sess->CloseStream(out_stream, quicr::StreamClosedFlag::kFin);
+            }
         }
-    }
 
-    void PeerManager::OnRecvDgram(const std::uint64_t& conn_id, std::optional<std::uint64_t> data_ctx_id)
-    {
-        auto peer_iter = server_peer_sessions_.find(conn_id);
-        if (peer_iter != server_peer_sessions_.end()) {
-            peer_iter->second->OnRecvDgram(conn_id, data_ctx_id);
-        }
-    }
-
-    void PeerManager::OnStreamClosed(const std::uint64_t& connection_handle,
-                                     std::uint64_t stream_id,
-                                     std::shared_ptr<quicr::StreamRxContext> rx_context,
-                                     std::optional<uint64_t> request_id,
-                                     quicr::StreamClosedFlag flag)
-    {
-        auto peer_iter = server_peer_sessions_.find(connection_handle);
-        if (peer_iter != server_peer_sessions_.end()) {
-            peer_iter->second->OnStreamClosed(connection_handle, stream_id, rx_context, request_id, flag);
-        }
+        entry.streams.clear();
     }
 
     void PeerManager::CloseStream(PeerSessionId peer_session_id,
@@ -1358,7 +1347,7 @@ namespace laps::peering {
                 auto stream_it = entry.streams.find(stream_id);
                 if (stream_it != entry.streams.end()) {
                     if (auto out_peer_sess = entry.peer_session.lock()) {
-                        out_peer_sess->CloseStream(entry.out_sns_id, stream_it->second, flag);
+                        out_peer_sess->CloseStream(stream_it->second, flag);
                         entry.streams.erase(stream_it);
                     }
                 }
@@ -1372,13 +1361,11 @@ namespace laps::peering {
             }
 
             if (auto out_peer_sess = entry.peer_session.lock()) {
-                for (const auto& [in_stream_id, out_stream_id] : entry.streams) {
-                    if (out_stream_id == stream_id) {
-                        entry.streams.erase(out_stream_id);
-                        client_manager_->PeerStreamClosed(
-                          key.first, stream_id, flag == quicr::StreamClosedFlag::kReset);
-                        break;
-                    }
+                if (const auto stream_it = entry.streams.find(stream_id); stream_it != entry.streams.end()) {
+                    out_peer_sess->CloseStream(stream_it->second, flag);
+                    entry.streams.erase(stream_it);
+                    client_manager_->PeerStreamClosed(
+                      key.first, stream_id, flag == quicr::StreamClosedFlag::kReset);
                 }
             }
         }

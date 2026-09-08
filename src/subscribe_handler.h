@@ -41,6 +41,15 @@ namespace laps {
 
         void SetFromPeer();
 
+        /**
+         * @brief Record that forwarding is paused without sending a subscribe update
+         *
+         * @details A publisher-initiated subscribe is not bound to its connection until the relay accepts the
+         *      publish, so Pause() has no session to send the update on. The relay instead answers the publish
+         *      with forwarding off, and uses this so that a later Resume() sends the update.
+         */
+        void MarkPaused() { SetStatus(Status::kPaused); }
+
         std::optional<uint64_t> GetPendingNewRquestId() { return pending_new_group_request_id_; };
 
         struct PublisherLastUpdateInfo

@@ -24,7 +24,7 @@ add_executable(laps_test
 )
 target_include_directories(laps_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
-target_link_libraries(laps_test PRIVATE quicr doctest::doctest relay_health_check_lib)
+target_link_libraries(laps_test PRIVATE quicr spdlog::spdlog doctest::doctest relay_health_check_lib)
 
 target_compile_options(laps_test
         PRIVATE

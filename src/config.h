@@ -1,11 +1,13 @@
 #pragma once
 
 #include "peering/messages/node_info.h"
-#include "spdlog/sinks/stdout_color_sinks-inl.h"
+#include "spdlog_logger.h"
 #include "version_config.h"
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <list>
 #include <quicr/config.h>
+#include <quicr/log.h>
 #include <spdlog/spdlog.h>
 #include <timeq/tick_service.h>
 
@@ -26,6 +28,9 @@ namespace laps {
     {
       public:
         std::shared_ptr<spdlog::logger> logger_ = spdlog::stderr_color_mt("LAPS");
+
+        /// Logger handed to libquicr, which logs through its own interface
+        std::shared_ptr<quicr::Logger> quicr_logger_;
 
         quicr::ServerConfig server_config;
 

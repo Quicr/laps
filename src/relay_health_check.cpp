@@ -3,9 +3,10 @@
 
 #include "relay_health_check_internal.h"
 
-#include "quicr/client.h"
 #include "quicr/handlers/publish_track_handler.h"
 #include "quicr/handlers/subscribe_track_handler.h"
+#include "quicr/session.h"
+#include "quicr/session_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -113,7 +114,9 @@ namespace {
         std::shared_ptr<std::promise<VerificationResult>> result_;
     };
 
-    std::shared_ptr<Client> MakeClient(const std::string& endpoint_id, const Options& options)
+    std::shared_ptr<Session> MakeClient(SessionManager& session_manager,
+                                       const std::string& endpoint_id,
+                                       const Options& options)
     {
         ClientConfig config;
         config.endpoint_id = endpoint_id;
@@ -123,11 +126,12 @@ namespace {
         const std::uint64_t idle_multiplier = options.gateway_enabled ? 4 : 2;
         config.transport_config.idle_timeout_ms =
           static_cast<std::uint64_t>(options.timeout.count()) * idle_multiplier;
-        return Client::Create(config);
+
+        return session_manager.AddTransport(config).lock();
     }
 
-    bool RunPubSubProbe(Client& subscriber,
-                        Client& publisher,
+    bool RunPubSubProbe(Session& subscriber,
+                        Session& publisher,
                         const Options& options,
                         const std::string& unique_suffix,
                         std::string& error)
@@ -192,7 +196,7 @@ namespace {
         return true;
     }
 
-    bool RunSubscribeProbe(Client& subscriber,
+    bool RunSubscribeProbe(Session& subscriber,
                            const FullTrackName& track,
                            const std::string& track_display,
                            const Bytes& expected_payload,
@@ -248,37 +252,41 @@ namespace {
     {
         const auto unique_suffix = options.name.value_or(DefaultTrackName());
 
-        auto subscriber = MakeClient("relay-health-subscriber-" + unique_suffix, options);
-        auto publisher = MakeClient("relay-health-publisher-" + unique_suffix, options);
+        SessionManager session_manager;
 
-        subscriber->Start();
-        publisher->Start();
+        auto subscriber = MakeClient(session_manager, "relay-health-subscriber-" + unique_suffix, options);
+        auto publisher = MakeClient(session_manager, "relay-health-publisher-" + unique_suffix, options);
+
+        if (subscriber == nullptr || publisher == nullptr) {
+            error = "[relay] failed to create the publisher and subscriber sessions";
+            return false;
+        }
 
         const bool connected = WaitFor(
           [&subscriber, &publisher]() {
-              return subscriber->GetStatus() == Client::Status::kReady &&
-                     publisher->GetStatus() == Client::Status::kReady;
+              return subscriber->GetStatus() == Session::Status::kReady &&
+                     publisher->GetStatus() == Session::Status::kReady;
           },
           options.timeout);
         if (!connected) {
             error = "[relay] publisher and subscriber did not both connect before timeout";
-            subscriber->Stop();
-            publisher->Stop();
+            subscriber->Disconnect();
+            publisher->Disconnect();
             return false;
         }
 
         const bool relay_ok = RunPubSubProbe(*subscriber, *publisher, options, unique_suffix, error);
         if (!relay_ok) {
-            subscriber->Stop();
-            publisher->Stop();
+            subscriber->Disconnect();
+            publisher->Disconnect();
             return false;
         }
 
         if (options.gateway_enabled) {
             if (options.gateway_name.empty()) {
                 error = "[gateway] LIBQUICR_GATEWAY_HEALTH_NAME (or --gateway-name) is empty";
-                subscriber->Stop();
-                publisher->Stop();
+                subscriber->Disconnect();
+                publisher->Disconnect();
                 return false;
             }
 
@@ -293,14 +301,14 @@ namespace {
             const bool gateway_ok =
               RunSubscribeProbe(*subscriber, gateway_track, display, expected_payload, options.timeout, error);
             if (!gateway_ok) {
-                subscriber->Stop();
-                publisher->Stop();
+                subscriber->Disconnect();
+                publisher->Disconnect();
                 return false;
             }
         }
 
-        subscriber->Stop();
-        publisher->Stop();
+        subscriber->Disconnect();
+        publisher->Disconnect();
         return true;
     }
 }
