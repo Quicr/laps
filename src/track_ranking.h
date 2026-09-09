@@ -18,6 +18,9 @@ namespace laps {
         using PropertyType = uint64_t;
         using TrackAlias = uint64_t;
         using PropertyValue = uint64_t;
+        using OrderedTrack =
+          std::tuple<TrackAlias, uint64_t, uint64_t, uint64_t>; // <alias, insert_seq_num, latest_tick, conn_id>
+        using OrderedTrackList = std::vector<OrderedTrack>;
         struct TrackTickInfo
         {
             uint64_t insert_seq_num; // Track ranking update value sequence number
@@ -43,7 +46,7 @@ namespace laps {
             ++update_value_seq_num_;
 
             // Check if track exists in a different value bucket
-            bool needs_rebuild = false;
+            std::set<PropertyType> properties_to_rebuild;
             bool value_decreased = false;
             for (auto it = ordered_tracks_.lower_bound({ prop, 0 });
                  it != ordered_tracks_.end() && it->first.first == prop;) {
@@ -57,7 +60,7 @@ namespace laps {
                         it = ordered_tracks_.erase(it); // erase returns next iterator
                         continue;
                     }
-                    needs_rebuild = true;
+                    properties_to_rebuild.insert(prop);
                 }
                 ++it;
             }
@@ -81,7 +84,9 @@ namespace laps {
             track_connections_[track_alias] = connection_id;
 
             // Rebuild if track moved buckets or new bucket was created
-            needs_rebuild = needs_rebuild || inserted || track_is_new;
+            if (inserted || track_is_new) {
+                properties_to_rebuild.insert(prop);
+            }
 
             SPDLOG_TRACE("Update Value ta: {} prop: {} value: {} tick: {} conn_id: {}",
                          track_alias,
@@ -92,12 +97,13 @@ namespace laps {
 
             // Remove inactive tracks from ordered_tracks_
             for (auto it = ordered_tracks_.begin(); it != ordered_tracks_.end();) {
+                const auto property_type = it->first.first;
                 auto& entry = it->second;
                 for (auto track_it = entry.begin(); track_it != entry.end();) {
                     const auto& tick_info = track_it->second;
                     if (tick >= tick_info.latest_tick && tick - tick_info.latest_tick > inactive_age_ms_) {
                         track_it = entry.erase(track_it);
-                        needs_rebuild = true;
+                        properties_to_rebuild.insert(property_type);
                     } else {
                         ++track_it;
                     }
@@ -109,32 +115,9 @@ namespace laps {
                 }
             }
 
-            if (needs_rebuild) {
-                flat_track_list_.clear();
-
-                auto first = ordered_tracks_.lower_bound({ prop, 0 });
-                auto last = ordered_tracks_.upper_bound({ prop, std::numeric_limits<PropertyValue>::max() });
-
-                for (auto it = std::make_reverse_iterator(last); it != std::make_reverse_iterator(first); ++it) {
-                    auto& [key, entry] = *it;
-
-                    std::vector<std::tuple<TrackAlias, uint64_t, uint64_t, uint64_t>> sort_tracks;
-                    for (const auto& [ta, tick_info] : entry) {
-                        sort_tracks.emplace_back(
-                          ta, tick_info.insert_seq_num, tick_info.latest_tick, track_connections_[ta]);
-                    }
-                    std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
-                        if (std::get<1>(a) != std::get<1>(b))
-                            return std::get<1>(a) < std::get<1>(b); // ascending insert_seq_num
-                        return std::get<0>(a) > std::get<0>(b);
-                    });
-
-                    flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
-                }
-
-            } else {
-                // Update latest_tick in flat_track_list_ in-place
-                for (auto& [alias, insert_seq_num, latest_tick, conn_id] : flat_track_list_) {
+            if (!properties_to_rebuild.contains(prop)) {
+                // Update latest_tick in the property's ordered track list in-place
+                for (auto& [alias, insert_seq_num, latest_tick, conn_id] : flat_track_lists_[prop]) {
                     if (alias == track_alias) {
                         latest_tick = tick;
                         conn_id = connection_id;
@@ -143,14 +126,21 @@ namespace laps {
                 }
             }
 
+            for (const auto property_type : properties_to_rebuild) {
+                RebuildOrderedTracks(property_type);
+            }
+
             NotifyNamespaceHandlers();
         }
 
         void RemoveTrack(const TrackAlias track_alias)
         {
-            bool removed = false;
+            std::set<PropertyType> properties_to_rebuild;
             for (auto it = ordered_tracks_.begin(); it != ordered_tracks_.end();) {
-                removed = it->second.erase(track_alias) > 0 || removed;
+                const auto property_type = it->first.first;
+                if (it->second.erase(track_alias) > 0) {
+                    properties_to_rebuild.insert(property_type);
+                }
                 if (it->second.empty()) {
                     it = ordered_tracks_.erase(it);
                 } else {
@@ -158,14 +148,14 @@ namespace laps {
                 }
             }
 
-            removed =
-              std::erase_if(flat_track_list_,
-                            [track_alias](const auto& track) { return std::get<0>(track) == track_alias; }) > 0 ||
-              removed;
             track_connections_.erase(track_alias);
 
-            if (!removed) {
+            if (properties_to_rebuild.empty()) {
                 return;
+            }
+
+            for (const auto property_type : properties_to_rebuild) {
+                RebuildOrderedTracks(property_type);
             }
 
             NotifyNamespaceHandlers();
@@ -197,13 +187,44 @@ namespace laps {
         }
 
       private:
+        void RebuildOrderedTracks(const PropertyType property_type)
+        {
+            auto& flat_track_list = flat_track_lists_[property_type];
+            flat_track_list.clear();
+
+            auto first = ordered_tracks_.lower_bound({ property_type, 0 });
+            auto last = ordered_tracks_.upper_bound({ property_type, std::numeric_limits<PropertyValue>::max() });
+
+            for (auto it = std::make_reverse_iterator(last); it != std::make_reverse_iterator(first); ++it) {
+                auto& [key, entry] = *it;
+
+                OrderedTrackList sort_tracks;
+                for (const auto& [ta, tick_info] : entry) {
+                    sort_tracks.emplace_back(
+                      ta, tick_info.insert_seq_num, tick_info.latest_tick, track_connections_[ta]);
+                }
+                std::ranges::sort(sort_tracks, [](const auto& a, const auto& b) {
+                    if (std::get<1>(a) != std::get<1>(b))
+                        return std::get<1>(a) < std::get<1>(b); // ascending insert_seq_num
+                    return std::get<0>(a) > std::get<0>(b);
+                });
+
+                flat_track_list.insert(flat_track_list.end(), sort_tracks.begin(), sort_tracks.end());
+            }
+        }
+
         void NotifyNamespaceHandlers()
         {
             for (auto ns_it = ns_handlers_.begin(); ns_it != ns_handlers_.end();) {
                 auto& conn_handlers = ns_it->second;
                 for (auto conn_it = conn_handlers.begin(); conn_it != conn_handlers.end();) {
                     if (auto h = conn_it->second.lock()) {
-                        h->UpdateTrackRanking(flat_track_list_);
+                        const auto tracks_it = flat_track_lists_.find(h->GetPropertyType());
+                        if (tracks_it == flat_track_lists_.end()) {
+                            h->UpdateTrackRanking({});
+                        } else {
+                            h->UpdateTrackRanking(tracks_it->second);
+                        }
                         ++conn_it;
                     } else {
                         conn_it = conn_handlers.erase(conn_it);
@@ -238,8 +259,7 @@ namespace laps {
          *
          */
         std::map<std::pair<PropertyType, PropertyValue>, TrackEntry> ordered_tracks_;
-        std::vector<std::tuple<TrackAlias, uint64_t, uint64_t, uint64_t>>
-          flat_track_list_;                                          // <alias, insert_seq_num, latest_tick, conn_id>
+        std::map<PropertyType, OrderedTrackList> flat_track_lists_;
         std::unordered_map<TrackAlias, uint64_t> track_connections_; // Map track alias to connection ID
 
         /**
