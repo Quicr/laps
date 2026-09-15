@@ -26,6 +26,12 @@ namespace laps {
     {
         quicr::ObjectHeaders headers;
         quicr::Bytes data;
+
+        // libc++ now compares set keys with std::less<void>, which requires operator<.
+        bool operator<(const CacheObject& other) const noexcept
+        {
+            return headers.object_id < other.headers.object_id;
+        }
     };
 }
 

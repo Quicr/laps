@@ -151,6 +151,9 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
     }
 
     if (published_tracks_.size() > active_tracks.size()) {
+
+        std::vector<std::uint64_t> remove_publish_tracks;
+
         // Unpublish tracks that are too old
         for (auto& [ta, track] : published_tracks_) {
             if (active_tracks.contains(ta)) {
@@ -184,8 +187,14 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                                 GetConnectionId(),
                                 track.last_updated_tick,
                                 cur_tick);
-                    // UnPublishTrack(h);
+                    remove_publish_tracks.push_back(ta);
                 }
+            }
+        }
+
+        if (!remove_publish_tracks.empty()) {
+            for (const auto& ta: remove_publish_tracks) {
+                published_tracks_.erase(ta);
             }
         }
     }
