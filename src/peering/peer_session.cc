@@ -210,7 +210,19 @@ namespace laps::peering {
             return;
         }
 
-        transport_->CloseStream(connection_, stream, flag == quicr::StreamClosedFlag::kReset);
+        quicr::StreamOperation operation;
+        switch (flag) {
+            case quicr::StreamClosedFlag::kFin:
+                operation = quicr::StreamOperation::kFin;
+                break;
+            case quicr::StreamClosedFlag::kReset:
+                operation = quicr::StreamOperation::kReset;
+                break;
+            case quicr::StreamClosedFlag::kStopSending:
+                operation = quicr::StreamOperation::kStopSending;
+                break;
+        }
+        transport_->CloseStream(connection_, stream, operation);
     }
 
     void PeerSession::SendData(uint8_t priority,
