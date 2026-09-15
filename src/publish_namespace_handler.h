@@ -3,6 +3,8 @@
 #include "quicr/handlers/publish_namespace_handler.h"
 #include "quicr/track_name.h"
 
+#include <timeq/tick_service.h>
+
 namespace laps {
     class PublishTrackHandler;
 

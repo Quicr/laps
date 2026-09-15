@@ -157,7 +157,6 @@ namespace laps {
             AppendUintField(out, first, "tx_dgram_ack", metrics.tx_dgram_ack);
             AppendUintField(out, first, "tx_dgram_lost", metrics.tx_dgram_lost);
             AppendUintField(out, first, "tx_dgram_spurious", metrics.tx_dgram_spurious);
-            AppendUintField(out, first, "tx_dgram_drops", metrics.tx_dgram_drops);
             out << '}';
             return out.str();
         }
@@ -171,7 +170,6 @@ namespace laps {
             AppendUintField(out, first, "tx_queue_discards", metrics.tx_queue_discards);
             AppendUintField(out, first, "tx_queue_expired", metrics.tx_queue_expired);
             AppendUintField(out, first, "tx_delayed_callback", metrics.tx_delayed_callback);
-            AppendUintField(out, first, "tx_reset_wait", metrics.tx_reset_wait);
             AppendRawField(out, first, "tx_queue_size", SerializeMinMaxAvg(metrics.tx_queue_size));
             AppendRawField(out, first, "tx_callback_ms", SerializeMinMaxAvg(metrics.tx_callback_ms));
             AppendRawField(out, first, "tx_object_duration_us", SerializeMinMaxAvg(metrics.tx_object_duration_us));

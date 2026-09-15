@@ -29,7 +29,7 @@ add_executable(lapsRelay
         peering/info_base.cc
 )
 
-target_link_libraries(lapsRelay PRIVATE quicr)
+target_link_libraries(lapsRelay PRIVATE quicr spdlog::spdlog)
 target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/oss )
 
 target_compile_options(lapsRelay
@@ -54,7 +54,7 @@ set_target_properties(relay_health_check_lib
         CXX_EXTENSIONS OFF)
 
 add_executable(relay_health_check relay_health_check.cpp)
-target_link_libraries(relay_health_check PRIVATE quicr relay_health_check_lib)
+target_link_libraries(relay_health_check PRIVATE quicr spdlog::spdlog relay_health_check_lib)
 
 target_compile_options(relay_health_check
         PRIVATE

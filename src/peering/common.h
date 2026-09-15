@@ -16,6 +16,9 @@ namespace laps::peering {
     constexpr int kViaRelayMax = 5; ///< Maximum number of best via relays to advertise
     constexpr uint8_t kProtocolVersion = 1;
 
+    /// Reads per stream in a single receive callback. Supports bursts without starving other streams.
+    constexpr int kReadLoopMaxPerStream = 100;
+
     using HashType = uint64_t; ///< Value data type for hashes
     using NamespaceTuples = std::vector<HashType>;
     using PeerSessionId = uint64_t;

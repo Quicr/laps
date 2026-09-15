@@ -11,6 +11,7 @@ namespace laps {
 
     Config::Config()
       : logger_(spdlog::stderr_color_mt("lapsRelay"))
+      , quicr_logger_(std::make_shared<SpdlogLogger>(logger_))
       , tick_service_(std::make_shared<timeq::threaded_tick_service>())
     {
         InitDefaults();

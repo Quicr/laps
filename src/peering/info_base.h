@@ -151,8 +151,16 @@ namespace laps::peering {
         struct FibEntry
         {
             uint64_t update_ref{ 0 }; ///< Random reference number to detect if entry was updated or not
-            std::unordered_map<uint64_t, uint64_t> streams; ///< Key is ingress stream Id, value is egress stream id
-            SubscribeNodeSetId out_sns_id;                  ///< Egress SNS ID
+
+            /**
+             * @brief Egress stream for each ingress stream, keyed by ingress stream ID
+             *
+             * @details The transport hands out stream handles rather than IDs, and holding one keeps the
+             *      stream usable for as long as objects are being forwarded onto it.
+             */
+            std::unordered_map<uint64_t, std::shared_ptr<quicr::Stream>> streams;
+
+            SubscribeNodeSetId out_sns_id; ///< Egress SNS ID
             decltype(nodes_best_)::mapped_type peer_session;
             uint64_t track_fullname_hash{ 0 };
         };
