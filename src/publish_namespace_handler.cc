@@ -150,7 +150,7 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
         active_tracks.emplace(ta, latest_tick);
     }
 
-    if (published_tracks_.size() > max_tracks_selected_) {
+    if (published_tracks_.size() > active_tracks.size()) {
         // Unpublish tracks that are too old
         for (auto& [ta, track] : published_tracks_) {
             if (active_tracks.contains(ta)) {
