@@ -8,6 +8,10 @@
 #include "peering/messages/node_info.h"
 #include "peering/messages/subscribe_info.h"
 
+// Stream is internal to libquicr. PeerSession implements Connection::Delegate and
+// must drain rx_data directly because peering still carries raw subgroup bytes.
+#include "../../dependencies/libquicr/src/stream.h"
+
 #include <iomanip>
 #include <sstream>
 
@@ -554,47 +558,51 @@ namespace laps::peering {
         return true;
     }
 
-    void PeerSession::OnRecvStream(std::uint64_t stream_id,
-                                   const std::shared_ptr<quicr::StreamRxContext>& rx_ctx,
-                                   const std::shared_ptr<quicr::Stream>& stream,
-                                   const bool is_bidir)
+    bool PeerSession::OnRecvStream(const std::shared_ptr<quicr::Stream>& stream)
     {
-        if (!IsUsable() || rx_ctx == nullptr) {
-            return;
+        if (!IsUsable() || stream == nullptr) {
+            return false;
         }
+
+        const auto stream_id = stream->GetStreamId();
+        const bool is_bidir = stream->IsBidirectional();
 
         /*
          * Control messages arrive on the one bidirectional stream, which the inbound side of the session
          * only learns about here. Both sides answer on it, so it is adopted either way.
          */
-        if (is_bidir && stream != nullptr) {
+        if (is_bidir) {
             control_stream_ = stream;
             control_stream_id_ = stream_id;
         }
 
-        for (int i = 0; i < kReadLoopMaxPerStream; i++) {
-            if (rx_ctx->data_queue.Empty()) {
-                break;
+        std::shared_ptr<const std::vector<uint8_t>> data;
+        {
+            std::lock_guard _(stream->rx_mutex);
+            if (stream->rx_data.Empty()) {
+                return false;
             }
 
-            auto data_opt = rx_ctx->data_queue.Pop();
-            if (not data_opt.has_value()) {
-                break;
+            const auto view = stream->rx_data.Data();
+            if (!is_bidir) {
+                const auto header_it = rx_stream_headers_.find(stream_id);
+                if (header_it == rx_stream_headers_.end() && (view.empty() || view.size() < view.front())) {
+                    return false;
+                }
             }
 
-            const auto& data = data_opt.value();
-
-            // Get common header
-            if (is_bidir) { // control
-                controL_msg_buffer_.insert(controL_msg_buffer_.end(), data->begin(), data->end());
-
-                ProcessControlMessage();
-
-            } else if (!ProcessReceivedData(stream_id, std::move(data))) {
-                i = 59;
-                continue; // Try once more
-            }
+            data = std::make_shared<std::vector<uint8_t>>(view.begin(), view.end());
+            stream->rx_data.Pop(view.size());
         }
+
+        if (is_bidir) {
+            controL_msg_buffer_.insert(controL_msg_buffer_.end(), data->begin(), data->end());
+            ProcessControlMessage();
+        } else {
+            ProcessReceivedData(stream_id, std::move(data));
+        }
+
+        return stream->RxDataSize() > 0;
     }
 
     void PeerSession::OnRecvDgram()
@@ -618,9 +626,9 @@ namespace laps::peering {
 
             SPDLOG_LOGGER_TRACE(LOGGER,
                                 "Received dgram sns_id: {} track_full_name: {} data size: {}",
-                                data_object.sns_id,
-                                data_object.track_full_name_hash,
-                                data_object.data.size());
+                                data_header.sns_id,
+                                data_header.track_full_name_hash,
+                                data->size());
         }
     }
 
@@ -630,10 +638,13 @@ namespace laps::peering {
         metrics_.srtt_us = quic_connection_metrics.srtt_us.avg;
     }
 
-    void PeerSession::OnStreamClosed(std::uint64_t stream_id,
-                                     [[maybe_unused]] std::shared_ptr<quicr::StreamRxContext> rx_context,
-                                     quicr::StreamClosedFlag flag)
+    void PeerSession::OnStreamClosed(const std::shared_ptr<quicr::Stream>& stream, quicr::StreamClosedFlag flag)
     {
+        if (stream == nullptr) {
+            return;
+        }
+
+        const auto stream_id = stream->GetStreamId();
         const auto conn_id = GetSessionId();
 
         if (control_stream_ != nullptr && control_stream_id_.has_value() && *control_stream_id_ == stream_id) {

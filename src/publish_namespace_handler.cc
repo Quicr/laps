@@ -39,18 +39,10 @@ laps::PublishNamespaceHandler::PublishObject(std::uint64_t track_full_name_hash,
 
     if (const auto pub_it = handlers_.find(track_full_name_hash); pub_it != handlers_.end()) {
 
-        auto handler = dynamic_pointer_cast<PublishTrackHandler>(pub_it->second);
-
-        // Use pipeline forwarding now that first object has been sent
-        if (handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
-            return quicr::PublishTrackHandler::PublishObjectStatus::kOk;
-        }
-
         if (object_headers.track_mode.has_value()) {
             pub_it->second->SetDefaultTrackMode(object_headers.track_mode.value());
         }
 
-        // Not using pipeline forwarding, publish complete object
         return pub_it->second->PublishObject(object_headers, data, stream_mode);
     }
 

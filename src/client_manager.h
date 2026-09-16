@@ -7,6 +7,8 @@
 #include "track_ranking.h"
 #include <peering/peer_manager.h>
 #include <quicr/containers/cache.h>
+#include <quicr/containers/stream_buffer.h>
+#include <quicr/messages/messages.h>
 #include <quicr/messages/object.h>
 #include <quicr/session.h>
 #include <quicr/session_callbacks.h>
@@ -16,6 +18,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 
 namespace laps {
@@ -157,6 +160,32 @@ namespace laps {
         friend class peering::PeerManager;
 
       private:
+        struct PeerRxStreamState
+        {
+            quicr::StreamBuffer<uint8_t> buffer;
+            uint64_t group_id{ 0 };
+            uint64_t subgroup_id{ 0 };
+            std::optional<uint64_t> next_object_id;
+            bool header_initialized{ false };
+        };
+
+        struct PeerTxSubgroupState
+        {
+            std::optional<uint64_t> last_object_id;
+            std::optional<quicr::messages::StreamHeaderProperties> properties;
+        };
+
+        void SendObjectToPeers(uint64_t track_alias,
+                               uint8_t priority,
+                               uint32_t ttl,
+                               bool is_datagram,
+                               const quicr::ObjectHeaders& object_headers,
+                               quicr::BytesSpan data,
+                               std::optional<quicr::messages::StreamHeaderProperties> stream_mode);
+
+        void PeerSubgroupEnded(uint64_t track_alias, uint64_t group_id, uint64_t subgroup_id, bool reset);
+
+        void TryParsePeerStream(PeerRxStreamState& stream, SubscribeTrackHandler& handler);
         /**
          * @brief Connection handle of the session that received a request, or zero if it is already gone
          */
@@ -311,6 +340,13 @@ namespace laps {
 
         // Key is track namespace hash
         std::unordered_map<std::uint64_t, std::shared_ptr<TrackRanking>> track_rankings_;
+
+        /// Inbound peer subgroup parse state, keyed by track full name hash and peer stream id
+        std::map<std::pair<std::uint64_t, std::uint64_t>, PeerRxStreamState> peer_rx_streams_;
+
+        /// Outbound peer subgroup serialization state, keyed by track alias, group id, and subgroup id
+        std::map<std::pair<std::uint64_t, std::pair<std::uint64_t, std::uint64_t>>, PeerTxSubgroupState>
+          peer_tx_subgroups_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

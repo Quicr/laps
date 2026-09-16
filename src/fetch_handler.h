@@ -32,12 +32,11 @@ namespace laps {
         }
 
         void StatusChanged(Status status) override;
-        void StreamDataRecv(uint64_t stream_id, quicr::InitialStreamData&& initial_buffer) override;
-        void StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data) override;
+        void ObjectReceived(const quicr::ObjectHeaders& object_headers,
+                            quicr::BytesSpan data,
+                            std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
 
       private:
-        void TryForwardInitialStreamData(uint64_t stream_id, StreamContext& stream);
-
         bool initial_stream_data_forwarded_{ false };
         std::shared_ptr<quicr::PublishFetchHandler> publish_fetch_handler_;
     };

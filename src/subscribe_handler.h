@@ -27,14 +27,10 @@ namespace laps {
 
         ~SubscribeTrackHandler();
 
-        void StreamClosed(std::uint64_t stream_id, bool use_reset) override;
-
-        void StreamDataRecv(uint64_t stream_id, quicr::InitialStreamData&& initial_buffer) override;
-        void StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data) override;
-        void DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data) override;
         void ObjectReceived(const quicr::ObjectHeaders& object_headers,
                             quicr::BytesSpan data,
                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
+        void SubgroupEnded(std::uint64_t group_id, std::uint64_t subgroup_id, bool reset) override;
         void MetricsSampled(const quicr::SubscribeTrackMetrics& metrics) override;
 
         void StatusChanged(Status status) override;
@@ -106,14 +102,6 @@ namespace laps {
         std::size_t SubscriberCount() const { return subscribers_.size(); }
 
       private:
-        void TryProcessStreamData(uint64_t stream_id, StreamContext& stream);
-
-        void ForwardReceivedData(bool is_new_stream,
-                                 uint64_t group_id,
-                                 uint64_t subgroup_id,
-                                 std::shared_ptr<const std::vector<uint8_t>> data,
-                                 bool forward_to_peers = true);
-
         void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                      std::optional<quicr::Extensions> immutable_extensions);
 
@@ -122,10 +110,6 @@ namespace laps {
 
         bool is_datagram_{ false };
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
-
-        // Original receive buffers retained until the subgroup header is complete so they can be forwarded without
-        // copying when the track alias is unchanged.
-        std::map<std::uint64_t, std::vector<std::shared_ptr<const std::vector<uint8_t>>>> pending_source_buffers_;
 
         /**
          * @brief Map of subscribers that have subscribed to this content
