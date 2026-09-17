@@ -6,7 +6,10 @@
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/handlers/subscribe_track_handler.h>
+#include "peering/messages/data_header.h"
+
+#include <quicr/handlers/forwarding_subscribe_track_handler.h>
+#include <quicr/messages/messages.h>
 #include <quicr/session.h>
 
 namespace laps {
@@ -16,12 +19,12 @@ namespace laps {
                                                  ClientManager& server,
                                                  std::weak_ptr<timeq::tick_service> tick_service,
                                                  bool is_publisher_initiated)
-      : quicr::SubscribeTrackHandler(full_track_name,
-                                     priority,
-                                     group_order,
-                                     std::monostate{},
-                                     std::nullopt,
-                                     is_publisher_initiated)
+      : quicr::ForwardingSubscribeTrackHandler(full_track_name,
+                                               priority,
+                                               group_order,
+                                               std::monostate{},
+                                               std::nullopt,
+                                               is_publisher_initiated)
       , server_(server)
       , tick_service_(std::move(tick_service))
     {
@@ -166,6 +169,185 @@ namespace laps {
         }
     }
 
+    void SubscribeTrackHandler::SubgroupStarted(std::uint64_t group_id,
+                                                std::uint64_t subgroup_id,
+                                                std::optional<std::uint8_t> priority,
+                                                quicr::messages::StreamHeaderProperties properties)
+    {
+        is_datagram_ = false;
+
+        if (priority.has_value()) {
+            SetPriority(*priority);
+        }
+
+        auto& stream = forwarded_subgroups_[{ group_id, subgroup_id }];
+        stream.properties.emplace(properties);
+        stream.priority = priority;
+        stream.parse_buffer.InitAnyB<quicr::messages::StreamSubGroupObject>();
+
+        if (!GetTrackAlias().has_value()) {
+            return;
+        }
+
+        quicr::messages::StreamHeaderSubGroup hdr;
+        hdr.properties.emplace(properties);
+        hdr.track_alias = GetTrackAlias().value();
+        hdr.group_id = group_id;
+        if (properties.subgroup_id_mode == quicr::messages::SubgroupIdType::kExplicit) {
+            hdr.subgroup_id = subgroup_id;
+        }
+        if (!properties.default_priority) {
+            hdr.priority = priority;
+        }
+
+        auto header_bytes = std::make_shared<std::vector<uint8_t>>();
+        *header_bytes << hdr;
+
+        if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
+            SetDeliveryTimeout(std::chrono::milliseconds(server_.config_.object_ttl_));
+        }
+
+        const auto ttl = GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count();
+
+        for (const auto& [_, conn_subs] : sub_namespaces_) {
+            for (const auto& [_, handler] : conn_subs) {
+                handler->ForwardPublishedData(*GetTrackAlias(), true, group_id, subgroup_id, header_bytes);
+            }
+        }
+
+        for (auto& [conn_handle, pub_handler] : subscribers_) {
+            if (conn_handle == 0) {
+                if (!is_from_peer_) {
+                    server_.peer_manager_.ClientDataRecv(*GetTrackAlias(),
+                                                         GetPriority(),
+                                                         ttl,
+                                                         peering::DataType::kNewStream,
+                                                         group_id,
+                                                         subgroup_id,
+                                                         header_bytes);
+                }
+                continue;
+            }
+
+            if (pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                pub_handler->ForwardPublishedData(true, group_id, subgroup_id, header_bytes);
+            }
+        }
+    }
+
+    void SubscribeTrackHandler::StreamBytesForwarded(std::uint64_t group_id,
+                                                     std::uint64_t subgroup_id,
+                                                     quicr::Bytes&& data)
+    {
+        StreamBytesForwarded(group_id, subgroup_id, std::make_shared<quicr::Bytes>(std::move(data)));
+    }
+
+    void SubscribeTrackHandler::StreamBytesForwarded(std::uint64_t group_id,
+                                                     std::uint64_t subgroup_id,
+                                                     std::shared_ptr<const std::vector<uint8_t>> bytes)
+    {
+        is_datagram_ = false;
+
+        if (!bytes || bytes->empty()) {
+            return;
+        }
+
+        if (const auto track_alias = GetTrackAlias(); track_alias.has_value()) {
+            const auto ttl = GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count();
+
+            for (const auto& [_, conn_subs] : sub_namespaces_) {
+                for (const auto& [_, handler] : conn_subs) {
+                    handler->ForwardPublishedData(*track_alias, false, group_id, subgroup_id, bytes);
+                }
+            }
+
+            for (auto& [conn_handle, pub_handler] : subscribers_) {
+                if (conn_handle == 0) {
+                    if (!is_from_peer_) {
+                        server_.peer_manager_.ClientDataRecv(*track_alias,
+                                                             GetPriority(),
+                                                             ttl,
+                                                             peering::DataType::kExistingStream,
+                                                             group_id,
+                                                             subgroup_id,
+                                                             bytes);
+                    }
+                    continue;
+                }
+
+                if (pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                    pub_handler->ForwardPublishedData(false, group_id, subgroup_id, bytes);
+                }
+            }
+        }
+
+        auto stream_it = forwarded_subgroups_.find({ group_id, subgroup_id });
+        if (stream_it == forwarded_subgroups_.end() || !stream_it->second.properties.has_value()) {
+            return;
+        }
+
+        auto& stream = stream_it->second;
+        stream.parse_buffer.Push(std::span<const uint8_t>(*bytes));
+
+        while (!stream.parse_buffer.Empty()) {
+            if (!stream.parse_buffer.AnyHasValueB()) {
+                stream.parse_buffer.InitAnyB<quicr::messages::StreamSubGroupObject>();
+            }
+
+            auto& obj = stream.parse_buffer.GetAnyB<quicr::messages::StreamSubGroupObject>();
+            obj.properties.emplace(*stream.properties);
+            if (!(stream.parse_buffer >> obj)) {
+                return;
+            }
+
+            const bool is_first_object = !stream.next_object_id.has_value();
+            stream.next_object_id = is_first_object ? obj.object_delta : *stream.next_object_id + obj.object_delta;
+
+            subscribe_track_metrics_.objects_received++;
+            subscribe_track_metrics_.bytes_received += obj.payload.size();
+
+            std::optional<quicr::messages::StreamHeaderProperties> stream_mode;
+            if (is_first_object) {
+                stream_mode.emplace(*stream.properties);
+            }
+
+            ObjectReceived({ group_id,
+                             *stream.next_object_id,
+                             subgroup_id,
+                             obj.payload.size(),
+                             obj.object_status,
+                             stream.priority,
+                             std::nullopt,
+                             quicr::TrackMode::kStream,
+                             obj.extensions,
+                             obj.immutable_extensions },
+                           obj.payload,
+                           stream_mode);
+
+            *stream.next_object_id += 1;
+            stream.parse_buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+
+            if (is_first_object) {
+                const auto remaining = stream.parse_buffer.Data();
+                if (remaining.empty() || !GetTrackAlias().has_value()) {
+                    continue;
+                }
+
+                auto rest = std::make_shared<std::vector<uint8_t>>(remaining.begin(), remaining.end());
+                for (const auto& [_, conn_subs] : sub_namespaces_) {
+                    for (const auto& [_, handler] : conn_subs) {
+                        handler->ForwardPublishedData(*GetTrackAlias(), false, group_id, subgroup_id, rest);
+                    }
+                }
+                for (auto& [conn_handle, pub_handler] : subscribers_) {
+                    if (conn_handle != 0 && pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                        pub_handler->ForwardPublishedData(false, group_id, subgroup_id, rest);
+                    }
+                }
+            }
+        }
+    }
+
     void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers,
                                                quicr::BytesSpan data,
                                                std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
@@ -207,6 +389,11 @@ namespace laps {
         try {
             for (const auto& [_, conn_subs] : sub_namespaces_) {
                 for (const auto& [_, handler] : conn_subs) {
+                    if (!is_datagram_ &&
+                        handler->SentFirstObject(GetTrackAlias().value(), object_headers.group_id,
+                                                 object_headers.subgroup_id)) {
+                        continue;
+                    }
                     handler->PublishObject(GetTrackAlias().value(), object_headers, data, stream_mode);
                 }
             }
@@ -219,13 +406,18 @@ namespace laps {
                 pub_handler->SetDefaultTrackMode(is_datagram_ ? quicr::TrackMode::kDatagram
                                                               : quicr::TrackMode::kStream);
 
+                if (!is_datagram_ &&
+                    pub_handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
+                    continue;
+                }
+
                 if (object_headers.group_id >= pub_handler->start_location_.group &&
                     object_headers.object_id >= pub_handler->start_location_.object) {
                     pub_handler->PublishObject(object_headers, data, stream_mode);
                 }
             }
 
-            if (!is_from_peer_ && subscribers_.contains(0)) {
+            if (is_datagram_ && !is_from_peer_ && subscribers_.contains(0)) {
                 const auto ttl =
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count();
                 server_.SendObjectToPeers(
@@ -295,6 +487,7 @@ namespace laps {
 
     void SubscribeTrackHandler::SubgroupEnded(std::uint64_t group_id, std::uint64_t subgroup_id, bool reset)
     {
+        forwarded_subgroups_.erase({ group_id, subgroup_id });
         if (!is_from_peer_ && GetTrackAlias().has_value() && subscribers_.contains(0)) {
             server_.PeerSubgroupEnded(GetTrackAlias().value(), group_id, subgroup_id, reset);
         }

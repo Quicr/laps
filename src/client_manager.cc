@@ -1722,13 +1722,18 @@ namespace laps {
         }
 
         auto& stream = peer_rx_streams_[{ track_full_name_hash, *stream_id }];
+        if (stream.started) {
+            it->second->StreamBytesForwarded(stream.group_id, stream.subgroup_id, std::move(data));
+            return;
+        }
+
         if (!stream.header_initialized) {
             stream.buffer.InitAny<quicr::messages::StreamHeaderSubGroup>();
             stream.header_initialized = true;
         }
 
         stream.buffer.Push(std::span<const uint8_t>(*data));
-        TryParsePeerStream(stream, *it->second);
+        TryStartPeerStream(stream, *it->second);
     }
 
     void ClientManager::PeerStreamClosed(std::uint64_t track_full_name_hash, uint64_t stream_id, bool reset)
@@ -1746,64 +1751,30 @@ namespace laps {
         peer_rx_streams_.erase(stream_it);
     }
 
-    void ClientManager::TryParsePeerStream(PeerRxStreamState& stream, SubscribeTrackHandler& handler)
+    void ClientManager::TryStartPeerStream(PeerRxStreamState& stream, SubscribeTrackHandler& handler)
     {
         auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
         if (!(stream.buffer >> s_hdr)) {
             return;
         }
 
-        if (s_hdr.priority.has_value()) {
-            handler.SetPriority(*s_hdr.priority);
-        }
-
-        while (!stream.buffer.Empty()) {
-            if (!stream.buffer.AnyHasValueB()) {
-                stream.buffer.InitAnyB<quicr::messages::StreamSubGroupObject>();
-            }
-
-            auto& obj = stream.buffer.GetAnyB<quicr::messages::StreamSubGroupObject>();
-            obj.properties.emplace(*s_hdr.properties);
-            if (!(stream.buffer >> obj)) {
+        auto subgroup_id = s_hdr.subgroup_id;
+        if (!subgroup_id.has_value()) {
+            subgroup_id = stream.buffer.DecodeUintV(false);
+            if (!subgroup_id.has_value()) {
                 return;
             }
+        }
 
-            handler.subscribe_track_metrics_.objects_received++;
+        stream.group_id = s_hdr.group_id;
+        stream.subgroup_id = *subgroup_id;
+        stream.started = true;
 
-            const bool same_subgroup = stream.next_object_id.has_value() && stream.group_id == s_hdr.group_id &&
-                                       stream.subgroup_id == s_hdr.subgroup_id.value_or(stream.subgroup_id);
-            stream.next_object_id = same_subgroup ? *stream.next_object_id + obj.object_delta : obj.object_delta;
+        handler.SubgroupStarted(s_hdr.group_id, *subgroup_id, s_hdr.priority, *s_hdr.properties);
 
-            if (!s_hdr.subgroup_id.has_value()) {
-                if (obj.properties->subgroup_id_mode != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
-                    throw quicr::messages::ProtocolViolationException("Subgoup ID mismatch");
-                }
-                s_hdr.subgroup_id = stream.next_object_id;
-            }
-
-            stream.group_id = s_hdr.group_id;
-            stream.subgroup_id = *s_hdr.subgroup_id;
-
-            std::optional<quicr::messages::StreamHeaderProperties> stream_mode;
-            if (!same_subgroup && s_hdr.properties.has_value()) {
-                stream_mode.emplace(*s_hdr.properties);
-            }
-
-            handler.ObjectReceived({ s_hdr.group_id,
-                                     *stream.next_object_id,
-                                     *s_hdr.subgroup_id,
-                                     obj.payload.size(),
-                                     obj.object_status,
-                                     s_hdr.priority,
-                                     std::nullopt,
-                                     quicr::TrackMode::kStream,
-                                     obj.extensions,
-                                     obj.immutable_extensions },
-                                   obj.payload,
-                                   stream_mode);
-
-            *stream.next_object_id += 1;
-            stream.buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+        auto remaining = stream.buffer.TakeAll();
+        if (!remaining.empty()) {
+            handler.StreamBytesForwarded(stream.group_id, stream.subgroup_id, std::move(remaining));
         }
     }
 

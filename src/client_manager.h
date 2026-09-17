@@ -165,8 +165,8 @@ namespace laps {
             quicr::StreamBuffer<uint8_t> buffer;
             uint64_t group_id{ 0 };
             uint64_t subgroup_id{ 0 };
-            std::optional<uint64_t> next_object_id;
             bool header_initialized{ false };
+            bool started{ false };
         };
 
         struct PeerTxSubgroupState
@@ -185,7 +185,7 @@ namespace laps {
 
         void PeerSubgroupEnded(uint64_t track_alias, uint64_t group_id, uint64_t subgroup_id, bool reset);
 
-        void TryParsePeerStream(PeerRxStreamState& stream, SubscribeTrackHandler& handler);
+        void TryStartPeerStream(PeerRxStreamState& stream, SubscribeTrackHandler& handler);
         /**
          * @brief Connection handle of the session that received a request, or zero if it is already gone
          */

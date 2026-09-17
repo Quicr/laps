@@ -43,6 +43,8 @@ namespace laps {
           uint64_t subgroup_id,
           std::shared_ptr<const std::vector<uint8_t>> data) override;
 
+        bool SentFirstObject(std::uint64_t track_full_name_hash, uint64_t group_id, uint64_t subgroup_id) const;
+
         void PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler) override;
 
         static auto Create(const quicr::TrackNamespace& prefix, std::weak_ptr<timeq::tick_service> tick_service)

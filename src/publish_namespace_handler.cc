@@ -75,6 +75,20 @@ laps::PublishNamespaceHandler::ForwardPublishedData(std::uint64_t track_full_nam
     return quicr::PublishTrackHandler::PublishObjectStatus::kOk;
 }
 
+bool
+laps::PublishNamespaceHandler::SentFirstObject(std::uint64_t track_full_name_hash,
+                                               uint64_t group_id,
+                                               uint64_t subgroup_id) const
+{
+    const auto pub_it = handlers_.find(track_full_name_hash);
+    if (pub_it == handlers_.end()) {
+        return false;
+    }
+
+    const auto handler = std::dynamic_pointer_cast<PublishTrackHandler>(pub_it->second);
+    return handler && handler->SentFirstObject(group_id, subgroup_id);
+}
+
 void
 laps::PublishNamespaceHandler::UpdateTrackRanking(
   std::span<const std::tuple<std::uint64_t, uint64_t, uint64_t, uint64_t>> ordered_tracks)

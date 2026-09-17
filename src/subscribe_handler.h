@@ -3,7 +3,9 @@
 #include "client_manager.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/handlers/subscribe_track_handler.h>
+#include <quicr/containers/stream_buffer.h>
+#include <quicr/handlers/forwarding_subscribe_track_handler.h>
+#include <quicr/messages/messages.h>
 #include <quicr/messages/object.h>
 
 #include <map>
@@ -13,7 +15,7 @@ namespace laps {
      * @brief  Subscribe track handler
      * @details Subscribe track handler used for the subscribe command line option.
      */
-    class SubscribeTrackHandler : public quicr::SubscribeTrackHandler
+    class SubscribeTrackHandler : public quicr::ForwardingSubscribeTrackHandler
     {
       public:
         static constexpr uint64_t kRefreshRankingIntervalMs = 120;
@@ -27,6 +29,14 @@ namespace laps {
 
         ~SubscribeTrackHandler();
 
+        void SubgroupStarted(std::uint64_t group_id,
+                             std::uint64_t subgroup_id,
+                             std::optional<std::uint8_t> priority,
+                             quicr::messages::StreamHeaderProperties properties) override;
+        void StreamBytesForwarded(std::uint64_t group_id, std::uint64_t subgroup_id, quicr::Bytes&& data) override;
+        void StreamBytesForwarded(std::uint64_t group_id,
+                                  std::uint64_t subgroup_id,
+                                  std::shared_ptr<const std::vector<uint8_t>> data);
         void ObjectReceived(const quicr::ObjectHeaders& object_headers,
                             quicr::BytesSpan data,
                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
@@ -102,6 +112,14 @@ namespace laps {
         std::size_t SubscriberCount() const { return subscribers_.size(); }
 
       private:
+        struct ForwardedSubgroup
+        {
+            std::optional<quicr::messages::StreamHeaderProperties> properties;
+            std::optional<std::uint8_t> priority;
+            quicr::StreamBuffer<uint8_t> parse_buffer;
+            std::optional<uint64_t> next_object_id;
+        };
+
         void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                      std::optional<quicr::Extensions> immutable_extensions);
 
@@ -130,6 +148,8 @@ namespace laps {
          * @details
          */
         std::map<uint64_t, PublishNamespaceHandler::TrackPropertyValue> tracked_properties_value_;
+
+        std::map<std::pair<uint64_t, uint64_t>, ForwardedSubgroup> forwarded_subgroups_;
 
         std::weak_ptr<TrackRanking> track_ranking_;
     };
