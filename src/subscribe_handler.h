@@ -3,7 +3,9 @@
 #include "client_manager.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/handlers/subscribe_track_handler.h>
+#include <quicr/containers/stream_buffer.h>
+#include <quicr/handlers/forwarding_subscribe_track_handler.h>
+#include <quicr/messages/messages.h>
 #include <quicr/messages/object.h>
 
 #include <map>
@@ -13,7 +15,7 @@ namespace laps {
      * @brief  Subscribe track handler
      * @details Subscribe track handler used for the subscribe command line option.
      */
-    class SubscribeTrackHandler : public quicr::SubscribeTrackHandler
+    class SubscribeTrackHandler : public quicr::ForwardingSubscribeTrackHandler
     {
       public:
         static constexpr uint64_t kRefreshRankingIntervalMs = 120;
@@ -27,14 +29,18 @@ namespace laps {
 
         ~SubscribeTrackHandler();
 
-        void StreamClosed(std::uint64_t stream_id, bool use_reset) override;
-
-        void StreamDataRecv(uint64_t stream_id, quicr::InitialStreamData&& initial_buffer) override;
-        void StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data) override;
-        void DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data) override;
+        void SubgroupStarted(std::uint64_t group_id,
+                             std::uint64_t subgroup_id,
+                             std::optional<std::uint8_t> priority,
+                             quicr::messages::StreamHeaderProperties properties) override;
+        void StreamBytesForwarded(std::uint64_t group_id, std::uint64_t subgroup_id, quicr::Bytes&& data) override;
+        void StreamBytesForwarded(std::uint64_t group_id,
+                                  std::uint64_t subgroup_id,
+                                  std::shared_ptr<const std::vector<uint8_t>> data);
         void ObjectReceived(const quicr::ObjectHeaders& object_headers,
                             quicr::BytesSpan data,
                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
+        void SubgroupEnded(std::uint64_t group_id, std::uint64_t subgroup_id, bool reset) override;
         void MetricsSampled(const quicr::SubscribeTrackMetrics& metrics) override;
 
         void StatusChanged(Status status) override;
@@ -106,13 +112,13 @@ namespace laps {
         std::size_t SubscriberCount() const { return subscribers_.size(); }
 
       private:
-        void TryProcessStreamData(uint64_t stream_id, StreamContext& stream);
-
-        void ForwardReceivedData(bool is_new_stream,
-                                 uint64_t group_id,
-                                 uint64_t subgroup_id,
-                                 std::shared_ptr<const std::vector<uint8_t>> data,
-                                 bool forward_to_peers = true);
+        struct ForwardedSubgroup
+        {
+            std::optional<quicr::messages::StreamHeaderProperties> properties;
+            std::optional<std::uint8_t> priority;
+            quicr::StreamBuffer<uint8_t> parse_buffer;
+            std::optional<uint64_t> next_object_id;
+        };
 
         void UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
                                      std::optional<quicr::Extensions> immutable_extensions);
@@ -122,10 +128,6 @@ namespace laps {
 
         bool is_datagram_{ false };
         bool is_from_peer_{ false }; // Indicates that the subscribe handler was created by peer manager for recv data
-
-        // Original receive buffers retained until the subgroup header is complete so they can be forwarded without
-        // copying when the track alias is unchanged.
-        std::map<std::uint64_t, std::vector<std::shared_ptr<const std::vector<uint8_t>>>> pending_source_buffers_;
 
         /**
          * @brief Map of subscribers that have subscribed to this content
@@ -146,6 +148,8 @@ namespace laps {
          * @details
          */
         std::map<uint64_t, PublishNamespaceHandler::TrackPropertyValue> tracked_properties_value_;
+
+        std::map<std::pair<uint64_t, uint64_t>, ForwardedSubgroup> forwarded_subgroups_;
 
         std::weak_ptr<TrackRanking> track_ranking_;
     };

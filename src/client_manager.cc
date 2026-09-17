@@ -14,7 +14,10 @@
 #include "subscribe_handler.h"
 #include "transport_helpers.h"
 
+#include "peering/messages/data_header.h"
+
 #include <ranges>
+#include <span>
 
 namespace laps {
     ClientManager::ClientManager(State& state,
@@ -1705,32 +1708,157 @@ namespace laps {
                                          std::shared_ptr<const std::vector<uint8_t>> data)
     {
         const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
-        if (it == state_.pub_subscribes.end()) {
+        if (it == state_.pub_subscribes.end() || !it->second) {
             return;
         }
 
-        if (stream_id.has_value()) {
-            if (is_new_stream) {
-                quicr::InitialStreamData initial_buffer;
-                initial_buffer.buffer.Push(*data);
-                initial_buffer.source_buffers.push_back(std::move(data));
-                it->second->StreamDataRecv(*stream_id, std::move(initial_buffer));
-            } else {
-                it->second->StreamDataRecv(*stream_id, std::move(data));
-            }
-        } else {
+        if (!stream_id.has_value()) {
             it->second->DgramDataRecv(std::move(data));
+            return;
         }
+
+        if (is_new_stream) {
+            peer_rx_streams_.erase({ track_full_name_hash, *stream_id });
+        }
+
+        auto& stream = peer_rx_streams_[{ track_full_name_hash, *stream_id }];
+        if (stream.started) {
+            it->second->StreamBytesForwarded(stream.group_id, stream.subgroup_id, std::move(data));
+            return;
+        }
+
+        if (!stream.header_initialized) {
+            stream.buffer.InitAny<quicr::messages::StreamHeaderSubGroup>();
+            stream.header_initialized = true;
+        }
+
+        stream.buffer.Push(std::span<const uint8_t>(*data));
+        TryStartPeerStream(stream, *it->second);
     }
 
     void ClientManager::PeerStreamClosed(std::uint64_t track_full_name_hash, uint64_t stream_id, bool reset)
     {
         const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
-        if (it == state_.pub_subscribes.end()) {
+        const auto stream_it = peer_rx_streams_.find({ track_full_name_hash, stream_id });
+        if (stream_it == peer_rx_streams_.end()) {
             return;
         }
 
-        it->second->StreamClosed(stream_id, reset);
+        if (it != state_.pub_subscribes.end() && it->second) {
+            it->second->SubgroupEnded(stream_it->second.group_id, stream_it->second.subgroup_id, reset);
+        }
+
+        peer_rx_streams_.erase(stream_it);
+    }
+
+    void ClientManager::TryStartPeerStream(PeerRxStreamState& stream, SubscribeTrackHandler& handler)
+    {
+        auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
+        if (!(stream.buffer >> s_hdr)) {
+            return;
+        }
+
+        auto subgroup_id = s_hdr.subgroup_id;
+        if (!subgroup_id.has_value()) {
+            subgroup_id = stream.buffer.DecodeUintV(false);
+            if (!subgroup_id.has_value()) {
+                return;
+            }
+        }
+
+        stream.group_id = s_hdr.group_id;
+        stream.subgroup_id = *subgroup_id;
+        stream.started = true;
+
+        handler.SubgroupStarted(s_hdr.group_id, *subgroup_id, s_hdr.priority, *s_hdr.properties);
+
+        auto remaining = stream.buffer.TakeAll();
+        if (!remaining.empty()) {
+            handler.StreamBytesForwarded(stream.group_id, stream.subgroup_id, std::move(remaining));
+        }
+    }
+
+    void ClientManager::SendObjectToPeers(uint64_t track_alias,
+                                          uint8_t priority,
+                                          uint32_t ttl,
+                                          bool is_datagram,
+                                          const quicr::ObjectHeaders& object_headers,
+                                          quicr::BytesSpan data,
+                                          std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
+    {
+        auto bytes = std::make_shared<std::vector<uint8_t>>();
+        peering::DataType d_type = peering::DataType::kDatagram;
+
+        if (is_datagram) {
+            quicr::messages::ObjectDatagram msg;
+            msg.group_id = object_headers.group_id;
+            msg.object_id = object_headers.object_id;
+            msg.priority = object_headers.priority.value_or(priority);
+            msg.track_alias = track_alias;
+            msg.extensions = object_headers.extensions;
+            msg.immutable_extensions = object_headers.immutable_extensions;
+            msg.payload.assign(data.begin(), data.end());
+            *bytes << msg;
+        } else {
+            auto& tx = peer_tx_subgroups_[{ track_alias, { object_headers.group_id, object_headers.subgroup_id } }];
+            const bool is_new_stream = !tx.last_object_id.has_value();
+            d_type = is_new_stream ? peering::DataType::kNewStream : peering::DataType::kExistingStream;
+
+            if (stream_mode.has_value()) {
+                tx.properties.emplace(*stream_mode);
+            }
+
+            const auto properties = tx.properties.value_or(
+              stream_mode.value_or(quicr::messages::StreamHeaderProperties(false,
+                                                                           quicr::messages::SubgroupIdType::kExplicit,
+                                                                           false,
+                                                                           false,
+                                                                           true)));
+
+            uint64_t object_id_delta = object_headers.object_id;
+            if (tx.last_object_id.has_value()) {
+                object_id_delta = object_headers.object_id >= *tx.last_object_id
+                                    ? object_headers.object_id - *tx.last_object_id
+                                    : object_headers.object_id;
+                if (object_id_delta) {
+                    object_id_delta--;
+                }
+            }
+
+            if (is_new_stream) {
+                quicr::messages::StreamHeaderSubGroup subgroup_hdr;
+                subgroup_hdr.properties.emplace(properties);
+                subgroup_hdr.group_id = object_headers.group_id;
+                if (properties.subgroup_id_mode == quicr::messages::SubgroupIdType::kExplicit) {
+                    subgroup_hdr.subgroup_id = object_headers.subgroup_id;
+                }
+                if (!properties.default_priority) {
+                    subgroup_hdr.priority = object_headers.priority.value_or(priority);
+                }
+                subgroup_hdr.track_alias = track_alias;
+                *bytes << subgroup_hdr;
+            }
+
+            quicr::messages::StreamSubGroupObject object;
+            object.object_delta = object_id_delta;
+            object.object_status = object_headers.status;
+            object.properties.emplace(properties);
+            object.extensions = object_headers.extensions;
+            object.immutable_extensions = object_headers.immutable_extensions;
+            object.payload.assign(data.begin(), data.end());
+            *bytes << object;
+
+            tx.last_object_id = object_headers.object_id;
+        }
+
+        peer_manager_.ClientDataRecv(
+          track_alias, priority, ttl, d_type, object_headers.group_id, object_headers.subgroup_id, std::move(bytes));
+    }
+
+    void ClientManager::PeerSubgroupEnded(uint64_t track_alias, uint64_t group_id, uint64_t subgroup_id, bool reset)
+    {
+        peer_tx_subgroups_.erase({ track_alias, { group_id, subgroup_id } });
+        peer_manager_.EndSubgroup(track_alias, group_id, subgroup_id, reset);
     }
 
     void ClientManager::MetricsSampled(const std::shared_ptr<quicr::Session>& session,

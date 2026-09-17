@@ -6,7 +6,10 @@
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 
-#include <quicr/handlers/subscribe_track_handler.h>
+#include "peering/messages/data_header.h"
+
+#include <quicr/handlers/forwarding_subscribe_track_handler.h>
+#include <quicr/messages/messages.h>
 #include <quicr/session.h>
 
 namespace laps {
@@ -16,12 +19,12 @@ namespace laps {
                                                  ClientManager& server,
                                                  std::weak_ptr<timeq::tick_service> tick_service,
                                                  bool is_publisher_initiated)
-      : quicr::SubscribeTrackHandler(full_track_name,
-                                     priority,
-                                     group_order,
-                                     std::monostate{},
-                                     std::nullopt,
-                                     is_publisher_initiated)
+      : quicr::ForwardingSubscribeTrackHandler(full_track_name,
+                                               priority,
+                                               group_order,
+                                               std::monostate{},
+                                               std::nullopt,
+                                               is_publisher_initiated)
       , server_(server)
       , tick_service_(std::move(tick_service))
     {
@@ -166,6 +169,185 @@ namespace laps {
         }
     }
 
+    void SubscribeTrackHandler::SubgroupStarted(std::uint64_t group_id,
+                                                std::uint64_t subgroup_id,
+                                                std::optional<std::uint8_t> priority,
+                                                quicr::messages::StreamHeaderProperties properties)
+    {
+        is_datagram_ = false;
+
+        if (priority.has_value()) {
+            SetPriority(*priority);
+        }
+
+        auto& stream = forwarded_subgroups_[{ group_id, subgroup_id }];
+        stream.properties.emplace(properties);
+        stream.priority = priority;
+        stream.parse_buffer.InitAnyB<quicr::messages::StreamSubGroupObject>();
+
+        if (!GetTrackAlias().has_value()) {
+            return;
+        }
+
+        quicr::messages::StreamHeaderSubGroup hdr;
+        hdr.properties.emplace(properties);
+        hdr.track_alias = GetTrackAlias().value();
+        hdr.group_id = group_id;
+        if (properties.subgroup_id_mode == quicr::messages::SubgroupIdType::kExplicit) {
+            hdr.subgroup_id = subgroup_id;
+        }
+        if (!properties.default_priority) {
+            hdr.priority = priority;
+        }
+
+        auto header_bytes = std::make_shared<std::vector<uint8_t>>();
+        *header_bytes << hdr;
+
+        if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
+            SetDeliveryTimeout(std::chrono::milliseconds(server_.config_.object_ttl_));
+        }
+
+        const auto ttl = GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count();
+
+        for (const auto& [_, conn_subs] : sub_namespaces_) {
+            for (const auto& [_, handler] : conn_subs) {
+                handler->ForwardPublishedData(*GetTrackAlias(), true, group_id, subgroup_id, header_bytes);
+            }
+        }
+
+        for (auto& [conn_handle, pub_handler] : subscribers_) {
+            if (conn_handle == 0) {
+                if (!is_from_peer_) {
+                    server_.peer_manager_.ClientDataRecv(*GetTrackAlias(),
+                                                         GetPriority(),
+                                                         ttl,
+                                                         peering::DataType::kNewStream,
+                                                         group_id,
+                                                         subgroup_id,
+                                                         header_bytes);
+                }
+                continue;
+            }
+
+            if (pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                pub_handler->ForwardPublishedData(true, group_id, subgroup_id, header_bytes);
+            }
+        }
+    }
+
+    void SubscribeTrackHandler::StreamBytesForwarded(std::uint64_t group_id,
+                                                     std::uint64_t subgroup_id,
+                                                     quicr::Bytes&& data)
+    {
+        StreamBytesForwarded(group_id, subgroup_id, std::make_shared<quicr::Bytes>(std::move(data)));
+    }
+
+    void SubscribeTrackHandler::StreamBytesForwarded(std::uint64_t group_id,
+                                                     std::uint64_t subgroup_id,
+                                                     std::shared_ptr<const std::vector<uint8_t>> bytes)
+    {
+        is_datagram_ = false;
+
+        if (!bytes || bytes->empty()) {
+            return;
+        }
+
+        if (const auto track_alias = GetTrackAlias(); track_alias.has_value()) {
+            const auto ttl = GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count();
+
+            for (const auto& [_, conn_subs] : sub_namespaces_) {
+                for (const auto& [_, handler] : conn_subs) {
+                    handler->ForwardPublishedData(*track_alias, false, group_id, subgroup_id, bytes);
+                }
+            }
+
+            for (auto& [conn_handle, pub_handler] : subscribers_) {
+                if (conn_handle == 0) {
+                    if (!is_from_peer_) {
+                        server_.peer_manager_.ClientDataRecv(*track_alias,
+                                                             GetPriority(),
+                                                             ttl,
+                                                             peering::DataType::kExistingStream,
+                                                             group_id,
+                                                             subgroup_id,
+                                                             bytes);
+                    }
+                    continue;
+                }
+
+                if (pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                    pub_handler->ForwardPublishedData(false, group_id, subgroup_id, bytes);
+                }
+            }
+        }
+
+        auto stream_it = forwarded_subgroups_.find({ group_id, subgroup_id });
+        if (stream_it == forwarded_subgroups_.end() || !stream_it->second.properties.has_value()) {
+            return;
+        }
+
+        auto& stream = stream_it->second;
+        stream.parse_buffer.Push(std::span<const uint8_t>(*bytes));
+
+        while (!stream.parse_buffer.Empty()) {
+            if (!stream.parse_buffer.AnyHasValueB()) {
+                stream.parse_buffer.InitAnyB<quicr::messages::StreamSubGroupObject>();
+            }
+
+            auto& obj = stream.parse_buffer.GetAnyB<quicr::messages::StreamSubGroupObject>();
+            obj.properties.emplace(*stream.properties);
+            if (!(stream.parse_buffer >> obj)) {
+                return;
+            }
+
+            const bool is_first_object = !stream.next_object_id.has_value();
+            stream.next_object_id = is_first_object ? obj.object_delta : *stream.next_object_id + obj.object_delta;
+
+            subscribe_track_metrics_.objects_received++;
+            subscribe_track_metrics_.bytes_received += obj.payload.size();
+
+            std::optional<quicr::messages::StreamHeaderProperties> stream_mode;
+            if (is_first_object) {
+                stream_mode.emplace(*stream.properties);
+            }
+
+            ObjectReceived({ group_id,
+                             *stream.next_object_id,
+                             subgroup_id,
+                             obj.payload.size(),
+                             obj.object_status,
+                             stream.priority,
+                             std::nullopt,
+                             quicr::TrackMode::kStream,
+                             obj.extensions,
+                             obj.immutable_extensions },
+                           obj.payload,
+                           stream_mode);
+
+            *stream.next_object_id += 1;
+            stream.parse_buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
+
+            if (is_first_object) {
+                const auto remaining = stream.parse_buffer.Data();
+                if (remaining.empty() || !GetTrackAlias().has_value()) {
+                    continue;
+                }
+
+                auto rest = std::make_shared<std::vector<uint8_t>>(remaining.begin(), remaining.end());
+                for (const auto& [_, conn_subs] : sub_namespaces_) {
+                    for (const auto& [_, handler] : conn_subs) {
+                        handler->ForwardPublishedData(*GetTrackAlias(), false, group_id, subgroup_id, rest);
+                    }
+                }
+                for (auto& [conn_handle, pub_handler] : subscribers_) {
+                    if (conn_handle != 0 && pub_handler->SentFirstObject(group_id, subgroup_id)) {
+                        pub_handler->ForwardPublishedData(false, group_id, subgroup_id, rest);
+                    }
+                }
+            }
+        }
+    }
+
     void SubscribeTrackHandler::ObjectReceived(const quicr::ObjectHeaders& object_headers,
                                                quicr::BytesSpan data,
                                                std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
@@ -174,9 +356,10 @@ namespace laps {
             is_datagram_ = *object_headers.track_mode == quicr::TrackMode::kDatagram;
         }
 
-        auto self_connection_handle = GetConnectionId();
+        if (!GetTrackAlias().has_value()) {
+            return;
+        }
 
-        // Update tracked properties
         UpdateTrackedProperties(object_headers.extensions, object_headers.immutable_extensions);
 
         if (pending_new_group_request_id_.has_value() &&
@@ -186,8 +369,7 @@ namespace laps {
 
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
-        // Cache Object
-        if (!server_.config_.disable_cache) {
+        if (!server_.config_.disable_cache && GetTrackAlias().has_value()) {
             if (server_.cache_.count(GetTrackAlias().value()) == 0) {
                 server_.cache_.insert(
                   std::make_pair(GetTrackAlias().value(),
@@ -205,272 +387,44 @@ namespace laps {
         }
 
         try {
-            // Fanout object to subscribe namespaces
-            for (const auto [_, conn_subs] : sub_namespaces_) {
+            for (const auto& [_, conn_subs] : sub_namespaces_) {
                 for (const auto& [_, handler] : conn_subs) {
+                    if (!is_datagram_ &&
+                        handler->SentFirstObject(GetTrackAlias().value(), object_headers.group_id,
+                                                 object_headers.subgroup_id)) {
+                        continue;
+                    }
                     handler->PublishObject(GetTrackAlias().value(), object_headers, data, stream_mode);
                 }
             }
 
-            // Fanout object to subscribers
             for (auto& [conn_handle, pub_handler] : subscribers_) {
-                if (conn_handle == 0 || (!is_datagram_ && pub_handler->SentFirstObject(object_headers.group_id,
-                                                                                       object_headers.subgroup_id))) {
+                if (conn_handle == 0) {
                     continue;
                 }
 
                 pub_handler->SetDefaultTrackMode(is_datagram_ ? quicr::TrackMode::kDatagram
                                                               : quicr::TrackMode::kStream);
 
-                if (object.headers.group_id >= pub_handler->start_location_.group &&
-                    object.headers.object_id >= pub_handler->start_location_.object) {
+                if (!is_datagram_ &&
+                    pub_handler->SentFirstObject(object_headers.group_id, object_headers.subgroup_id)) {
+                    continue;
+                }
+
+                if (object_headers.group_id >= pub_handler->start_location_.group &&
+                    object_headers.object_id >= pub_handler->start_location_.object) {
                     pub_handler->PublishObject(object_headers, data, stream_mode);
                 }
             }
+
+            if (is_datagram_ && !is_from_peer_ && subscribers_.contains(0)) {
+                const auto ttl =
+                  GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count();
+                server_.SendObjectToPeers(
+                  GetTrackAlias().value(), GetPriority(), ttl, is_datagram_, object_headers, data, stream_mode);
+            }
         } catch (const std::exception& e) {
             SPDLOG_ERROR("Caught exception trying to publish. (error={})", e.what());
-        }
-    }
-
-    void SubscribeTrackHandler::StreamDataRecv(uint64_t stream_id, quicr::InitialStreamData&& initial_buffer)
-    {
-        is_datagram_ = false;
-
-        auto [stream_it, inserted] =
-          streams_.try_emplace(stream_id, StreamContext{ .buffer = std::move(initial_buffer.buffer) });
-        if (!inserted) {
-            SPDLOG_ERROR("StreamDataRecv got new stream for existing Stream ID {}", stream_id);
-            return;
-        }
-
-        stream_it->second.buffer.InitAny<quicr::messages::StreamHeaderSubGroup>();
-        pending_source_buffers_.emplace(stream_id, std::move(initial_buffer.source_buffers));
-        TryProcessStreamData(stream_id, stream_it->second);
-    }
-
-    void SubscribeTrackHandler::StreamDataRecv(uint64_t stream_id, std::shared_ptr<const std::vector<uint8_t>> data)
-    {
-        is_datagram_ = false;
-
-        const auto stream_it = streams_.find(stream_id);
-        if (stream_it == streams_.end()) {
-            SPDLOG_ERROR("StreamDataRecv had no stream for expected Stream ID {}", stream_id);
-            return;
-        }
-
-        stream_it->second.buffer.Push(*data);
-
-        const auto pending_it = pending_source_buffers_.find(stream_id);
-        if (pending_it != pending_source_buffers_.end()) {
-            pending_it->second.push_back(std::move(data));
-        } else {
-            ForwardReceivedData(
-              false, stream_it->second.current_group_id, stream_it->second.current_subgroup_id, std::move(data));
-        }
-
-        TryProcessStreamData(stream_id, stream_it->second);
-    }
-
-    void SubscribeTrackHandler::TryProcessStreamData(uint64_t stream_id, StreamContext& stream)
-    {
-        auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
-        const auto pending_it = pending_source_buffers_.find(stream_id);
-        if (pending_it != pending_source_buffers_.end()) {
-            if (not(stream.buffer >> s_hdr)) {
-                SPDLOG_DEBUG("Not enough data to process new stream headers yet");
-                return;
-            }
-
-            if (s_hdr.priority.has_value()) {
-                SetPriority(*s_hdr.priority);
-            }
-
-            // Adapt publisher track alias to normalized track alias used by subscribers.
-            if (GetReceivedTrackAlias().value_or(0) != GetTrackAlias().value() || pending_it->second.empty()) {
-                s_hdr.track_alias = GetTrackAlias().value();
-
-                auto updated_data = std::make_shared<std::vector<uint8_t>>();
-                *updated_data << s_hdr;
-
-                const auto remaining_data = stream.buffer.Data();
-                updated_data->insert(updated_data->end(), remaining_data.begin(), remaining_data.end());
-
-                ForwardReceivedData(true, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), std::move(updated_data));
-            } else {
-                bool is_start = true;
-                for (auto& source_buffer : pending_it->second) {
-                    ForwardReceivedData(
-                      is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), std::move(source_buffer));
-                    is_start = false;
-                }
-            }
-
-            stream.current_group_id = s_hdr.group_id;
-            stream.current_subgroup_id = s_hdr.subgroup_id.value_or(0);
-            pending_source_buffers_.erase(pending_it);
-        }
-
-        while (not stream.buffer.Empty()) {
-            if (not stream.buffer.AnyHasValueB()) {
-                stream.buffer.InitAnyB<quicr::messages::StreamSubGroupObject>();
-            }
-
-            auto& obj = stream.buffer.GetAnyB<quicr::messages::StreamSubGroupObject>();
-            obj.properties.emplace(*s_hdr.properties);
-            if (not(stream.buffer >> obj)) {
-                return;
-            }
-
-            subscribe_track_metrics_.objects_received++;
-            const bool is_first_object = not stream.next_object_id.has_value();
-
-            if (stream.next_object_id.has_value()) {
-                if (stream.current_group_id != s_hdr.group_id || stream.current_subgroup_id != s_hdr.subgroup_id) {
-                    stream.next_object_id = obj.object_delta;
-                } else {
-                    *stream.next_object_id += obj.object_delta;
-                }
-            } else {
-                stream.next_object_id = obj.object_delta;
-            }
-
-            if (!s_hdr.subgroup_id.has_value()) {
-                if (obj.properties->subgroup_id_mode != quicr::messages::SubgroupIdType::kSetFromFirstObject) {
-                    throw quicr::messages::ProtocolViolationException("Subgoup ID mismatch");
-                }
-                // Set the subgroup ID from the first object ID.
-                s_hdr.subgroup_id = stream.next_object_id;
-            }
-
-            stream.current_group_id = s_hdr.group_id;
-            stream.current_subgroup_id = s_hdr.subgroup_id.value();
-
-            ObjectReceived({ s_hdr.group_id,
-                             stream.next_object_id.value(),
-                             s_hdr.subgroup_id.value(),
-                             obj.payload.size(),
-                             obj.object_status,
-                             s_hdr.priority,
-                             std::nullopt,
-                             quicr::TrackMode::kStream,
-                             obj.extensions,
-                             obj.immutable_extensions },
-                           obj.payload,
-                           s_hdr.properties);
-
-            *stream.next_object_id += 1;
-            stream.buffer.ResetAnyB<quicr::messages::StreamSubGroupObject>();
-
-            if (is_first_object) {
-                const auto remaining_data = stream.buffer.Data();
-                if (!remaining_data.empty()) {
-                    SPDLOG_DEBUG("Bytes remaining being forwarded: {}", stream.buffer.Size());
-                    ForwardReceivedData(
-                      false,
-                      s_hdr.group_id,
-                      s_hdr.subgroup_id.value_or(0),
-                      std::make_shared<std::vector<uint8_t>>(remaining_data.begin(), remaining_data.end()),
-                      false);
-                }
-            }
-        }
-    }
-
-    void SubscribeTrackHandler::DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data)
-    {
-        is_datagram_ = true;
-
-        dgram_buffer_.Clear();
-        dgram_buffer_.Push(*data);
-
-        quicr::messages::ObjectDatagram msg;
-        if (dgram_buffer_ >> msg) {
-            if (subscribers_.contains(0)) { // Is peering subscribed
-                server_.peer_manager_.ClientDataRecv(
-                  msg.track_alias,
-                  GetPriority(),
-                  GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
-                  peering::DataType::kDatagram,
-                  msg.group_id,
-                  0,
-                  data);
-            }
-
-            subscribe_track_metrics_.objects_received++;
-            subscribe_track_metrics_.bytes_received += msg.payload.size();
-            ObjectReceived(
-              {
-                msg.group_id,
-                msg.object_id,
-                0, // datagrams don't have subgroups
-                msg.payload.size(),
-                quicr::ObjectStatus::kAvailable,
-                msg.priority,
-                std::nullopt,
-                quicr::TrackMode::kDatagram,
-                msg.extensions,
-              },
-              msg.payload);
-        }
-    }
-
-    void SubscribeTrackHandler::ForwardReceivedData(bool is_new_stream,
-                                                    uint64_t group_id,
-                                                    uint64_t subgroup_id,
-                                                    std::shared_ptr<const std::vector<uint8_t>> data,
-                                                    bool forward_to_peers)
-    {
-        auto self_connection_handle = GetConnectionId();
-
-        auto track_alias = GetTrackAlias();
-        if (!track_alias.has_value()) {
-            SPDLOG_DEBUG("Data without valid track alias");
-            return;
-        }
-
-        peering::DataType d_type;
-
-        if (is_datagram_) {
-            d_type = peering::DataType::kDatagram;
-        } else {
-            d_type = peering::DataType::kExistingStream;
-
-            if (is_new_stream) {
-                d_type = peering::DataType::kNewStream;
-
-                if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
-                    // Use default if delivery timeout is not set
-                    SetDeliveryTimeout(std::chrono::milliseconds(server_.config_.object_ttl_));
-                }
-            }
-        }
-
-        // Fanout object to subscribe namespaces
-        for (const auto [_, conn_subs] : sub_namespaces_) {
-            for (const auto& [_, handler] : conn_subs) {
-                handler->ForwardPublishedData(GetTrackAlias().value(), is_new_stream, group_id, subgroup_id, data);
-            }
-        }
-
-        // Fanout object to subscribers
-        for (auto& [conn_handle, pub_handler] : subscribers_) {
-            if (conn_handle == 0) { // from peer
-                if (forward_to_peers) {
-                    server_.peer_manager_.ClientDataRecv(
-                      *track_alias,
-                      GetPriority(),
-                      GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
-                      d_type,
-                      group_id,
-                      subgroup_id,
-                      data);
-                }
-                continue;
-            }
-
-            if (pub_handler->SentFirstObject(group_id, subgroup_id)) {
-                pub_handler->ForwardPublishedData(is_new_stream, group_id, subgroup_id, data);
-            }
         }
     }
 
@@ -531,38 +485,26 @@ namespace laps {
         }
     }
 
-    void SubscribeTrackHandler::StreamClosed(std::uint64_t stream_id, bool use_reset)
+    void SubscribeTrackHandler::SubgroupEnded(std::uint64_t group_id, std::uint64_t subgroup_id, bool reset)
     {
-        pending_source_buffers_.erase(stream_id);
-
-        auto stream_it = streams_.find(stream_id);
-        if (stream_it == streams_.end()) {
-            return;
+        forwarded_subgroups_.erase({ group_id, subgroup_id });
+        if (!is_from_peer_ && GetTrackAlias().has_value() && subscribers_.contains(0)) {
+            server_.PeerSubgroupEnded(GetTrackAlias().value(), group_id, subgroup_id, reset);
         }
 
         for (auto& [conn_handle, pub_handler] : subscribers_) {
             if (conn_handle == 0) {
-                // Notify peering manager
-                if (GetTrackAlias().has_value()) {
-                    server_.peer_manager_.EndSubgroup(GetTrackAlias().value(),
-                                                      stream_it->second.current_group_id,
-                                                      stream_it->second.current_subgroup_id,
-                                                      use_reset);
-                }
-            } else {
-                pub_handler->EndSubgroup(
-                  stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
+                continue;
             }
+
+            pub_handler->EndSubgroup(group_id, subgroup_id, !reset);
         }
 
-        for (const auto [_, conn_subs] : sub_namespaces_) {
+        for (const auto& [_, conn_subs] : sub_namespaces_) {
             for (const auto& [_, handler] : conn_subs) {
-                handler->EndSubgroup(
-                  stream_it->second.current_group_id, stream_it->second.current_subgroup_id, !use_reset);
+                handler->EndSubgroup(group_id, subgroup_id, !reset);
             }
         }
-
-        streams_.erase(stream_it);
     }
 
     void SubscribeTrackHandler::SetFromPeer()

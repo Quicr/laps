@@ -176,10 +176,7 @@ namespace laps::peering {
          */
         void OnConnectionStatus(quicr::Connection::Status status) override;
 
-        void OnRecvStream(std::uint64_t stream_id,
-                          const std::shared_ptr<quicr::StreamRxContext>& rx_ctx,
-                          const std::shared_ptr<quicr::Stream>& stream,
-                          bool is_bidir = false) override;
+        bool OnRecvStream(const std::shared_ptr<quicr::Stream>& stream) override;
 
         void OnRecvDgram() override;
 
@@ -193,9 +190,7 @@ namespace laps::peering {
         {
         }
 
-        void OnStreamClosed(std::uint64_t stream_id,
-                            std::shared_ptr<quicr::StreamRxContext> rx_context,
-                            quicr::StreamClosedFlag flag) override;
+        void OnStreamClosed(const std::shared_ptr<quicr::Stream>& stream, quicr::StreamClosedFlag flag) override;
 
         // ---------------------------------------
 
