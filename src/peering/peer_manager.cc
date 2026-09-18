@@ -1364,8 +1364,7 @@ namespace laps::peering {
                 if (const auto stream_it = entry.streams.find(stream_id); stream_it != entry.streams.end()) {
                     out_peer_sess->CloseStream(stream_it->second, flag);
                     entry.streams.erase(stream_it);
-                    client_manager_->PeerStreamClosed(
-                      key.first, stream_id, flag == quicr::StreamClosedFlag::kReset);
+                    client_manager_->PeerStreamClosed(key.first, stream_id, flag == quicr::StreamClosedFlag::kReset);
                 }
             }
         }

@@ -132,6 +132,8 @@ namespace laps {
                     flat_track_list_.insert(flat_track_list_.end(), sort_tracks.begin(), sort_tracks.end());
                 }
 
+                NotifyNamespaceHandlers();
+
             } else {
                 // Update latest_tick in flat_track_list_ in-place
                 for (auto& [alias, insert_seq_num, latest_tick, conn_id] : flat_track_list_) {
@@ -142,8 +144,6 @@ namespace laps {
                     }
                 }
             }
-
-            NotifyNamespaceHandlers();
         }
 
         void RemoveTrack(const TrackAlias track_alias)

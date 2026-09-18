@@ -140,6 +140,9 @@ namespace laps {
             }
 
             if (value.latest_value != recv_value || cur_tick - value.latest_tick_ms > kRefreshRankingIntervalMs) {
+                SPDLOG_TRACE(
+                  "value changed: from {} to {} ta: {} conn: {}", value.latest_value, recv_value, ta, conn_id);
+
                 value.latest_value = recv_value;
                 value.latest_tick_ms = cur_tick;
 
