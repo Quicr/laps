@@ -28,10 +28,7 @@ namespace laps {
         quicr::Bytes data;
 
         // libc++ now compares set keys with std::less<void>, which requires operator<.
-        bool operator<(const CacheObject& other) const noexcept
-        {
-            return headers.object_id < other.headers.object_id;
-        }
+        bool operator<(const CacheObject& other) const noexcept { return headers.object_id < other.headers.object_id; }
     };
 }
 
@@ -196,7 +193,7 @@ namespace laps {
           std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler) override;
 
         quicr::Reply<void, quicr::ErrorCode> PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
-                                                    std::uint64_t request_id) override;
+                                                                 std::uint64_t request_id) override;
 
         quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> SubscribeReceived(
           const std::shared_ptr<quicr::Session>& session,
@@ -205,10 +202,10 @@ namespace laps {
           const quicr::SubscribeAttributes& subscribe_attributes) override;
 
         quicr::Reply<void, quicr::ErrorCode> UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
-                                                    std::uint64_t request_id) override;
+                                                                 std::uint64_t request_id) override;
 
         quicr::Reply<void, quicr::ErrorCode> NewGroupRequested(const quicr::FullTrackName& track_full_name,
-                                                  std::uint64_t group_id) override;
+                                                               std::uint64_t group_id) override;
 
         quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> TrackStatusReceived(
           const std::shared_ptr<quicr::Session>& session,
