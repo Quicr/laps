@@ -44,6 +44,7 @@ namespace laps {
           std::shared_ptr<const std::vector<uint8_t>> data) override;
 
         void PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler) override;
+        void UnpublishTrack(std::uint64_t track_alias);
 
         static auto Create(const quicr::TrackNamespace& prefix, std::weak_ptr<timeq::tick_service> tick_service)
         {

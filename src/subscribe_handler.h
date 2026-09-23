@@ -16,7 +16,7 @@ namespace laps {
     class SubscribeTrackHandler : public quicr::SubscribeTrackHandler
     {
       public:
-        static constexpr uint64_t kRefreshRankingIntervalMs = 120;
+        static constexpr uint64_t kRefreshRankingIntervalMs = 500;
 
         SubscribeTrackHandler(const quicr::FullTrackName& full_track_name,
                               std::uint8_t priority,
