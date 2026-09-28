@@ -5,6 +5,9 @@ option(LAPS_INSTALL "Install the laps Components" ON)
 
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
 
+option(LAPS_USE_BROTLI "Enable picotls Brotli TLS certificate compression (libbrotlidec)" OFF)
+set(QUICR_USE_BROTLI "${LAPS_USE_BROTLI}" CACHE BOOL "Enable picotls Brotli TLS certificate compression" FORCE)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
