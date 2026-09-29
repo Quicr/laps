@@ -16,6 +16,12 @@ namespace laps {
 }
 
 void
+laps::PublishNamespaceHandler::UnpublishTrack(std::uint64_t track_alias)
+{
+    published_tracks_.erase(track_alias);
+}
+
+void
 laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler)
 {
     quicr::PublishNamespaceHandler::PublishTrack(handler);
@@ -152,8 +158,6 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
 
     if (published_tracks_.size() > active_tracks.size()) {
 
-        std::vector<std::uint64_t> remove_publish_tracks;
-
         // Unpublish tracks that are too old
         for (auto& [ta, track] : published_tracks_) {
             if (active_tracks.contains(ta)) {
@@ -182,19 +186,12 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                 }
 
                 if (cur_tick - track.last_updated_tick > delay_publish_done_ms_) {
-                    SPDLOG_INFO("Unpublish track, not in top-n track alias: {} conn_id: {} ticks: {} < {}",
-                                ta,
-                                GetConnectionId(),
-                                track.last_updated_tick,
-                                cur_tick);
-                    remove_publish_tracks.push_back(ta);
+                    SPDLOG_TRACE("Unpublish track, not in top-n track alias: {} conn_id: {} ticks: {} < {}",
+                                 ta,
+                                 GetConnectionId(),
+                                 track.last_updated_tick,
+                                 cur_tick);
                 }
-            }
-        }
-
-        if (!remove_publish_tracks.empty()) {
-            for (const auto& ta: remove_publish_tracks) {
-                published_tracks_.erase(ta);
             }
         }
     }

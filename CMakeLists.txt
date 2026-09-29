@@ -5,6 +5,9 @@ option(LAPS_INSTALL "Install the laps Components" ON)
 
 option(LAPS_BUILD_TESTS "Build Tests laps" OFF)
 
+option(LAPS_USE_BROTLI "Enable picotls Brotli TLS certificate compression (libbrotlidec)" OFF)
+set(QUICR_USE_BROTLI "${LAPS_USE_BROTLI}" CACHE BOOL "Enable picotls Brotli TLS certificate compression" FORCE)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -15,7 +18,7 @@ set (CMAKE_POLICY_VERSION_MINIMUM 3.5)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.18.16
+        VERSION 0.18.23
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 

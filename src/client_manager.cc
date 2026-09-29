@@ -271,7 +271,7 @@ namespace laps {
     }
 
     quicr::Reply<void, quicr::ErrorCode> ClientManager::NewGroupRequested(const quicr::FullTrackName& track_full_name,
-                                                             std::uint64_t group_id)
+                                                                          std::uint64_t group_id)
     {
         auto th = quicr::TrackHash(track_full_name);
         SPDLOG_INFO("New group requested received track_alais: {} group_id: {} ", th.track_fullname_hash, group_id);
@@ -921,8 +921,9 @@ namespace laps {
         return {};
     }
 
-    quicr::Reply<void, quicr::ErrorCode> ClientManager::PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
-                                                               uint64_t request_id)
+    quicr::Reply<void, quicr::ErrorCode> ClientManager::PublishDoneReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
         SPDLOG_LOGGER_INFO(
@@ -1001,6 +1002,25 @@ namespace laps {
             }
         }
 
+        const auto& pub_ns = s_it->second->GetFullTrackName().name_space;
+        const auto& pub_ta = s_it->second->GetTrackAlias().value_or(0);
+
+        // UnPublishTrack within publish namespace handler if matched
+        for (auto& [tn, conns] : state_.subscribes_namespaces) {
+            const auto prefix_match = tn.IsPrefixOf(pub_ns);
+
+            if (prefix_match == std::partial_ordering::less || prefix_match == std::partial_ordering::equivalent) {
+                for (auto& [_, pub_ns_h] : conns) {
+                    if (!config_.allow_self && pub_ns_h->GetConnectionId() == connection_handle) {
+                        // Initially do not mirror
+                        continue;
+                    }
+
+                    pub_ns_h->UnpublishTrack(pub_ta);
+                }
+            }
+        }
+
         state_.pub_subscribes_by_req_id.erase(s_it);
         lock.unlock();
 
@@ -1011,8 +1031,9 @@ namespace laps {
         return {};
     }
 
-    quicr::Reply<void, quicr::ErrorCode> ClientManager::UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
-                                                               uint64_t request_id)
+    quicr::Reply<void, quicr::ErrorCode> ClientManager::UnsubscribeReceived(
+      const std::shared_ptr<quicr::Session>& session,
+      uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
         SPDLOG_LOGGER_INFO(LOGGER, "Unsubscribe connection handle: {0} request_id: {1}", connection_handle, request_id);
