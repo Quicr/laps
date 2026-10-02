@@ -286,11 +286,13 @@ namespace laps::peering {
         if (status_ != StatusValue::kConnected || !IsUsable())
             return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Sending subscribe fullname: {} source_node_id: {} withdraw: {} sub_data_size: {}",
+                            "Sending subscribe fullname: {} source_node_id: {} withdraw: {} priority: {} new_group: {}",
                             subscribe_info.track_hash.track_fullname_hash,
                             NodeId().Value(subscribe_info.source_node_id),
                             withdraw,
-                            subscribe_info.subscribe_data.size());
+                            subscribe_info.priority,
+                            subscribe_info.new_group_request_id.has_value() ? *subscribe_info.new_group_request_id
+                                                                            : -1);
 
         SendControl(subscribe_info.Serialize(true, withdraw, node_info_.id == subscribe_info.source_node_id));
     }

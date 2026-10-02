@@ -3,7 +3,29 @@
 
 #include "subscribe_info.h"
 
+#include <stdexcept>
+
 namespace laps::peering {
+    namespace {
+        template<typename T>
+        T Read(std::span<const uint8_t>::iterator& it, const std::span<const uint8_t>::iterator end)
+        {
+            if (static_cast<std::size_t>(end - it) < sizeof(T)) {
+                throw std::out_of_range("Subscribe info truncated");
+            }
+
+            const T value = ValueOf<T>({ it, it + static_cast<std::ptrdiff_t>(sizeof(T)) });
+            it += sizeof(T);
+            return value;
+        }
+
+        template<typename T>
+        void Append(std::vector<uint8_t>& data, const T& value)
+        {
+            const auto bytes = BytesOf(value);
+            data.insert(data.end(), bytes.rbegin(), bytes.rend());
+        }
+    }
 
     SubscribeInfo::SubscribeInfo([[maybe_unused]] std::uint64_t track_fullname_hash,
                                  NodeIdValueType source_node_id,
@@ -16,64 +38,91 @@ namespace laps::peering {
     uint32_t SubscribeInfo::SizeBytes() const
     {
         return sizeof(seq) + sizeof(source_node_id) + 24 /* namespace, name, and full name hashes */
-               + 4 /* size of sub data */ + subscribe_data.size();
+               + sizeof(priority) + sizeof(delivery_timeout) + sizeof(expires) + sizeof(forward) +
+               1                                                               /* new group present */
+               + (new_group_request_id.has_value() ? sizeof(uint64_t) : 0) + 1 /* namespace entry count */
+               + sizeof(uint16_t) * static_cast<uint32_t>(name_space.GetEntries().size()) +
+               static_cast<uint32_t>(name_space.size()) + sizeof(uint16_t) + static_cast<uint32_t>(name.size());
     }
 
     SubscribeInfo::SubscribeInfo(std::span<const uint8_t> serialized_data)
       : track_hash({})
     {
         auto it = serialized_data.begin();
+        const auto end = serialized_data.end();
 
-        seq = ValueOf<uint16_t>({ it, it + 2 });
-        it += 2;
+        seq = Read<uint16_t>(it, end);
+        source_node_id = Read<uint64_t>(it, end);
 
-        source_node_id = ValueOf<uint64_t>({ it, it + 8 });
-        it += 8;
+        track_hash.track_namespace_hash = Read<uint64_t>(it, end);
+        track_hash.track_name_hash = Read<uint64_t>(it, end);
+        track_hash.track_fullname_hash = Read<uint64_t>(it, end);
 
-        track_hash.track_namespace_hash = ValueOf<uint64_t>({ it, it + 8 });
-        it += 8;
-        track_hash.track_name_hash = ValueOf<uint64_t>({ it, it + 8 });
-        it += 8;
-        track_hash.track_fullname_hash = ValueOf<uint64_t>({ it, it + 8 });
-        it += 8;
+        priority = Read<uint8_t>(it, end);
+        delivery_timeout = Read<uint64_t>(it, end);
+        expires = Read<uint64_t>(it, end);
+        forward = Read<uint64_t>(it, end);
 
-        uint32_t sub_size = ValueOf<uint32_t>({ it, it + 4 });
-        it += 4;
-
-        if (sub_size == 0) {
-            return;
+        if (Read<uint8_t>(it, end) != 0) {
+            new_group_request_id = Read<uint64_t>(it, end);
         }
 
-        if (sub_size > serialized_data.end() - it) {
-            throw std::out_of_range("Subscribe data size is larger than serialized data size");
+        const auto num_entries = Read<uint8_t>(it, end);
+        std::vector<std::span<const uint8_t>> entries;
+        entries.reserve(num_entries);
+
+        for (uint8_t i = 0; i < num_entries; ++i) {
+            const auto len = Read<uint16_t>(it, end);
+            if (static_cast<std::size_t>(end - it) < len) {
+                throw std::out_of_range("Subscribe namespace entry exceeds serialized data");
+            }
+
+            entries.emplace_back(it, it + len);
+            it += len;
         }
 
-        subscribe_data.assign(it, it + sub_size);
-        // it += sub_size;
+        name_space = quicr::TrackNamespace(std::span<const std::span<const uint8_t>>{ entries });
+
+        const auto name_size = Read<uint16_t>(it, end);
+        if (static_cast<std::size_t>(end - it) < name_size) {
+            throw std::out_of_range("Subscribe name exceeds serialized data");
+        }
+
+        if (name_size != 0) {
+            name.assign(it, it + name_size);
+        }
     }
 
     std::vector<uint8_t>& operator<<(std::vector<uint8_t>& data, const SubscribeInfo& subscribe_info)
     {
-        auto seq_bytes = BytesOf(subscribe_info.seq);
-        data.insert(data.end(), seq_bytes.rbegin(), seq_bytes.rend());
+        Append(data, subscribe_info.seq);
+        Append(data, subscribe_info.source_node_id);
 
-        auto src_node_bytes = BytesOf(subscribe_info.source_node_id);
-        data.insert(data.end(), src_node_bytes.rbegin(), src_node_bytes.rend());
+        Append(data, subscribe_info.track_hash.track_namespace_hash);
+        Append(data, subscribe_info.track_hash.track_name_hash);
+        Append(data, subscribe_info.track_hash.track_fullname_hash);
 
-        auto namespace_bytes = BytesOf(subscribe_info.track_hash.track_namespace_hash);
-        data.insert(data.end(), namespace_bytes.rbegin(), namespace_bytes.rend());
+        Append(data, subscribe_info.priority);
+        Append(data, subscribe_info.delivery_timeout);
+        Append(data, subscribe_info.expires);
+        Append(data, subscribe_info.forward);
 
-        auto name_bytes = BytesOf(subscribe_info.track_hash.track_name_hash);
-        data.insert(data.end(), name_bytes.rbegin(), name_bytes.rend());
+        Append(data, static_cast<uint8_t>(subscribe_info.new_group_request_id.has_value() ? 1 : 0));
+        if (subscribe_info.new_group_request_id.has_value()) {
+            Append(data, *subscribe_info.new_group_request_id);
+        }
 
-        auto full_name_bytes = BytesOf(subscribe_info.track_hash.track_fullname_hash);
-        data.insert(data.end(), full_name_bytes.rbegin(), full_name_bytes.rend());
+        const auto& entries = subscribe_info.name_space.GetEntries();
+        data.push_back(static_cast<uint8_t>(entries.size()));
+        for (const auto& entry : entries) {
+            Append(data, static_cast<uint16_t>(entry.size()));
+            data.insert(data.end(), entry.begin(), entry.end());
+        }
 
-        uint32_t sub_size = subscribe_info.subscribe_data.size();
-        auto sub_size_bytes = BytesOf(sub_size);
-        data.insert(data.end(), sub_size_bytes.rbegin(), sub_size_bytes.rend());
-
-        data.insert(data.end(), subscribe_info.subscribe_data.begin(), subscribe_info.subscribe_data.end());
+        Append(data, static_cast<uint16_t>(subscribe_info.name.size()));
+        if (!subscribe_info.name.empty()) {
+            data.insert(data.end(), subscribe_info.name.begin(), subscribe_info.name.end());
+        }
 
         return data;
     }

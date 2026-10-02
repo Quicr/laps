@@ -277,17 +277,13 @@ namespace laps {
         SPDLOG_INFO("New group requested received track_alais: {} group_id: {} ", th.track_fullname_hash, group_id);
 
         // Update peering subscribe info - This will update existing instead of creating new
-        peer_manager_.ClientSubscribeUpdate(track_full_name,
-                                            {
-                                              kDefaultPriority,
-                                              quicr::messages::GroupOrder::kAscending,
-                                              quicr::messages::GroupOrder::kAscending,
-                                              std::chrono::milliseconds(kDefaultObjectTtl),
-                                              std::chrono::milliseconds(0),
-                                              std::monostate{},
-                                              1,
-                                              true,
-                                            });
+        quicr::SubscribeAttributes update_attrs;
+        update_attrs.priority = kDefaultPriority;
+        update_attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
+        update_attrs.expires = std::chrono::milliseconds(0);
+        update_attrs.forward = 1;
+        update_attrs.new_group_request_id = group_id;
+        peer_manager_.ClientSubscribeUpdate(track_full_name, update_attrs);
 
         // Notify all publishers that there is a new group request
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
@@ -1616,22 +1612,7 @@ namespace laps {
                                                   attrs.group_order,
                                                   {} });
 
-            // TODO: Check draft Section 7.3 re forwarding group order
-            auto params =
-              quicr::messages::Parameters{}.Add(quicr::messages::ParameterType::kSubscriberPriority, attrs.priority);
-            if (attrs.group_order.has_value()) {
-                params.Add(quicr::messages::ParameterType::kGroupOrder, *attrs.group_order);
-            }
-
-            auto sub_data = quicr::messages::Message()
-                              .Append(request_id)
-                              .Append(track_full_name.name_space)
-                              .Append(track_full_name.name)
-                              .Append(params);
-
-            // TODO: Current new group is not sent by client in subscribe. It's only in subscribe updates.
-
-            peer_manager_.ClientSubscribe(track_full_name, attrs, sub_data.ToByteSpan());
+            peer_manager_.ClientSubscribe(track_full_name, attrs);
         }
 
         // Resume publisher initiated subscribes

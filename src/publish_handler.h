@@ -41,6 +41,9 @@ namespace laps {
               full_track_name, track_mode, default_priority, default_ttl, start_location, server);
         }
 
+      protected:
+        void RequestOkReceived(const quicr::messages::Parameters& params) override;
+
       private:
         ClientManager& server_;
 

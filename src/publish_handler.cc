@@ -113,4 +113,47 @@ namespace laps {
             server_.peer_manager_.EndSubgroup(GetTrackAlias().value(), group_id, subgroup_id, !completed);
         }
     }
+
+    void PublishTrackHandler::RequestOkReceived(const quicr::messages::Parameters& params)
+    {
+        quicr::PublishTrackHandler::RequestOkReceived(params);
+
+        switch (GetStatus()) {
+            case Status::kNewGroupRequested:
+                [[fallthrough]];
+            case Status::kOk:
+                [[fallthrough]];
+            case Status::kPaused:
+                [[fallthrough]];
+            default: {
+                auto delivery_timeout = params.Get<std::uint64_t>(quicr::messages::ParameterType::kDeliveryTimeout);
+                auto priority = params.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority);
+                auto group_order =
+                  params.GetOptional<quicr::messages::GroupOrder>(quicr::messages::ParameterType::kGroupOrder);
+                const auto publisher_default_group_order = quicr::messages::GroupOrder::kAscending;
+                auto forward = params.Get<bool>(quicr::messages::ParameterType::kForward);
+                auto new_group_request_id =
+                  params.GetOptional<std::uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
+
+                quicr::messages::Filter filter;
+                if (params.Contains(quicr::messages::ParameterType::kSubscriptionFilter)) {
+                    filter = params.GetFilter(quicr::messages::FilterType::kSubscriptionFilter);
+                } else if (params.Contains(quicr::messages::ParameterType::kTrackFilter)) {
+                    filter = params.GetFilter(quicr::messages::FilterType::kTrackFilter);
+                }
+
+                quicr::SubscribeAttributes attrs;
+                attrs.delivery_timeout = std::chrono::milliseconds{ delivery_timeout };
+                attrs.expires = attrs.delivery_timeout;
+                attrs.priority = priority;
+                attrs.group_order = group_order;
+                attrs.publisher_default_group_order = publisher_default_group_order;
+                attrs.forward = forward;
+                attrs.new_group_request_id = new_group_request_id;
+
+                server_.peer_manager_.ClientSubscribe(GetFullTrackName(), attrs);
+                break;
+            }
+        }
+    }
 }
