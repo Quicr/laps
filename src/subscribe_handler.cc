@@ -82,6 +82,7 @@ namespace laps {
                                               std::chrono::milliseconds delivery_timeout,
                                               quicr::messages::Location start_location)
     {
+        // TODO: Consider allowing add Subscriber to trigger NGR for peering when conn_handle == 0
         if (subscribers_.contains(conn_handle)) {
             // Duplicate
             return;
@@ -104,6 +105,7 @@ namespace laps {
             subscribers_.emplace(conn_handle, pub_track_h);
         } else {
             subscribers_.emplace(conn_handle, nullptr);
+            RequestNewGroup(); // Use NGR to keep it clean for peering, which will support any number of peers
         }
 
         Resume();
