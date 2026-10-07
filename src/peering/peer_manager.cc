@@ -176,37 +176,36 @@ namespace laps::peering {
                     client_manager_->ProcessSubscribe(
                       0, 0, subscribe_info.track_hash, { track_namespace, track_name }, s_attrs, std::nullopt);
                 }
+            }
 
-                auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
-                if (bp_it != info_base_->nodes_best_.end()) {
-                    const auto& peer_session = bp_it->second.lock();
-                    SPDLOG_LOGGER_DEBUG(
-                      LOGGER,
-                      "Best peer session for subscribe fullname: {} source_node: {} is via peer_session_id: {}",
-                      subscribe_info.track_hash.track_fullname_hash,
-                      subscribe_info.source_node_id,
-                      peer_session->GetSessionId());
+            auto bp_it = info_base_->nodes_best_.find(subscribe_info.source_node_id);
+            if (bp_it != info_base_->nodes_best_.end()) {
+                const auto& peer_session = bp_it->second.lock();
+                SPDLOG_LOGGER_DEBUG(
+                  LOGGER,
+                  "Best peer session for subscribe fullname: {} source_node: {} is via peer_session_id: {}",
+                  subscribe_info.track_hash.track_fullname_hash,
+                  subscribe_info.source_node_id,
+                  peer_session->GetSessionId());
 
-                    if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
-                          subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id, priority);
+                if (auto [sns_id, is_new] = peer_session->AddSubscribeSourceNode(
+                      subscribe_info.track_hash.track_fullname_hash, subscribe_info.source_node_id, priority);
+                    is_new) {
+                    SPDLOG_LOGGER_INFO(LOGGER,
+                                       "New source added to peer session for subscribe fullname: {} source_node: {} is "
+                                       "via peer_session_id: {} sns_id: {}",
+                                       subscribe_info.track_hash.track_fullname_hash,
+                                       subscribe_info.source_node_id,
+                                       peer_session->GetSessionId(),
+                                       sns_id);
+
+                    if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
+                          { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
+                          InfoBase::FibEntry{ update_ref, {}, sns_id, bp_it->second });
                         is_new) {
-                        SPDLOG_LOGGER_INFO(
-                          LOGGER,
-                          "New source added to peer session for subscribe fullname: {} source_node: {} is "
-                          "via peer_session_id: {} sns_id: {}",
-                          subscribe_info.track_hash.track_fullname_hash,
-                          subscribe_info.source_node_id,
-                          peer_session->GetSessionId(),
-                          sns_id);
-
-                        if (auto [_, is_new] = info_base_->client_fib_.try_emplace(
-                              { subscribe_info.track_hash.track_fullname_hash, peer_session_id },
-                              InfoBase::FibEntry{ update_ref, {}, sns_id, bp_it->second });
-                            is_new) {
-                            SPDLOG_LOGGER_INFO(LOGGER,
-                                               "New subscribe fullname: {}, sending subscribe to client manager",
-                                               subscribe_info.track_hash.track_fullname_hash);
-                        }
+                        SPDLOG_LOGGER_INFO(LOGGER,
+                                           "New subscribe fullname: {}, sending subscribe to client manager",
+                                           subscribe_info.track_hash.track_fullname_hash);
                     }
                 }
             }
