@@ -1575,6 +1575,7 @@ namespace laps {
     {
 
         auto start_location = attrs.start_location;
+        bool sub_from_peer{ false };
 
         if (largest.has_value()) {
             SPDLOG_LOGGER_INFO(LOGGER, "Subscribe largest group: {} object: {}", largest->group, largest->object);
@@ -1589,6 +1590,8 @@ namespace laps {
               attrs.new_group_request_id ? std::to_string(*attrs.new_group_request_id) : std::string("none"),
               track_full_name.NamespaceStr(),
               track_full_name.NameStr());
+
+            sub_from_peer = true;
         }
 
         else {
@@ -1639,7 +1642,12 @@ namespace laps {
                 break;
             }
             if (it->second->IsPublisherInitiated()) {
+                if (sub_from_peer) {
+                    it->second->RequestNewGroup();
+                }
+
                 it->second->Resume();
+
             }
 
             it->second->AddSubscriber(
