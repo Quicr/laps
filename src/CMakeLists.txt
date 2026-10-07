@@ -5,7 +5,6 @@ if(CLANG_TIDY_EXE)
   set_target_properties(quicr PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
 endif()
 
-
 add_executable(lapsRelay
         main.cc
         config.cc
@@ -30,7 +29,11 @@ add_executable(lapsRelay
 )
 
 target_link_libraries(lapsRelay PRIVATE quicr spdlog::spdlog)
-target_include_directories(lapsRelay PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/oss )
+target_include_directories(lapsRelay PRIVATE
+        ${PROJECT_SOURCE_DIR}/dependencies/oss
+        # Peer sessions read quicr::Stream directly. That type is defined for the library, not installed
+        # with the public headers.
+        ${PROJECT_SOURCE_DIR}/dependencies/libquicr/src)
 
 target_compile_options(lapsRelay
         PRIVATE

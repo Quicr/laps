@@ -164,7 +164,7 @@ namespace laps {
         void MetricsSampled(const std::shared_ptr<quicr::Session>& session,
                             const quicr::ConnectionMetrics& metrics) override;
 
-        quicr::Reply<void, quicr::ErrorCode> ClientSetupReceived(
+        quicr::Expected<void, quicr::Error<quicr::ErrorCode>> ClientSetupReceived(
           const std::shared_ptr<quicr::Session>& session,
           const quicr::ClientSetupAttributes& client_setup_attributes) override;
 
@@ -195,7 +195,7 @@ namespace laps {
         quicr::Reply<void, quicr::ErrorCode> PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
                                                                  std::uint64_t request_id) override;
 
-        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> SubscribeReceived(
+        quicr::Reply<quicr::SubscribeResponse, quicr::RequestErrorCode> SubscribeReceived(
           const std::shared_ptr<quicr::Session>& session,
           std::uint64_t request_id,
           const quicr::FullTrackName& track_full_name,
@@ -207,7 +207,7 @@ namespace laps {
         quicr::Reply<void, quicr::ErrorCode> NewGroupRequested(const quicr::FullTrackName& track_full_name,
                                                                std::uint64_t group_id) override;
 
-        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> TrackStatusReceived(
+        quicr::Reply<quicr::TrackStatusResponse, quicr::RequestErrorCode> TrackStatusReceived(
           const std::shared_ptr<quicr::Session>& session,
           std::uint64_t request_id,
           const quicr::FullTrackName& track_full_name) override;

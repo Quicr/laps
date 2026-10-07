@@ -8,6 +8,8 @@
 #include "peering/messages/node_info.h"
 #include "peering/messages/subscribe_info.h"
 
+#include <stream.h>
+
 #include <iomanip>
 #include <sstream>
 
@@ -556,47 +558,60 @@ namespace laps::peering {
         return true;
     }
 
-    void PeerSession::OnRecvStream(std::uint64_t stream_id,
-                                   const std::shared_ptr<quicr::StreamRxContext>& rx_ctx,
-                                   const std::shared_ptr<quicr::Stream>& stream,
-                                   const bool is_bidir)
+    bool PeerSession::OnRecvStream(const std::shared_ptr<quicr::Stream>& stream)
     {
-        if (!IsUsable() || rx_ctx == nullptr) {
-            return;
+        if (!IsUsable() || stream == nullptr) {
+            return false;
         }
+
+        const auto stream_id = stream->GetStreamId();
+        const bool is_bidir = stream->IsBidirectional();
 
         /*
          * Control messages arrive on the one bidirectional stream, which the inbound side of the session
          * only learns about here. Both sides answer on it, so it is adopted either way.
          */
-        if (is_bidir && stream != nullptr) {
+        if (is_bidir) {
             control_stream_ = stream;
             control_stream_id_ = stream_id;
         }
 
-        for (int i = 0; i < kReadLoopMaxPerStream; i++) {
-            if (rx_ctx->data_queue.Empty()) {
-                break;
+        quicr::Bytes data;
+        {
+            std::lock_guard lock(stream->rx_mutex);
+
+            // A new object stream names its header length in the first byte. Leave a short read where it
+            // is so the next arrival can complete it.
+            if (!is_bidir && !rx_stream_headers_.contains(stream_id)) {
+                const auto available = stream->rx_data.Data();
+                if (available.empty() || available.size() < available.front()) {
+                    return false;
+                }
             }
 
-            auto data_opt = rx_ctx->data_queue.Pop();
-            if (not data_opt.has_value()) {
-                break;
-            }
-
-            const auto& data = data_opt.value();
-
-            // Get common header
-            if (is_bidir) { // control
-                controL_msg_buffer_.insert(controL_msg_buffer_.end(), data->begin(), data->end());
-
-                ProcessControlMessage();
-
-            } else if (!ProcessReceivedData(stream_id, std::move(data))) {
-                i = 59;
-                continue; // Try once more
-            }
+            data = stream->rx_data.TakeAll();
         }
+
+        if (data.empty()) {
+            return false;
+        }
+
+        if (is_bidir) {
+            controL_msg_buffer_.insert(controL_msg_buffer_.end(), data.begin(), data.end());
+
+            // One read can now hold several messages, where each used to arrive as its own chunk.
+            for (;;) {
+                const auto buffered = controL_msg_buffer_.size();
+                ProcessControlMessage();
+                if (controL_msg_buffer_.size() == buffered) {
+                    break;
+                }
+            }
+        } else {
+            ProcessReceivedData(stream_id, std::make_shared<quicr::Bytes>(std::move(data)));
+        }
+
+        return false;
     }
 
     void PeerSession::OnRecvDgram()
@@ -632,10 +647,13 @@ namespace laps::peering {
         metrics_.srtt_us = quic_connection_metrics.srtt_us.avg;
     }
 
-    void PeerSession::OnStreamClosed(std::uint64_t stream_id,
-                                     [[maybe_unused]] std::shared_ptr<quicr::StreamRxContext> rx_context,
-                                     quicr::StreamClosedFlag flag)
+    void PeerSession::OnStreamClosed(const std::shared_ptr<quicr::Stream>& stream, quicr::StreamClosedFlag flag)
     {
+        if (stream == nullptr) {
+            return;
+        }
+
+        const auto stream_id = stream->GetStreamId();
         const auto conn_id = GetSessionId();
 
         if (control_stream_ != nullptr && control_stream_id_.has_value() && *control_stream_id_ == stream_id) {

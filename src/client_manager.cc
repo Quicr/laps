@@ -518,7 +518,7 @@ namespace laps {
                     auto sub_track_handler =
                       std::make_shared<SubscribeTrackHandler>(sub_ftn, 0, std::nullopt, *this, config_.tick_service_);
 
-                    // Add subsribers to publisher subscribe handler
+                    // Add subscribers to publisher subscribe handler
                     for (const auto& sub_info : sub_tracks) {
                         sub_track_handler->AddSubscriber(sub_info.connection_handle,
                                                          sub_info.request_id,
@@ -688,7 +688,21 @@ namespace laps {
         }
 
         // Check if there are any subscribers
-        bool has_subs{ peer_manager_.HasSubscribers(th.track_fullname_hash) };
+        bool has_peer_subs{ peer_manager_.HasSubscribers(th.track_fullname_hash) };
+        bool has_subs{ has_peer_subs };
+
+        if (has_peer_subs) {
+            // libquicr copies the publisher's timeout onto the handler only after this callback returns, and
+            // the largest object is optional on the publish. A peer that is already subscribed hits this
+            // before either value exists.
+            sub_track_handler->AddSubscriber(
+              0,
+              0,
+              sub_track_handler->GetPriority(),
+              std::chrono::milliseconds(publish_attributes.delivery_timeout.value_or(config_.object_ttl_)),
+              publish_attributes.largest_object.value_or(quicr::messages::Location{ 0, 0 }));
+        }
+
         for (auto it = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 }); it != state_.subscribes.end();
              ++it) {
             if (it->first.first == th.track_fullname_hash) {
@@ -905,7 +919,7 @@ namespace laps {
         return {};
     }
 
-    quicr::Reply<void, quicr::ErrorCode> ClientManager::ClientSetupReceived(
+    quicr::Expected<void, quicr::Error<quicr::ErrorCode>> ClientManager::ClientSetupReceived(
       const std::shared_ptr<quicr::Session>& session,
       const quicr::ClientSetupAttributes& client_setup_attributes)
     {
@@ -1143,7 +1157,7 @@ namespace laps {
         }
     }
 
-    quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> ClientManager::TrackStatusReceived(
+    quicr::Reply<quicr::TrackStatusResponse, quicr::RequestErrorCode> ClientManager::TrackStatusReceived(
       const std::shared_ptr<quicr::Session>& session,
       uint64_t request_id,
       const quicr::FullTrackName& track_full_name)
@@ -1168,10 +1182,9 @@ namespace laps {
             }
 
             if (it->first.second != connection_handle) {
-                return quicr::RequestResponse{
-                    .is_publisher_initiated = it->second->IsPublisherInitiated(),
-                    .largest_location = largest,
-                };
+                quicr::TrackStatusResponse response;
+                response.largest_location = largest;
+                return response;
             }
         }
 
@@ -1179,7 +1192,7 @@ namespace laps {
                                                                         "Track does not exist");
     }
 
-    quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> ClientManager::SubscribeReceived(
+    quicr::Reply<quicr::SubscribeResponse, quicr::RequestErrorCode> ClientManager::SubscribeReceived(
       const std::shared_ptr<quicr::Session>& session,
       uint64_t request_id,
       const quicr::FullTrackName& track_full_name,
@@ -1222,10 +1235,10 @@ namespace laps {
          */
         ProcessSubscribe(connection_handle, request_id, th, track_full_name, attrs, largest);
 
-        return quicr::RequestResponse{
-            .is_publisher_initiated = attrs.is_publisher_initiated,
-            .largest_location = largest,
-        };
+        quicr::SubscribeResponse response;
+        response.largest_location = largest;
+        response.is_publisher_initiated = attrs.is_publisher_initiated;
+        return response;
     }
 
     std::optional<quicr::messages::Location> ClientManager::GetLargestAvailable(const quicr::FullTrackName& track_name)
@@ -1260,7 +1273,6 @@ namespace laps {
       quicr::messages::FetchEndLocation end)
     {
         using Reply = quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode>;
-        using Result = Reply::ResultType;
         using Failure = quicr::Unexpected<quicr::Error<quicr::FetchErrorCode>>;
 
         const auto th = quicr::TrackHash(track_full_name);
@@ -1307,7 +1319,7 @@ namespace laps {
              * be answered at all is only known once the publisher responds, so the reply is deferred to keep
              * that wait off the session's thread.
              */
-            return Reply::Defer([=, this]() -> Result {
+            return Reply::Defer([=, this](Reply::CompletionType&& complete) {
                 auto track_handler = FetchTrackHandler::Create(pub_fetch_h,
                                                                track_full_name,
                                                                priority,
@@ -1329,7 +1341,8 @@ namespace laps {
 
                 if (pub_connection_handle == 0) {
                     UnbindFetchTrack(connection_handle, pub_fetch_h);
-                    return Failure(*cache_miss, "Cannot process fetch");
+                    complete(Failure(*cache_miss, "Cannot process fetch"));
+                    return;
                 }
 
                 SPDLOG_LOGGER_DEBUG(LOGGER,
@@ -1369,18 +1382,21 @@ namespace laps {
                         break;
 
                     case quicr::FetchTrackHandler::Status::kError:
-                        return Failure(quicr::FetchErrorCode::kNoObjects, "Cannot process fetch");
+                        complete(Failure(quicr::FetchErrorCode::kNoObjects, "Cannot process fetch"));
+                        return;
 
                     default:
-                        return Failure(quicr::FetchErrorCode::kInternalError, "Cannot process fetch");
+                        complete(Failure(quicr::FetchErrorCode::kInternalError, "Cannot process fetch"));
+                        return;
                 }
 
                 const auto upstream_largest = track_handler->GetLatestLocation();
                 if (!upstream_largest.has_value()) {
-                    return Failure(quicr::FetchErrorCode::kNoObjects, "Cannot process fetch");
+                    complete(Failure(quicr::FetchErrorCode::kNoObjects, "Cannot process fetch"));
+                    return;
                 }
 
-                return quicr::FetchResponse{ upstream_largest, resolved_group_order };
+                complete(quicr::FetchResponse{ upstream_largest, resolved_group_order });
             });
         }
 
@@ -1712,14 +1728,7 @@ namespace laps {
         }
 
         if (stream_id.has_value()) {
-            if (is_new_stream) {
-                quicr::InitialStreamData initial_buffer;
-                initial_buffer.buffer.Push(*data);
-                initial_buffer.source_buffers.push_back(std::move(data));
-                it->second->StreamDataRecv(*stream_id, std::move(initial_buffer));
-            } else {
-                it->second->StreamDataRecv(*stream_id, std::move(data));
-            }
+            it->second->AcceptPeerStreamData(*stream_id, std::move(data), is_new_stream);
         } else {
             it->second->DgramDataRecv(std::move(data));
         }
@@ -1732,7 +1741,7 @@ namespace laps {
             return;
         }
 
-        it->second->StreamClosed(stream_id, reset);
+        it->second->AcceptPeerStreamClosed(stream_id, reset);
     }
 
     void ClientManager::MetricsSampled(const std::shared_ptr<quicr::Session>& session,
