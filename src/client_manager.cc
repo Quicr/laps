@@ -1641,19 +1641,11 @@ namespace laps {
             if (it->first.first != th.track_fullname_hash) {
                 break;
             }
-            if (it->second->IsPublisherInitiated()) {
-                if (sub_from_peer) {
-                    it->second->RequestNewGroup();
-                }
-
-                it->second->Resume();
-
-            }
 
             it->second->AddSubscriber(
               connection_handle, request_id, attrs.priority, attrs.delivery_timeout, attrs.start_location);
 
-            DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request_id.has_value());
+            DampenOrUpdateTrackSubscription(it->second, attrs.new_group_request_id.has_value() || sub_from_peer);
         }
 
         // Subscribe to announcer if announcer is active
@@ -1685,11 +1677,7 @@ namespace laps {
 
                 state_.pub_subscribes_by_req_id[{ sub_track_h->GetRequestId().value(), key.second }] = sub_track_h;
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
-
-                if (attrs.new_group_request_id) {
-                    sub_track_h->RequestNewGroup();
-                }
-
+                
             } else {
                 auto pub_handler_it = state_.pub_subscribes.find({ th.track_fullname_hash, key.second });
                 if (pub_handler_it != state_.pub_subscribes.end()) {

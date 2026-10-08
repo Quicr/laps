@@ -18,7 +18,7 @@ set (CMAKE_POLICY_VERSION_MINIMUM 3.5)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.18.23
+        VERSION 0.18.24
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
