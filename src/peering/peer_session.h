@@ -99,6 +99,14 @@ namespace laps::peering {
         std::shared_ptr<quicr::Stream> CreateStream(uint8_t priority) const;
 
         void CloseStream(const std::shared_ptr<quicr::Stream>& stream, quicr::StreamClosedFlag flag);
+
+        /**
+         * @brief FIN an egress stream after the bytes already queued on it
+         *
+         * @details A direct FIN races the send queue and can drop the tail of the subgroup. This queues the
+         *      FIN behind that data instead.
+         */
+        void FinishStream(const std::shared_ptr<quicr::Stream>& stream);
         void SendNodeInfo(const NodeInfo& node_info, bool withdraw = false) const;
         void SendSubscribeInfo(SubscribeInfo& subscribe_info, bool withdraw = false) const;
         void SendAnnounceInfo(const AnnounceInfo& announce_info, bool withdraw = false);

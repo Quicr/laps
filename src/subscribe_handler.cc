@@ -412,7 +412,11 @@ namespace laps {
         const auto pending_it = pending_source_buffers_.find(stream_id);
         if (pending_it != pending_source_buffers_.end()) {
             pending_it->second.push_back(std::move(data));
-        } else {
+        } else if (stream_it->second.header_parsed && !stream_it->second.peering_started) {
+            // The subgroup id is still the first object's. Hold these bytes with the header.
+            stream_it->second.pending_peer_bytes.insert(
+              stream_it->second.pending_peer_bytes.end(), data->begin(), data->end());
+        } else if (stream_it->second.peering_started) {
             ForwardReceivedData(
               false, stream_it->second.current_group_id, stream_it->second.current_subgroup_id, std::move(data));
         }
@@ -420,11 +424,65 @@ namespace laps {
         TryProcessStreamData(stream_id, stream_it->second);
     }
 
+    void SubscribeTrackHandler::CapturePeerStart(uint64_t stream_id,
+                                                 PeerStream& stream,
+                                                 quicr::messages::StreamHeaderSubGroup& header)
+    {
+        const auto pending_it = pending_source_buffers_.find(stream_id);
+        if (pending_it == pending_source_buffers_.end()) {
+            return;
+        }
+
+        // Adapt publisher track alias to normalized track alias used by subscribers.
+        const bool rewrite =
+          GetReceivedTrackAlias().value_or(0) != GetTrackAlias().value() || pending_it->second.empty();
+
+        stream.pending_peer_bytes.clear();
+        if (rewrite) {
+            header.track_alias = GetTrackAlias().value();
+
+            quicr::Bytes encoded;
+            encoded << header;
+            stream.pending_peer_bytes.insert(stream.pending_peer_bytes.end(), encoded.begin(), encoded.end());
+
+            const auto remaining = stream.buffer.Data();
+            stream.pending_peer_bytes.insert(stream.pending_peer_bytes.end(), remaining.begin(), remaining.end());
+        } else {
+            for (const auto& source : pending_it->second) {
+                stream.pending_peer_bytes.insert(stream.pending_peer_bytes.end(), source->begin(), source->end());
+            }
+        }
+
+        pending_source_buffers_.erase(pending_it);
+    }
+
+    void SubscribeTrackHandler::StartPeeringForward(PeerStream& stream)
+    {
+        if (stream.peering_started) {
+            return;
+        }
+
+        stream.peering_started = true;
+        if (stream.pending_peer_bytes.empty()) {
+            return;
+        }
+
+        ForwardReceivedData(true,
+                            stream.current_group_id,
+                            stream.current_subgroup_id,
+                            std::make_shared<quicr::Bytes>(std::move(stream.pending_peer_bytes)));
+        stream.pending_peer_bytes.clear();
+    }
+
     void SubscribeTrackHandler::TryProcessStreamData(uint64_t stream_id, PeerStream& stream)
     {
         auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
-        const auto pending_it = pending_source_buffers_.find(stream_id);
-        if (pending_it != pending_source_buffers_.end()) {
+        if (!stream.header_parsed) {
+            const auto pending_it = pending_source_buffers_.find(stream_id);
+            if (pending_it == pending_source_buffers_.end()) {
+                return;
+            }
+
             if (not(stream.buffer >> s_hdr)) {
                 SPDLOG_DEBUG("Not enough data to process new stream headers yet");
                 return;
@@ -434,29 +492,16 @@ namespace laps {
                 SetPriority(*s_hdr.priority);
             }
 
-            // Adapt publisher track alias to normalized track alias used by subscribers.
-            if (GetReceivedTrackAlias().value_or(0) != GetTrackAlias().value() || pending_it->second.empty()) {
-                s_hdr.track_alias = GetTrackAlias().value();
-
-                auto updated_data = std::make_shared<std::vector<uint8_t>>();
-                *updated_data << s_hdr;
-
-                const auto remaining_data = stream.buffer.Data();
-                updated_data->insert(updated_data->end(), remaining_data.begin(), remaining_data.end());
-
-                ForwardReceivedData(true, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), std::move(updated_data));
-            } else {
-                bool is_start = true;
-                for (auto& source_buffer : pending_it->second) {
-                    ForwardReceivedData(
-                      is_start, s_hdr.group_id, s_hdr.subgroup_id.value_or(0), std::move(source_buffer));
-                    is_start = false;
-                }
-            }
-
+            stream.header_parsed = true;
             stream.current_group_id = s_hdr.group_id;
-            stream.current_subgroup_id = s_hdr.subgroup_id.value_or(0);
-            pending_source_buffers_.erase(pending_it);
+            CapturePeerStart(stream_id, stream, s_hdr);
+
+            // kSetFromFirstObject leaves the id out of the header. Opening the peering stream before
+            // the first object would record it under subgroup 0, and the later close would miss it.
+            if (s_hdr.subgroup_id.has_value()) {
+                stream.current_subgroup_id = *s_hdr.subgroup_id;
+                StartPeeringForward(stream);
+            }
         }
 
         while (not stream.buffer.Empty()) {
@@ -493,6 +538,9 @@ namespace laps {
 
             stream.current_group_id = s_hdr.group_id;
             stream.current_subgroup_id = s_hdr.subgroup_id.value();
+            if (!stream.peering_started) {
+                StartPeeringForward(stream);
+            }
 
             ObjectReceived({ s_hdr.group_id,
                              stream.next_object_id.value(),
@@ -517,7 +565,7 @@ namespace laps {
                     ForwardReceivedData(
                       false,
                       s_hdr.group_id,
-                      s_hdr.subgroup_id.value_or(0),
+                      s_hdr.subgroup_id.value(),
                       std::make_shared<std::vector<uint8_t>>(remaining_data.begin(), remaining_data.end()),
                       false);
                 }
@@ -691,8 +739,8 @@ namespace laps {
 
         for (auto& [conn_handle, pub_handler] : subscribers_) {
             if (conn_handle == 0) {
-                // Notify peering manager
-                if (GetTrackAlias().has_value()) {
+                // Only a stream that was opened under this group and subgroup has one to close.
+                if (stream_it->second.peering_started && GetTrackAlias().has_value()) {
                     server_.peer_manager_.EndSubgroup(GetTrackAlias().value(),
                                                       stream_it->second.current_group_id,
                                                       stream_it->second.current_subgroup_id,

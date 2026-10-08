@@ -134,10 +134,19 @@ namespace laps {
             std::uint64_t current_group_id{ 0 };
             std::uint64_t current_subgroup_id{ 0 };
             std::optional<std::uint64_t> next_object_id;
+            bool header_parsed{ false };
+            /// True once peering has been given this stream under current_group_id/current_subgroup_id.
+            bool peering_started{ false };
+            /// Header and object bytes held until the subgroup id is known, then forwarded as one new stream.
+            std::vector<std::uint8_t> pending_peer_bytes;
         };
 
         void ConsumeForwardedObjects(std::uint64_t group_id, std::uint64_t subgroup_id, SubgroupForwardState& subgroup);
         void TryProcessStreamData(uint64_t stream_id, PeerStream& stream);
+        void CapturePeerStart(uint64_t stream_id,
+                              PeerStream& stream,
+                              quicr::messages::StreamHeaderSubGroup& header);
+        void StartPeeringForward(PeerStream& stream);
 
         void ForwardReceivedData(bool is_new_stream,
                                  uint64_t group_id,

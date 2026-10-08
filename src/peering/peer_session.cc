@@ -227,6 +227,25 @@ namespace laps::peering {
         transport_->CloseStream(connection_, stream, operation);
     }
 
+    void PeerSession::FinishStream(const std::shared_ptr<quicr::Stream>& stream)
+    {
+        if (stream == nullptr) {
+            return;
+        }
+
+        // The transport FINs a stream when a queued object asks for it and the send queue has drained.
+        // Calling CloseStream here instead cuts off bytes still waiting to be written.
+        if (status_ == StatusValue::kConnected && IsUsable()) {
+            quicr::Transport::EnqueueFlags eflags;
+            eflags.use_reliable = true;
+            eflags.close_stream = true;
+            SendData(0, 60000, stream, eflags, std::make_shared<std::vector<uint8_t>>());
+            return;
+        }
+
+        CloseStream(stream, quicr::StreamClosedFlag::kFin);
+    }
+
     void PeerSession::SendData(uint8_t priority,
                                uint32_t ttl,
                                const std::shared_ptr<quicr::Stream>& stream,

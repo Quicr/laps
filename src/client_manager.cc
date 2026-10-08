@@ -1677,7 +1677,7 @@ namespace laps {
 
                 state_.pub_subscribes_by_req_id[{ sub_track_h->GetRequestId().value(), key.second }] = sub_track_h;
                 state_.pub_subscribes[{ th.track_fullname_hash, key.second }] = sub_track_h;
-                
+
             } else {
                 auto pub_handler_it = state_.pub_subscribes.find({ th.track_fullname_hash, key.second });
                 if (pub_handler_it != state_.pub_subscribes.end()) {
