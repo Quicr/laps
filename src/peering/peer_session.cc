@@ -12,6 +12,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 namespace laps::peering {
 
@@ -234,13 +235,19 @@ namespace laps::peering {
         }
 
         // The transport FINs a stream when a queued object asks for it and the send queue has drained.
-        // Calling CloseStream here instead cuts off bytes still waiting to be written.
+        // Calling CloseStream here instead cuts off bytes still waiting to be written. The TTL has to
+        // stay within the transport time queue, which is twice the object TTL.
         if (status_ == StatusValue::kConnected && IsUsable()) {
             quicr::Transport::EnqueueFlags eflags;
             eflags.use_reliable = true;
             eflags.close_stream = true;
-            SendData(0, 60000, stream, eflags, std::make_shared<std::vector<uint8_t>>());
-            return;
+            const uint32_t ttl = config_.object_ttl_ > 0 ? config_.object_ttl_ * 2 : config_.object_ttl_;
+            try {
+                SendData(0, ttl, stream, eflags, std::make_shared<std::vector<uint8_t>>());
+                return;
+            } catch (const std::invalid_argument&) {
+                SPDLOG_LOGGER_DEBUG(LOGGER, "Queued stream FIN was rejected, closing stream directly");
+            }
         }
 
         CloseStream(stream, quicr::StreamClosedFlag::kFin);
