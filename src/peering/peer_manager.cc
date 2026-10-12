@@ -433,8 +433,6 @@ namespace laps::peering {
         auto it = info_base_->peer_fib_.find({ peer_session_id, data_header.sns_id });
         if (it != info_base_->peer_fib_.end()) {
             // TODO(tievens): Replace data_out with new transport multiple data
-            std::vector data_out(data->begin(), data->end());
-
             for (auto& [out_peer_sess_id, entry] : it->second) {
                 if (out_peer_sess_id == peer_session_id)
                     continue; // Skip; don't send back to same peer or if it's self
@@ -463,14 +461,15 @@ namespace laps::peering {
                         client_manager_->PeerDataReceived(
                           si_it->second.track_hash.track_fullname_hash, false, std::nullopt, client_data);
                     }
-
                     continue;
                 }
+
+                auto data_out = std::make_shared<std::vector<uint8_t>>(data->begin(), data->end());
 
                 // Update SNS_ID if new stream header included or if datagram (both have sns_id)
                 if (is_new_stream || eflags.use_reliable == false) {
                     auto sns_id_bytes = BytesOf(entry.out_sns_id);
-                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data_out.begin() + 2);
+                    std::copy(sns_id_bytes.rbegin(), sns_id_bytes.rend(), data_out->begin() + 2);
                 }
 
                 auto out_peer_sess = entry.peer_session.lock();
@@ -503,10 +502,8 @@ namespace laps::peering {
                     }
                 }
 
-                auto data_out_shared = std::make_shared<std::vector<uint8_t>>();
-                data_out_shared->assign(data_out.begin(), data_out.end());
                 out_peer_sess->SendData(
-                  data_header.priority, data_header.ttl, out_stream, eflags, std::move(data_out_shared));
+                  data_header.priority, data_header.ttl, out_stream, eflags, std::move(data_out));
             }
         } else {
             SPDLOG_LOGGER_DEBUG(config_.logger_,
@@ -1029,7 +1026,8 @@ namespace laps::peering {
                                             NodeId().Value(node_id));
 
                     } else {
-                        // Existing entry
+                        // Existing entry. Keep the egress streams already carrying this subgroup.
+                        // Replacing the entry drops that map, and later objects are discarded until a new stream.
                         const auto [o_sns_id, is_new] =
                           peer_sess->AddPeerSnsSourceNode(peer_session.GetSessionId(), sns.id, node_id, sns.priority);
                         if (is_new) {
@@ -1040,8 +1038,9 @@ namespace laps::peering {
                                                 NodeId().Value(node_id));
                         }
 
-                        fib_it->second[peer_sess->GetSessionId()] =
-                          InfoBase::FibEntry{ update_ref, {}, o_sns_id, peer_sess_weak };
+                        it->second.update_ref = update_ref;
+                        it->second.out_sns_id = o_sns_id;
+                        it->second.peer_session = peer_sess_weak;
                     }
                 }
             }

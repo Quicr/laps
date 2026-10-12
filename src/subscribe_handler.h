@@ -37,10 +37,10 @@ namespace laps {
         void SubgroupEnded(std::uint64_t group_id, std::uint64_t subgroup_id, bool reset) override;
 
         /// MoQT bytes forwarded by a peer, which still include the subgroup header.
-        void AcceptPeerStreamData(uint64_t stream_id,
+        void PeerStreamDataReceived(uint64_t stream_id,
                                   std::shared_ptr<const std::vector<uint8_t>> data,
                                   bool is_new_stream);
-        void AcceptPeerStreamClosed(uint64_t stream_id, bool reset);
+        void PeerStreamClosedReceived(uint64_t stream_id, bool reset);
 
         void DgramDataRecv(std::shared_ptr<const std::vector<uint8_t>> data) override;
         void ObjectReceived(const quicr::ObjectHeaders& object_headers,
@@ -142,7 +142,7 @@ namespace laps {
         };
 
         void ConsumeForwardedObjects(std::uint64_t group_id, std::uint64_t subgroup_id, SubgroupForwardState& subgroup);
-        void TryProcessStreamData(uint64_t stream_id, PeerStream& stream);
+        void ProcessStartOfStreamData(uint64_t stream_id, PeerStream& stream, bool is_from_peer = false);
         void CapturePeerStart(uint64_t stream_id,
                               PeerStream& stream,
                               quicr::messages::StreamHeaderSubGroup& header);

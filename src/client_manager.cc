@@ -1724,7 +1724,7 @@ namespace laps {
         }
 
         if (stream_id.has_value()) {
-            it->second->AcceptPeerStreamData(*stream_id, std::move(data), is_new_stream);
+            it->second->PeerStreamDataReceived(*stream_id, std::move(data), is_new_stream);
         } else {
             it->second->DgramDataRecv(std::move(data));
         }
@@ -1737,7 +1737,7 @@ namespace laps {
             return;
         }
 
-        it->second->AcceptPeerStreamClosed(stream_id, reset);
+        it->second->PeerStreamClosedReceived(stream_id, reset);
     }
 
     void ClientManager::MetricsSampled(const std::shared_ptr<quicr::Session>& session,

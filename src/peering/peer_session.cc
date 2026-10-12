@@ -114,7 +114,7 @@ namespace laps::peering {
 
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
 
-        if (is_new) {
+        if (is_new and node_info_.id != sub_node_id) {
             SendSns(sns, false);
         }
 

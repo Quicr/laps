@@ -381,14 +381,14 @@ namespace laps {
         }
     }
 
-    void SubscribeTrackHandler::AcceptPeerStreamData(uint64_t stream_id,
-                                                     std::shared_ptr<const std::vector<uint8_t>> data,
-                                                     bool is_new_stream)
+    void SubscribeTrackHandler::PeerStreamDataReceived(uint64_t stream_id,
+                                                       std::shared_ptr<const std::vector<uint8_t>> data,
+                                                       bool is_new_stream)
     {
         is_datagram_ = false;
+        auto [stream_it, inserted] = peer_streams_.try_emplace(stream_id);
 
         if (is_new_stream) {
-            auto [stream_it, inserted] = peer_streams_.try_emplace(stream_id);
             if (!inserted) {
                 SPDLOG_ERROR("Peer stream data got a new stream for existing Stream ID {}", stream_id);
                 return;
@@ -397,31 +397,33 @@ namespace laps {
             stream_it->second.buffer.Push(*data);
             stream_it->second.buffer.InitAny<quicr::messages::StreamHeaderSubGroup>();
             pending_source_buffers_.emplace(stream_id, std::vector{ std::move(data) });
-            TryProcessStreamData(stream_id, stream_it->second);
+            ProcessStartOfStreamData(stream_id, stream_it->second, true);
             return;
         }
 
-        const auto stream_it = peer_streams_.find(stream_id);
-        if (stream_it == peer_streams_.end()) {
+        if (inserted) {
+            peer_streams_.erase(stream_it);
             SPDLOG_ERROR("Peer stream data had no stream for expected Stream ID {}", stream_id);
             return;
         }
 
-        stream_it->second.buffer.Push(*data);
+        auto& stream = stream_it->second;
+        stream.buffer.Push(*data);
 
         const auto pending_it = pending_source_buffers_.find(stream_id);
         if (pending_it != pending_source_buffers_.end()) {
+            // Header is still incomplete. Keep the original bytes so the start can be forwarded once it parses.
             pending_it->second.push_back(std::move(data));
-        } else if (stream_it->second.header_parsed && !stream_it->second.peering_started) {
-            // The subgroup id is still the first object's. Hold these bytes with the header.
-            stream_it->second.pending_peer_bytes.insert(
-              stream_it->second.pending_peer_bytes.end(), data->begin(), data->end());
-        } else if (stream_it->second.peering_started) {
-            ForwardReceivedData(
-              false, stream_it->second.current_group_id, stream_it->second.current_subgroup_id, std::move(data));
+        } else if (stream.header_parsed && !stream.peering_started) {
+            // Subgroup id comes from the first object. Hold these bytes with the header.
+            stream.pending_peer_bytes.insert(stream.pending_peer_bytes.end(), data->begin(), data->end());
+        } else if (stream.peering_started && stream.next_object_id.has_value()) {
+            // ForwardPeerData already copied this chunk to other peers. Local subscribers follow the raw
+            // bytes once PublishObject has opened their stream.
+            ForwardReceivedData(false, stream.current_group_id, stream.current_subgroup_id, data, false);
         }
 
-        TryProcessStreamData(stream_id, stream_it->second);
+        ProcessStartOfStreamData(stream_id, stream, true);
     }
 
     void SubscribeTrackHandler::CapturePeerStart(uint64_t stream_id,
@@ -467,14 +469,17 @@ namespace laps {
             return;
         }
 
+        // These bytes already went out on the peer pipeline. Forwarding them again opens a second
+        // stream that stops after this start. Local subscribers are still served by PublishObject.
         ForwardReceivedData(true,
                             stream.current_group_id,
                             stream.current_subgroup_id,
-                            std::make_shared<quicr::Bytes>(std::move(stream.pending_peer_bytes)));
+                            std::make_shared<quicr::Bytes>(std::move(stream.pending_peer_bytes)),
+                            false);
         stream.pending_peer_bytes.clear();
     }
 
-    void SubscribeTrackHandler::TryProcessStreamData(uint64_t stream_id, PeerStream& stream)
+    void SubscribeTrackHandler::ProcessStartOfStreamData(uint64_t stream_id, PeerStream& stream, bool is_from_peer)
     {
         auto& s_hdr = stream.buffer.GetAny<quicr::messages::StreamHeaderSubGroup>();
         if (!stream.header_parsed) {
@@ -538,9 +543,7 @@ namespace laps {
 
             stream.current_group_id = s_hdr.group_id;
             stream.current_subgroup_id = s_hdr.subgroup_id.value();
-            if (!stream.peering_started) {
-                StartPeeringForward(stream);
-            }
+            StartPeeringForward(stream);
 
             ObjectReceived({ s_hdr.group_id,
                              stream.next_object_id.value(),
@@ -567,7 +570,7 @@ namespace laps {
                       s_hdr.group_id,
                       s_hdr.subgroup_id.value(),
                       std::make_shared<std::vector<uint8_t>>(remaining_data.begin(), remaining_data.end()),
-                      false);
+                      !is_from_peer);
                 }
             }
         }
@@ -728,7 +731,7 @@ namespace laps {
         }
     }
 
-    void SubscribeTrackHandler::AcceptPeerStreamClosed(std::uint64_t stream_id, bool use_reset)
+    void SubscribeTrackHandler::PeerStreamClosedReceived(std::uint64_t stream_id, bool use_reset)
     {
         pending_source_buffers_.erase(stream_id);
 
