@@ -173,6 +173,11 @@ namespace laps {
           const quicr::TrackNamespace& prefix_namespace,
           const quicr::SubscribeNamespaceAttributes& attributes) override;
 
+        quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeNamespaceReceived(
+          const std::shared_ptr<quicr::Session>& session,
+          const quicr::TrackNamespace& prefix_namespace,
+          const quicr::SubscribeNamespaceAttributes& attributes) override;
+
         void UnsubscribeNamespaceReceived(const std::shared_ptr<quicr::Session>& session,
                                           const quicr::TrackNamespace& prefix_namespace) override;
 
@@ -254,6 +259,27 @@ namespace laps {
          */
         void FanoutPublishNamespaceDone(const quicr::TrackNamespace& track_namespace);
 
+        /**
+         * @brief Send NAMESPACE or NAMESPACE_DONE to subscribe-namespace subscribers whose prefix matches
+         *
+         * @param track_namespace      Fully qualified namespace that became active or ended
+         * @param exclude_connection   Publishing connection. Skipped unless self-forwarding is allowed
+         * @param done                 True sends NAMESPACE_DONE, false sends NAMESPACE
+         */
+        void NotifySubscribeNamespaces(const quicr::TrackNamespace& track_namespace,
+                                       std::uint64_t exclude_connection,
+                                       bool done);
+
+        /**
+         * @brief True when some publisher still has this namespace announced or a track in it
+         */
+        bool NamespaceStillPublished(const quicr::TrackNamespace& track_namespace) const;
+
+        /**
+         * @brief Drop one subscribe-namespace subscription and any NAMESPACE already sent for it
+         */
+        void DropSubscribeNamespace(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix);
+
         quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceivedInternal(
           std::uint64_t connection_handle,
           uint64_t request_id,
@@ -292,6 +318,9 @@ namespace laps {
         /// Fanned out publish namespaces, key is announced namespace and the subscriber connection handle
         std::map<std::pair<quicr::TrackNamespace, std::uint64_t>, std::shared_ptr<quicr::PublishNamespaceHandler>>
           fanout_namespaces_;
+
+        /// Namespaces already reported with NAMESPACE, keyed by namespace and subscriber connection
+        std::set<std::pair<quicr::TrackNamespace, std::uint64_t>> notified_namespaces_;
 
         /**
          * @brief Map of atomic bools to mark if a fetch thread should be interrupted.

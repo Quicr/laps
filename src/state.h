@@ -64,13 +64,22 @@ namespace laps {
         std::map<std::pair<uint64_t, std::uint64_t>, std::shared_ptr<SubscribeTrackHandler>> pub_subscribes_by_req_id;
 
         /**
-         * @brief Subscribe Namespace by connection to publish namespace handlers
-         * @details Subscribe namespaces by connection are added to this map. Each will have an associated
+         * @brief Subscribe tracks by connection to publish namespace handlers
+         * @details Subscribe tracks by connection are added to this map. Each will have an associated
          *      publish namespace handler. The publish namespace handler is used to establish publish tracks
          *      to the subscriber of the namespace
          */
         std::map<quicr::TrackNamespace, std::map<std::uint64_t, std::shared_ptr<PublishNamespaceHandler>>>
-          subscribes_namespaces;
+          subscribe_tracks;
+
+        /**
+         * @brief Subscribe namespace prefix to the subscriber connection handle
+         *
+         * @details One subscriber connection per prefix. NAMESPACE and NAMESPACE_DONE for a matching
+         *      publish are sent on that connection's SUBSCRIBE_NAMESPACE request stream.
+         */
+        std::map<quicr::TrackNamespace, std::uint64_t> subscribe_namespaces;
+
 
         struct SubscribePublishHandlerInfo
         {
