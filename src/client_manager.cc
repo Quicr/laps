@@ -359,9 +359,8 @@ namespace laps {
         }
     }
 
-    quicr::Reply<void, quicr::PublishNamespaceErrorCode> ClientManager::PublishNamespaceDoneReceived(
-      const std::shared_ptr<quicr::Session>& session,
-      std::uint64_t request_id)
+    void ClientManager::PublishNamespaceDoneReceived(const std::shared_ptr<quicr::Session>& session,
+                                                     std::uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
 
@@ -373,7 +372,7 @@ namespace laps {
               connection_handle,
               request_id);
 
-            return {};
+            return;
         }
 
         SPDLOG_LOGGER_DEBUG(LOGGER,
@@ -408,8 +407,6 @@ namespace laps {
 
         if (connection_handle)
             peer_manager_.ClientUnannounce({ track_namespace, {} });
-
-        return {};
     }
 
     void ClientManager::PurgePublishState(std::uint64_t connection_handle)
@@ -869,14 +866,13 @@ namespace laps {
         return matched_ns;
     }
 
-    quicr::Reply<void, quicr::ErrorCode> ClientManager::UnsubscribeNamespaceReceived(
-      const std::shared_ptr<quicr::Session>& session,
-      const quicr::TrackNamespace& prefix_namespace)
+    void ClientManager::UnsubscribeNamespaceReceived(const std::shared_ptr<quicr::Session>& session,
+                                                     const quicr::TrackNamespace& prefix_namespace)
     {
         const auto connection_handle = ConnectionHandle(session);
         auto it = state_.subscribes_namespaces.find(prefix_namespace);
         if (it == state_.subscribes_namespaces.end()) {
-            return {};
+            return;
         }
 
         auto th = quicr::TrackHash({ prefix_namespace, {} });
@@ -890,7 +886,7 @@ namespace laps {
             if (it->second.empty()) {
                 state_.subscribes_namespaces.erase(it);
             }
-            return {};
+            return;
         }
 
         // Loop through publishes and remove subscribe namespace
@@ -915,25 +911,21 @@ namespace laps {
             state_.subscribes_namespaces.erase(it);
             track_rankings_.erase(th.track_namespace_hash);
         }
-
-        return {};
     }
 
-    quicr::Expected<void, quicr::Error<quicr::ErrorCode>> ClientManager::ClientSetupReceived(
+    quicr::Expected<void, quicr::Error<quicr::ErrorCode>> ClientManager::SetupReceived(
       const std::shared_ptr<quicr::Session>& session,
-      const quicr::ClientSetupAttributes& client_setup_attributes)
+      const quicr::SetupAttributes& setup_attributes)
     {
         const auto connection_handle = ConnectionHandle(session);
-        metrics_publisher_.SetConnectionEndpointId(connection_handle, client_setup_attributes.endpoint_id);
+        metrics_publisher_.SetConnectionEndpointId(connection_handle, setup_attributes.endpoint_id);
 
-        SPDLOG_LOGGER_INFO(LOGGER, "Client setup received from endpoint_id: {0}", client_setup_attributes.endpoint_id);
+        SPDLOG_LOGGER_INFO(LOGGER, "Setup received from endpoint_id: {0}", setup_attributes.endpoint_id);
 
         return {};
     }
 
-    quicr::Reply<void, quicr::ErrorCode> ClientManager::PublishDoneReceived(
-      const std::shared_ptr<quicr::Session>& session,
-      uint64_t request_id)
+    void ClientManager::PublishDoneReceived(const std::shared_ptr<quicr::Session>& session, uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
         SPDLOG_LOGGER_INFO(
@@ -945,7 +937,7 @@ namespace laps {
                                "Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
                                connection_handle,
                                request_id);
-            return {};
+            return;
         }
 
         if (connection_handle)
@@ -1037,13 +1029,9 @@ namespace laps {
         if (!have_publishers) {
             publisher_handler->RemoveFromTrackRanking();
         }
-
-        return {};
     }
 
-    quicr::Reply<void, quicr::ErrorCode> ClientManager::UnsubscribeReceived(
-      const std::shared_ptr<quicr::Session>& session,
-      uint64_t request_id)
+    void ClientManager::UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session, uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
         SPDLOG_LOGGER_INFO(LOGGER, "Unsubscribe connection handle: {0} request_id: {1}", connection_handle, request_id);
@@ -1052,7 +1040,7 @@ namespace laps {
         if (ta_it == state_.subscribe_alias_req_id.end()) {
             SPDLOG_WARN(
               "Unable to find track alias for connection handle: {0} request_id: {1}", connection_handle, request_id);
-            return {};
+            return;
         }
 
         std::lock_guard<std::mutex> _(state_.state_mutex);
@@ -1065,7 +1053,7 @@ namespace laps {
                                 "Unsubscribe unable to find track handler for connection handle: {0} request_id: {1}",
                                 connection_handle,
                                 request_id);
-            return {};
+            return;
         }
 
         auto& metric_sub_count = state_.conn_state_metrics[connection_handle].subscribed_tracks;
@@ -1102,8 +1090,6 @@ namespace laps {
         state_.subscribes.erase(sub_it);
 
         RemoveOrPausePublisherSubscribe(th.track_fullname_hash);
-
-        return {};
     }
 
     void ClientManager::RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash)
@@ -1159,16 +1145,14 @@ namespace laps {
 
     quicr::Reply<quicr::TrackStatusResponse, quicr::RequestErrorCode> ClientManager::TrackStatusReceived(
       const std::shared_ptr<quicr::Session>& session,
-      uint64_t request_id,
       const quicr::FullTrackName& track_full_name)
     {
         const auto connection_handle = ConnectionHandle(session);
         auto th = quicr::TrackHash(track_full_name);
 
         SPDLOG_LOGGER_INFO(LOGGER,
-                           "Track status request connection handle: {} request_id: {} track alias: {}",
+                           "Track status request connection handle: {} track alias: {}",
                            connection_handle,
-                           request_id,
                            th.track_fullname_hash);
 
         const auto largest = GetLargestAvailable(track_full_name);
