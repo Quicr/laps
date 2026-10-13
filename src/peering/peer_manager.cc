@@ -502,8 +502,7 @@ namespace laps::peering {
                     }
                 }
 
-                out_peer_sess->SendData(
-                  data_header.priority, data_header.ttl, out_stream, eflags, std::move(data_out));
+                out_peer_sess->SendData(data_header.priority, data_header.ttl, out_stream, eflags, std::move(data_out));
             }
         } else {
             SPDLOG_LOGGER_DEBUG(config_.logger_,
@@ -639,17 +638,16 @@ namespace laps::peering {
                         continue;
                     }
 
-                    SPDLOG_LOGGER_TRACE(
-                      LOGGER,
-                      "Data object send, peer_session: {} egress SNS_ID: {} tfn_hash: {} "
-                      "group_id: {} subgroup_id: {} streams: {} data len: {}",
-                      peer_sess->GetSessionId(),
-                      fib_entry.out_sns_id,
-                      track_full_name_hash,
-                      group_id,
-                      subgroup_id,
-                      fib_entry.streams.size(),
-                      net_data->size());
+                    SPDLOG_LOGGER_TRACE(LOGGER,
+                                        "Data object send, peer_session: {} egress SNS_ID: {} tfn_hash: {} "
+                                        "group_id: {} subgroup_id: {} streams: {} data len: {}",
+                                        peer_sess->GetSessionId(),
+                                        fib_entry.out_sns_id,
+                                        track_full_name_hash,
+                                        group_id,
+                                        subgroup_id,
+                                        fib_entry.streams.size(),
+                                        net_data->size());
                 }
 
                 peer_sess->SendData(priority, ttl, out_stream, eflags, send_data);

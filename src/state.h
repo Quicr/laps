@@ -81,7 +81,6 @@ namespace laps {
          */
         std::map<quicr::TrackNamespace, std::set<std::uint64_t>> subscribe_namespaces;
 
-
         struct SubscribePublishHandlerInfo
         {
             quicr::FullTrackName track_full_name;

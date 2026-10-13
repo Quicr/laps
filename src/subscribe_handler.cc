@@ -92,6 +92,7 @@ namespace laps {
             auto pub_track_h = std::make_shared<PublishTrackHandler>(
               GetFullTrackName(),
               is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream,
+              GetPriority(),
               priority == 0 ? GetPriority() : priority,
               delivery_timeout.count() == 0
                 ? GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count()

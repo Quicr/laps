@@ -740,6 +740,7 @@ namespace laps {
                       publish_attributes.track_full_name,
                       quicr::TrackMode::kStream,
                       publish_attributes.publisher_priority,
+                      publish_attributes.publisher_priority,
                       publish_attributes.delivery_timeout.value_or(config_.object_ttl_),
                       publish_attributes.largest_object.value_or(quicr::messages::Location{ 0, 0 }),
                       *this);
@@ -890,11 +891,10 @@ namespace laps {
               th.track_namespace_hash,
               prefix_namespace.Str());
         } else {
-            SPDLOG_INFO(
-              "Duplicate subscribe namespace connection handle: {} for namespace_hash: {} prefix: {}",
-              connection_handle,
-              th.track_namespace_hash,
-              prefix_namespace.Str());
+            SPDLOG_INFO("Duplicate subscribe namespace connection handle: {} for namespace_hash: {} prefix: {}",
+                        connection_handle,
+                        th.track_namespace_hash,
+                        prefix_namespace.Str());
             return quicr::Unexpected<quicr::Error<quicr::RequestErrorCode>>(
               quicr::RequestErrorCode::kDuplicateSubscription, "Duplicate subscribe namespace");
         }
@@ -936,6 +936,7 @@ namespace laps {
                   track_full_name,
                   quicr::TrackMode::kStream,
                   handler->GetPriority(),
+                  handler->GetPriority(),
                   handler->GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   largest_location.value_or(quicr::messages::Location{ 0, 0 }),
                   *this);
@@ -957,7 +958,7 @@ namespace laps {
                   quicr::TrackHash(track_full_name).track_fullname_hash);
             }
         }
-        
+
         return matched_ns;
     }
 
@@ -1035,6 +1036,7 @@ namespace laps {
                 const auto pub_handler = PublishTrackHandler::Create(
                   track_full_name,
                   quicr::TrackMode::kStream,
+                  handler->GetPriority(),
                   handler->GetPriority(),
                   handler->GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   largest_location.value_or(quicr::messages::Location{ 0, 0 }),

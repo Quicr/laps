@@ -11,14 +11,16 @@ namespace laps {
      */
     PublishTrackHandler::PublishTrackHandler(const quicr::FullTrackName& full_track_name,
                                              quicr::TrackMode track_mode,
-                                             uint8_t default_priority,
+                                             uint8_t publisher_priority,
+                                             uint8_t publish_object_priority,
                                              uint32_t default_ttl,
                                              quicr::messages::Location start_location,
                                              ClientManager& server,
                                              std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
       : quicr::PublishTrackHandler(full_track_name,
                                    track_mode,
-                                   default_priority,
+                                   publisher_priority,
+                                   publish_object_priority,
                                    default_ttl,
                                    stream_mode,
                                    start_location)
@@ -150,6 +152,10 @@ namespace laps {
                 attrs.publisher_default_group_order = publisher_default_group_order;
                 attrs.forward = forward;
                 attrs.new_group_request_id = new_group_request_id;
+
+                if (priority) {
+                    publish_object_priority_ = priority;
+                }
 
                 server_.peer_manager_.ClientSubscribe(GetFullTrackName(), attrs);
                 break;

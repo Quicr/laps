@@ -12,7 +12,8 @@ namespace laps {
       public:
         PublishTrackHandler(const quicr::FullTrackName& full_track_name,
                             quicr::TrackMode track_mode,
-                            uint8_t default_priority,
+                            uint8_t publisher_priority,
+                            uint8_t publish_object_priority,
                             uint32_t default_ttl,
                             quicr::messages::Location start_location,
                             ClientManager& server,
@@ -32,13 +33,19 @@ namespace laps {
 
         static std::shared_ptr<PublishTrackHandler> Create(const quicr::FullTrackName& full_track_name,
                                                            quicr::TrackMode track_mode,
-                                                           uint8_t default_priority,
+                                                           uint8_t publisher_priority,
+                                                           uint8_t publish_object_priority,
                                                            uint32_t default_ttl,
                                                            quicr::messages::Location start_location,
                                                            ClientManager& server)
         {
-            return std::make_shared<PublishTrackHandler>(
-              full_track_name, track_mode, default_priority, default_ttl, start_location, server);
+            return std::make_shared<PublishTrackHandler>(full_track_name,
+                                                         track_mode,
+                                                         publisher_priority,
+                                                         publish_object_priority,
+                                                         default_ttl,
+                                                         start_location,
+                                                         server);
         }
 
       protected:
