@@ -317,7 +317,7 @@ namespace laps::peering {
                                                 .default_publisher_group_order =
                                                   quicr::messages::GroupOrder::kAscending,
                                                 .dynamic_groups = true,
-                                                .default_publisher_priority = 64,
+                                                .publisher_priority = 64,
                                                 .max_cache_duration = std::nullopt,
                                                 .delivery_timeout = kDefaultObjectTtl,
                                                 .track_properties = {} };

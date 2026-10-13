@@ -739,7 +739,7 @@ namespace laps {
                     const auto handler = PublishTrackHandler::Create(
                       publish_attributes.track_full_name,
                       quicr::TrackMode::kStream,
-                      publish_attributes.default_publisher_priority,
+                      publish_attributes.publisher_priority,
                       publish_attributes.delivery_timeout.value_or(config_.object_ttl_),
                       publish_attributes.largest_object.value_or(quicr::messages::Location{ 0, 0 }),
                       *this);
@@ -759,6 +759,7 @@ namespace laps {
                                                                          *this,
                                                                          config_.tick_service_,
                                                                          true);
+        sub_track_handler->SetPriority(publish_attributes.publisher_priority);
 
         if (bypass_resolve) {
             // Accepting the publish normally binds the handler to its connection, which is what assigns the
