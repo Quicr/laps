@@ -134,8 +134,8 @@ namespace laps {
         }
 
         std::vector<quicr::TrackNamespace> remove_sub_ns;
-        for (const auto& [ns, conn] : state_.subscribe_namespaces) {
-            if (conn == connection_handle) {
+        for (const auto& [ns, conns] : state_.subscribe_namespaces) {
+            if (conns.find(connection_handle) != conns.end()) {
                 remove_sub_ns.push_back(ns);
             }
         }
@@ -373,44 +373,46 @@ namespace laps {
                                                   std::uint64_t exclude_connection,
                                                   bool done)
     {
-        for (const auto& [prefix, connection_handle] : state_.subscribe_namespaces) {
-            if (connection_handle == exclude_connection && !config_.allow_self) {
-                continue;
-            }
-
+        for (const auto& [prefix, connections] : state_.subscribe_namespaces) {
             const auto match = prefix.IsPrefixOf(track_namespace);
             if (match == std::partial_ordering::unordered || match == std::partial_ordering::greater) {
                 continue;
             }
 
-            const auto key = std::make_pair(track_namespace, connection_handle);
-            if (done) {
-                if (notified_namespaces_.erase(key) == 0) {
+            for (const auto connection_handle : connections) {
+                if (connection_handle == exclude_connection && !config_.allow_self) {
                     continue;
                 }
-            } else if (!notified_namespaces_.emplace(key).second) {
-                continue;
-            }
 
-            auto session = GetSession(connection_handle);
-            if (session == nullptr) {
-                if (!done) {
-                    notified_namespaces_.erase(key);
+                const auto key = std::make_pair(track_namespace, connection_handle);
+                if (done) {
+                    if (notified_namespaces_.erase(key) == 0) {
+                        continue;
+                    }
+                } else if (!notified_namespaces_.emplace(key).second) {
+                    continue;
                 }
-                continue;
-            }
 
-            if (done) {
-                session->SendNamespaceDone(track_namespace);
-            } else {
-                session->SendNamespace(track_namespace);
-            }
+                auto session = GetSession(connection_handle);
+                if (session == nullptr) {
+                    if (!done) {
+                        notified_namespaces_.erase(key);
+                    }
+                    continue;
+                }
 
-            SPDLOG_LOGGER_DEBUG(LOGGER,
-                                "{} subscribe namespace connection handle: {} namespace hash: {}",
-                                done ? "NAMESPACE_DONE to" : "NAMESPACE to",
-                                connection_handle,
-                                quicr::TrackHash({ track_namespace, {} }).track_namespace_hash);
+                if (done) {
+                    session->SendNamespaceDone(track_namespace);
+                } else {
+                    session->SendNamespace(track_namespace);
+                }
+
+                SPDLOG_LOGGER_DEBUG(LOGGER,
+                                    "{} subscribe namespace connection handle: {} namespace hash: {}",
+                                    done ? "NAMESPACE_DONE to" : "NAMESPACE to",
+                                    connection_handle,
+                                    quicr::TrackHash({ track_namespace, {} }).track_namespace_hash);
+            }
         }
     }
 
@@ -434,11 +436,13 @@ namespace laps {
     void ClientManager::DropSubscribeNamespace(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix)
     {
         const auto it = state_.subscribe_namespaces.find(prefix);
-        if (it == state_.subscribe_namespaces.end() || it->second != connection_handle) {
+        if (it == state_.subscribe_namespaces.end() || it->second.erase(connection_handle) == 0) {
             return;
         }
 
-        state_.subscribe_namespaces.erase(it);
+        if (it->second.empty()) {
+            state_.subscribe_namespaces.erase(it);
+        }
 
         for (auto notified = notified_namespaces_.begin(); notified != notified_namespaces_.end();) {
             const auto match = prefix.IsPrefixOf(notified->first);
@@ -869,15 +873,16 @@ namespace laps {
     quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> ClientManager::SubscribeNamespaceReceived(
       const std::shared_ptr<quicr::Session>& session,
       const quicr::TrackNamespace& prefix_namespace,
-      const quicr::SubscribeNamespaceAttributes& attributes)
+      [[maybe_unused]] const quicr::SubscribeNamespaceAttributes& attributes)
     {
 
         const auto connection_handle = ConnectionHandle(session);
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
-        const auto is_new = state_.subscribe_namespaces.try_emplace(prefix_namespace, connection_handle).second;
+        auto [ns_it, _] = state_.subscribe_namespaces.try_emplace(prefix_namespace);
+        const auto inserted = ns_it->second.insert(connection_handle).second;
 
-        if (is_new) {
+        if (inserted) {
             SPDLOG_INFO(
               "Subscribe namespace received connection handle: {} for namespace_hash: {} prefix: {}, adding to state",
               connection_handle,

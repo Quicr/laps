@@ -73,12 +73,13 @@ namespace laps {
           subscribe_tracks;
 
         /**
-         * @brief Subscribe namespace prefix to the subscriber connection handle
+         * @brief Subscribe namespace prefix to the subscriber connection handles
          *
-         * @details One subscriber connection per prefix. NAMESPACE and NAMESPACE_DONE for a matching
-         *      publish are sent on that connection's SUBSCRIBE_NAMESPACE request stream.
+         * @details Each prefix keeps every connection that subscribed to it. NAMESPACE and NAMESPACE_DONE
+         *      for a matching publish are sent on each of those connections' SUBSCRIBE_NAMESPACE streams.
+         *      Removing the last connection removes the prefix.
          */
-        std::map<quicr::TrackNamespace, std::uint64_t> subscribe_namespaces;
+        std::map<quicr::TrackNamespace, std::set<std::uint64_t>> subscribe_namespaces;
 
 
         struct SubscribePublishHandlerInfo
