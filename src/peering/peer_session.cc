@@ -8,8 +8,11 @@
 #include "peering/messages/node_info.h"
 #include "peering/messages/subscribe_info.h"
 
+#include <stream.h>
+
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 namespace laps::peering {
 
@@ -111,7 +114,7 @@ namespace laps::peering {
 
         auto [__, is_new] = sns.nodes.emplace(sub_node_id);
 
-        if (is_new) {
+        if (is_new and node_info_.id != sub_node_id) {
             SendSns(sns, false);
         }
 
@@ -225,6 +228,31 @@ namespace laps::peering {
         transport_->CloseStream(connection_, stream, operation);
     }
 
+    void PeerSession::FinishStream(const std::shared_ptr<quicr::Stream>& stream)
+    {
+        if (stream == nullptr) {
+            return;
+        }
+
+        // The transport FINs a stream when a queued object asks for it and the send queue has drained.
+        // Calling CloseStream here instead cuts off bytes still waiting to be written. The TTL has to
+        // stay within the transport time queue, which is twice the object TTL.
+        if (status_ == StatusValue::kConnected && IsUsable()) {
+            quicr::Transport::EnqueueFlags eflags;
+            eflags.use_reliable = true;
+            eflags.close_stream = true;
+            const uint32_t ttl = config_.object_ttl_ > 0 ? config_.object_ttl_ * 2 : config_.object_ttl_;
+            try {
+                SendData(0, ttl, stream, eflags, std::make_shared<std::vector<uint8_t>>());
+                return;
+            } catch (const std::invalid_argument&) {
+                SPDLOG_LOGGER_DEBUG(LOGGER, "Queued stream FIN was rejected, closing stream directly");
+            }
+        }
+
+        CloseStream(stream, quicr::StreamClosedFlag::kFin);
+    }
+
     void PeerSession::SendData(uint8_t priority,
                                uint32_t ttl,
                                const std::shared_ptr<quicr::Stream>& stream,
@@ -286,11 +314,13 @@ namespace laps::peering {
         if (status_ != StatusValue::kConnected || !IsUsable())
             return;
         SPDLOG_LOGGER_DEBUG(LOGGER,
-                            "Sending subscribe fullname: {} source_node_id: {} withdraw: {} sub_data_size: {}",
+                            "Sending subscribe fullname: {} source_node_id: {} withdraw: {} priority: {} new_group: {}",
                             subscribe_info.track_hash.track_fullname_hash,
                             NodeId().Value(subscribe_info.source_node_id),
                             withdraw,
-                            subscribe_info.subscribe_data.size());
+                            subscribe_info.priority,
+                            subscribe_info.new_group_request_id.has_value() ? *subscribe_info.new_group_request_id
+                                                                            : -1);
 
         SendControl(subscribe_info.Serialize(true, withdraw, node_info_.id == subscribe_info.source_node_id));
     }
@@ -554,47 +584,60 @@ namespace laps::peering {
         return true;
     }
 
-    void PeerSession::OnRecvStream(std::uint64_t stream_id,
-                                   const std::shared_ptr<quicr::StreamRxContext>& rx_ctx,
-                                   const std::shared_ptr<quicr::Stream>& stream,
-                                   const bool is_bidir)
+    bool PeerSession::OnRecvStream(const std::shared_ptr<quicr::Stream>& stream)
     {
-        if (!IsUsable() || rx_ctx == nullptr) {
-            return;
+        if (!IsUsable() || stream == nullptr) {
+            return false;
         }
+
+        const auto stream_id = stream->GetStreamId();
+        const bool is_bidir = stream->IsBidirectional();
 
         /*
          * Control messages arrive on the one bidirectional stream, which the inbound side of the session
          * only learns about here. Both sides answer on it, so it is adopted either way.
          */
-        if (is_bidir && stream != nullptr) {
+        if (is_bidir) {
             control_stream_ = stream;
             control_stream_id_ = stream_id;
         }
 
-        for (int i = 0; i < kReadLoopMaxPerStream; i++) {
-            if (rx_ctx->data_queue.Empty()) {
-                break;
+        quicr::Bytes data;
+        {
+            std::lock_guard lock(stream->rx_mutex);
+
+            // A new object stream names its header length in the first byte. Leave a short read where it
+            // is so the next arrival can complete it.
+            if (!is_bidir && !rx_stream_headers_.contains(stream_id)) {
+                const auto available = stream->rx_data.Data();
+                if (available.empty() || available.size() < available.front()) {
+                    return false;
+                }
             }
 
-            auto data_opt = rx_ctx->data_queue.Pop();
-            if (not data_opt.has_value()) {
-                break;
-            }
-
-            const auto& data = data_opt.value();
-
-            // Get common header
-            if (is_bidir) { // control
-                controL_msg_buffer_.insert(controL_msg_buffer_.end(), data->begin(), data->end());
-
-                ProcessControlMessage();
-
-            } else if (!ProcessReceivedData(stream_id, std::move(data))) {
-                i = 59;
-                continue; // Try once more
-            }
+            data = stream->rx_data.TakeAll();
         }
+
+        if (data.empty()) {
+            return false;
+        }
+
+        if (is_bidir) {
+            controL_msg_buffer_.insert(controL_msg_buffer_.end(), data.begin(), data.end());
+
+            // One read can now hold several messages, where each used to arrive as its own chunk.
+            for (;;) {
+                const auto buffered = controL_msg_buffer_.size();
+                ProcessControlMessage();
+                if (controL_msg_buffer_.size() == buffered) {
+                    break;
+                }
+            }
+        } else {
+            ProcessReceivedData(stream_id, std::make_shared<quicr::Bytes>(std::move(data)));
+        }
+
+        return false;
     }
 
     void PeerSession::OnRecvDgram()
@@ -630,10 +673,13 @@ namespace laps::peering {
         metrics_.srtt_us = quic_connection_metrics.srtt_us.avg;
     }
 
-    void PeerSession::OnStreamClosed(std::uint64_t stream_id,
-                                     [[maybe_unused]] std::shared_ptr<quicr::StreamRxContext> rx_context,
-                                     quicr::StreamClosedFlag flag)
+    void PeerSession::OnStreamClosed(const std::shared_ptr<quicr::Stream>& stream, quicr::StreamClosedFlag flag)
     {
+        if (stream == nullptr) {
+            return;
+        }
+
+        const auto stream_id = stream->GetStreamId();
         const auto conn_id = GetSessionId();
 
         if (control_stream_ != nullptr && control_stream_id_.has_value() && *control_stream_id_ == stream_id) {

@@ -164,27 +164,30 @@ namespace laps {
         void MetricsSampled(const std::shared_ptr<quicr::Session>& session,
                             const quicr::ConnectionMetrics& metrics) override;
 
-        quicr::Reply<void, quicr::ErrorCode> ClientSetupReceived(
+        quicr::Expected<void, quicr::Error<quicr::ErrorCode>> SetupReceived(
           const std::shared_ptr<quicr::Session>& session,
-          const quicr::ClientSetupAttributes& client_setup_attributes) override;
+          const quicr::SetupAttributes& setup_attributes) override;
 
         quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeTracksReceived(
           const std::shared_ptr<quicr::Session>& session,
           const quicr::TrackNamespace& prefix_namespace,
           const quicr::SubscribeNamespaceAttributes& attributes) override;
 
-        quicr::Reply<void, quicr::ErrorCode> UnsubscribeNamespaceReceived(
+        quicr::Reply<std::vector<quicr::TrackNamespace>, quicr::RequestErrorCode> SubscribeNamespaceReceived(
           const std::shared_ptr<quicr::Session>& session,
-          const quicr::TrackNamespace& prefix_namespace) override;
+          const quicr::TrackNamespace& prefix_namespace,
+          const quicr::SubscribeNamespaceAttributes& attributes) override;
+
+        void UnsubscribeNamespaceReceived(const std::shared_ptr<quicr::Session>& session,
+                                          const quicr::TrackNamespace& prefix_namespace) override;
 
         quicr::Reply<void, quicr::PublishNamespaceErrorCode> PublishNamespaceReceived(
           const std::shared_ptr<quicr::Session>& session,
           const quicr::TrackNamespace& track_namespace,
           const quicr::PublishNamespaceAttributes& attributes) override;
 
-        quicr::Reply<void, quicr::PublishNamespaceErrorCode> PublishNamespaceDoneReceived(
-          const std::shared_ptr<quicr::Session>& session,
-          std::uint64_t request_id) override;
+        void PublishNamespaceDoneReceived(const std::shared_ptr<quicr::Session>& session,
+                                          std::uint64_t request_id) override;
 
         quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceived(
           const std::shared_ptr<quicr::Session>& session,
@@ -192,24 +195,21 @@ namespace laps {
           const quicr::PublishAttributes& publish_attributes,
           std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler) override;
 
-        quicr::Reply<void, quicr::ErrorCode> PublishDoneReceived(const std::shared_ptr<quicr::Session>& session,
-                                                                 std::uint64_t request_id) override;
+        void PublishDoneReceived(const std::shared_ptr<quicr::Session>& session, std::uint64_t request_id) override;
 
-        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> SubscribeReceived(
+        quicr::Reply<quicr::SubscribeResponse, quicr::RequestErrorCode> SubscribeReceived(
           const std::shared_ptr<quicr::Session>& session,
           std::uint64_t request_id,
           const quicr::FullTrackName& track_full_name,
           const quicr::SubscribeAttributes& subscribe_attributes) override;
 
-        quicr::Reply<void, quicr::ErrorCode> UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session,
-                                                                 std::uint64_t request_id) override;
+        void UnsubscribeReceived(const std::shared_ptr<quicr::Session>& session, std::uint64_t request_id) override;
 
         quicr::Reply<void, quicr::ErrorCode> NewGroupRequested(const quicr::FullTrackName& track_full_name,
                                                                std::uint64_t group_id) override;
 
-        quicr::Reply<quicr::RequestResponse, quicr::RequestErrorCode> TrackStatusReceived(
+        quicr::Reply<quicr::TrackStatusResponse, quicr::RequestErrorCode> TrackStatusReceived(
           const std::shared_ptr<quicr::Session>& session,
-          std::uint64_t request_id,
           const quicr::FullTrackName& track_full_name) override;
 
         quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> StandaloneFetchReceived(
@@ -259,6 +259,27 @@ namespace laps {
          */
         void FanoutPublishNamespaceDone(const quicr::TrackNamespace& track_namespace);
 
+        /**
+         * @brief Send NAMESPACE or NAMESPACE_DONE to subscribe-namespace subscribers whose prefix matches
+         *
+         * @param track_namespace      Fully qualified namespace that became active or ended
+         * @param exclude_connection   Publishing connection. Skipped unless self-forwarding is allowed
+         * @param done                 True sends NAMESPACE_DONE, false sends NAMESPACE
+         */
+        void NotifySubscribeNamespaces(const quicr::TrackNamespace& track_namespace,
+                                       std::uint64_t exclude_connection,
+                                       bool done);
+
+        /**
+         * @brief True when some publisher still has this namespace announced or a track in it
+         */
+        bool NamespaceStillPublished(const quicr::TrackNamespace& track_namespace) const;
+
+        /**
+         * @brief Drop one subscribe-namespace subscription and any NAMESPACE already sent for it
+         */
+        void DropSubscribeNamespace(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix);
+
         quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceivedInternal(
           std::uint64_t connection_handle,
           uint64_t request_id,
@@ -297,6 +318,9 @@ namespace laps {
         /// Fanned out publish namespaces, key is announced namespace and the subscriber connection handle
         std::map<std::pair<quicr::TrackNamespace, std::uint64_t>, std::shared_ptr<quicr::PublishNamespaceHandler>>
           fanout_namespaces_;
+
+        /// Namespaces already reported with NAMESPACE, keyed by namespace and subscriber connection
+        std::set<std::pair<quicr::TrackNamespace, std::uint64_t>> notified_namespaces_;
 
         /**
          * @brief Map of atomic bools to mark if a fetch thread should be interrupted.

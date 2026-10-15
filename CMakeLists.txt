@@ -18,7 +18,7 @@ set (CMAKE_POLICY_VERSION_MINIMUM 3.5)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.18.23
+        VERSION 0.18.31
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
@@ -57,10 +57,11 @@ endif()
 ###
 add_subdirectory(dependencies)
 
-# quicr/log.h picks between std::format and fmt on this definition, which libquicr only defines for its own
-# sources. The relay logs through quicr::Logger, so it has to make the same choice libquicr did.
-if(HAS_STD_VFORMAT)
-    add_compile_definitions(QUICR_HAVE_STD_FORMAT)
+# quicr/utilities/format.h selects std::format or {fmt} with QUICR_HAS_STD_FORMAT.
+# libquicr only adds that definition under its own directory, so relay sources that
+# include quicr headers have to repeat the same choice.
+if(QUICR_HAS_STD_FORMAT)
+    add_compile_definitions(QUICR_HAS_STD_FORMAT)
 endif()
 
 # spdlog compiles a bundled copy of fmt by default. libquicr also links fmt::fmt

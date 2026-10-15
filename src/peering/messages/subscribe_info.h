@@ -4,6 +4,7 @@
 
 #include "node_info.h"
 #include <memory>
+#include <optional>
 #include <set>
 
 #include <quicr/track_name.h>
@@ -29,12 +30,20 @@ namespace laps::peering {
         NodeIdValueType source_node_id; ///< Id of the originating source node
 
         quicr::TrackHash track_hash; ///< Full name hash
-        std::vector<uint8_t>
-          subscribe_data; /// Original MoQ subscribe message (wire format) that initiated this subscribe
 
-        // Data not in wire message (e.g., serialized)
+        /// Track identity previously carried inside the MoQ subscribe message.
+        quicr::TrackNamespace name_space;
+        std::vector<uint8_t> name;
 
-        // End not serialized
+        /**
+         * Subscribe attributes. Encoded on the wire as fixed-width integers, the same way as track_hash.
+         * new_group_request_id is preceded by a presence byte and omitted when unset.
+         */
+        uint8_t priority{ 0 };
+        uint64_t delivery_timeout{ 0 }; ///< Milliseconds
+        uint64_t expires{ 0 };          ///< Milliseconds
+        uint64_t forward{ 0 };          ///< Non-zero forwards data, zero pauses it
+        std::optional<uint64_t> new_group_request_id;
 
         /**
          * @brief Encode node object into bytes that can be written on the wire

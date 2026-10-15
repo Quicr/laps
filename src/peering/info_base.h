@@ -7,9 +7,11 @@
 #include "peer_session.h"
 #include "peering/messages/subscribe_info.h"
 
+#include <functional>
 #include <map>
 #include <quicr/messages/message_serialisation.h>
 #include <set>
+#include <unordered_map>
 
 namespace laps::peering {
 
@@ -148,17 +150,45 @@ namespace laps::peering {
 
         std::map<std::uint64_t, std::map<NodeIdValueType, SubscribeInfo>> subscribes_;
 
+        /**
+         * @brief Identity of one egress stream held by a forwarding entry
+         *
+         * @details Client entries use `a` as the group id and `b` as the subgroup id. Peer entries use `a` as
+         *      the ingress QUIC stream id and leave `b` at 0. Those two maps do not share entries.
+         */
+        struct StreamKey
+        {
+            uint64_t a{ 0 };
+            uint64_t b{ 0 };
+
+            friend bool operator==(const StreamKey& lhs, const StreamKey& rhs) noexcept
+            {
+                return lhs.a == rhs.a && lhs.b == rhs.b;
+            }
+        };
+
+        struct StreamKeyHash
+        {
+            std::size_t operator()(const StreamKey& key) const noexcept
+            {
+                const auto h1 = std::hash<uint64_t>{}(key.a);
+                const auto h2 = std::hash<uint64_t>{}(key.b);
+                return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+            }
+        };
+
         struct FibEntry
         {
             uint64_t update_ref{ 0 }; ///< Random reference number to detect if entry was updated or not
 
             /**
-             * @brief Egress stream for each ingress stream, keyed by ingress stream ID
+             * @brief Egress stream for each forwarded flow
              *
              * @details The transport hands out stream handles rather than IDs, and holding one keeps the
-             *      stream usable for as long as objects are being forwarded onto it.
+             *      stream usable for as long as objects are being forwarded onto it. See StreamKey for how
+             *      each map identifies a flow.
              */
-            std::unordered_map<uint64_t, std::shared_ptr<quicr::Stream>> streams;
+            std::unordered_map<StreamKey, std::shared_ptr<quicr::Stream>, StreamKeyHash> streams;
 
             SubscribeNodeSetId out_sns_id; ///< Egress SNS ID
             decltype(nodes_best_)::mapped_type peer_session;
