@@ -146,7 +146,7 @@ namespace {
         const auto result_promise = std::make_shared<std::promise<VerificationResult>>();
         auto result_future = result_promise->get_future();
         auto sub_handler = VerifyingSubscribeTrackHandler::Create(track, expected_payload, result_promise);
-        auto pub_handler = PublishTrackHandler::Create(track, TrackMode::kStream, 3, 1000, { 0, 0 });
+        auto pub_handler = PublishTrackHandler::Create(track, TrackMode::kStream, 3, 3, 1000, { 0, 0 });
 
         subscriber.SubscribeTrack(sub_handler);
         publisher.PublishTrack(pub_handler);

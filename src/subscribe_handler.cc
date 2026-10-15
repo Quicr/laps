@@ -108,8 +108,7 @@ namespace laps {
             subscribers_.emplace(conn_handle, nullptr);
         }
 
-        RequestNewGroup(); // Use NGR to keep it clean for peering, which will support any number of peers
-        Resume();
+        RequestNewGroup(); // Use NGR to keep it clean for peering. NGR sets forward=1
     }
 
     void SubscribeTrackHandler::RemoveSubscriber(std::uint64_t conn_handle)

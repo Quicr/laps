@@ -357,6 +357,7 @@ namespace laps::peering {
                 // Remove or find new best peer for subscribe info
                 std::vector<SubscribeInfo> remove_sub;
                 std::vector<std::pair<PeerSessionId, SubscribeInfo>> update_sub;
+
                 std::unique_lock<std::mutex> ib_lock(info_base_->mutex_);
                 for (const auto& subs : info_base_->subscribes_) {
                     auto sub_it = subs.second.find(remote_node_info.id);
@@ -372,7 +373,11 @@ namespace laps::peering {
                               info_base_->client_fib_.find({ si.track_hash.track_fullname_hash, peer_session_id });
                             if (cfib_it != info_base_->client_fib_.end()) {
                                 info_base_->client_fib_.erase(cfib_it);
+
+                                ib_lock.unlock();
                                 auto best_peer = info_base_->GetBestPeerSession(si.source_node_id);
+                                ib_lock.lock();
+
                                 if (const auto& peer_sess = best_peer.lock()) {
                                     // best path found, update entry to use new path
                                     update_sub.emplace_back(peer_sess->GetSessionId(), si);
