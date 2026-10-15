@@ -92,8 +92,8 @@ namespace laps {
             auto pub_track_h = std::make_shared<PublishTrackHandler>(
               GetFullTrackName(),
               is_datagram_ ? quicr::TrackMode::kDatagram : quicr::TrackMode::kStream,
-              GetPriority(),
-              priority == 0 ? GetPriority() : priority,
+              GetSubscriberPriority(),
+              priority == 0 ? GetSubscriberPriority() : priority,
               delivery_timeout.count() == 0
                 ? GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count()
                 : delivery_timeout.count(),
@@ -268,7 +268,7 @@ namespace laps {
             header.subgroup_id = subgroup_id;
         }
         if (!properties.default_priority) {
-            header.priority = priority;
+            header.publisher_priority = priority;
         }
 
         auto bytes = std::make_shared<quicr::Bytes>();
@@ -493,8 +493,9 @@ namespace laps {
                 return;
             }
 
-            if (s_hdr.priority.has_value()) {
-                SetPriority(*s_hdr.priority);
+            // TODO: Do we want to set the subscriber priority to the publisher priority here?
+            if (s_hdr.publisher_priority.has_value()) {
+                SetSubscriberPriority(*s_hdr.publisher_priority);
             }
 
             stream.header_parsed = true;
@@ -550,7 +551,7 @@ namespace laps {
                              s_hdr.subgroup_id.value(),
                              obj.payload.size(),
                              obj.object_status,
-                             s_hdr.priority,
+                             s_hdr.publisher_priority,
                              std::nullopt,
                              quicr::TrackMode::kStream,
                              obj.extensions,
@@ -588,7 +589,7 @@ namespace laps {
             if (subscribers_.contains(0)) { // Is peering subscribed
                 server_.peer_manager_.ClientDataRecv(
                   msg.track_alias,
-                  GetPriority(),
+                  GetSubscriberPriority(),
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   peering::DataType::kDatagram,
                   msg.group_id,
@@ -658,7 +659,7 @@ namespace laps {
                 if (forward_to_peers) {
                     server_.peer_manager_.ClientDataRecv(
                       *track_alias,
-                      GetPriority(),
+                      GetSubscriberPriority(),
                       GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                       d_type,
                       group_id,

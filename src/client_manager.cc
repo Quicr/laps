@@ -760,7 +760,7 @@ namespace laps {
                                                                          *this,
                                                                          config_.tick_service_,
                                                                          true);
-        sub_track_handler->SetPriority(publish_attributes.publisher_priority);
+        sub_track_handler->SetSubscriberPriority(publish_attributes.publisher_priority);
 
         if (bypass_resolve) {
             // Accepting the publish normally binds the handler to its connection, which is what assigns the
@@ -799,7 +799,7 @@ namespace laps {
             sub_track_handler->AddSubscriber(
               0,
               0,
-              sub_track_handler->GetPriority(),
+              sub_track_handler->GetSubscriberPriority(),
               std::chrono::milliseconds(publish_attributes.delivery_timeout.value_or(config_.object_ttl_)),
               publish_attributes.largest_object.value_or(quicr::messages::Location{ 0, 0 }));
         }
@@ -935,8 +935,8 @@ namespace laps {
                 const auto pub_handler = PublishTrackHandler::Create(
                   track_full_name,
                   quicr::TrackMode::kStream,
-                  handler->GetPriority(),
-                  handler->GetPriority(),
+                  handler->GetSubscriberPriority(),
+                  handler->GetSubscriberPriority(),
                   handler->GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   largest_location.value_or(quicr::messages::Location{ 0, 0 }),
                   *this);
@@ -1036,8 +1036,8 @@ namespace laps {
                 const auto pub_handler = PublishTrackHandler::Create(
                   track_full_name,
                   quicr::TrackMode::kStream,
-                  handler->GetPriority(),
-                  handler->GetPriority(),
+                  handler->GetSubscriberPriority(),
+                  handler->GetSubscriberPriority(),
                   handler->GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   largest_location.value_or(quicr::messages::Location{ 0, 0 }),
                   *this);
