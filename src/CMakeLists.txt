@@ -14,26 +14,11 @@ add_executable(lapsRelay
         publish_handler.cc
         fetch_handler.cc
         publish_namespace_handler.cc
-
-        peering/messages/connect.cc
-        peering/messages/connect_response.cc
-        peering/messages/subscribe_info.cc
-        peering/messages/announce_info.cc
-        peering/messages/node_info.cc
-        peering/messages/subscribe_node_set.cc
-        peering/messages/data_header.cc
-
-        peering/peer_manager.cc
-        peering/peer_session.cc
-        peering/info_base.cc
 )
 
-target_link_libraries(lapsRelay PRIVATE quicr spdlog::spdlog)
+target_link_libraries(lapsRelay PRIVATE quicr moq::peering spdlog::spdlog)
 target_include_directories(lapsRelay PRIVATE
-        ${PROJECT_SOURCE_DIR}/dependencies/oss
-        # Peer sessions read quicr::Stream directly. That type is defined for the library, not installed
-        # with the public headers.
-        ${PROJECT_SOURCE_DIR}/dependencies/libquicr/src)
+        ${PROJECT_SOURCE_DIR}/dependencies/oss)
 
 target_compile_options(lapsRelay
         PRIVATE

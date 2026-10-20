@@ -8,6 +8,7 @@
 
 #include "client_manager.h"
 #include "config.h"
+#include "peering_bridge.h"
 #include "fetch_handler.h"
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
@@ -20,7 +21,7 @@ namespace laps {
     ClientManager::ClientManager(State& state,
                                  const Config& config,
                                  const quicr::ServerConfig& cfg,
-                                 peering::PeerManager& peer_manager,
+                                 moq::peering::PeerManager& peer_manager,
                                  size_t cache_duration_ms)
       : state_(state)
       , config_(config)
@@ -293,7 +294,7 @@ namespace laps {
         update_attrs.expires = std::chrono::milliseconds(0);
         update_attrs.forward = 1;
         update_attrs.new_group_request_id = group_id;
-        peer_manager_.ClientSubscribeUpdate(track_full_name, update_attrs);
+        peer_manager_.UpdateSubscribe(ToPeeringTrack(track_full_name), ToPeeringParams(update_attrs));
 
         // Notify all publishers that there is a new group request
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
@@ -479,7 +480,7 @@ namespace laps {
         auto& track_namespace = std::any_cast<quicr::TrackNamespace&>(it->second.related_data);
         auto th = quicr::TrackHash({ track_namespace, {} });
 
-        peer_manager_.ClientAnnounce({ track_namespace, {} }, {}, true, true);
+        peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
 
         FanoutPublishNamespaceDone(track_namespace);
 
@@ -506,7 +507,7 @@ namespace laps {
         }
 
         if (connection_handle)
-            peer_manager_.ClientUnannounce({ track_namespace, {} });
+            peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kTrack);
     }
 
     void ClientManager::PurgePublishState(std::uint64_t connection_handle)
@@ -668,7 +669,7 @@ namespace laps {
              * Always send announcements to peer manager so new clients can trigger subscribe matching and data
              * forwarding path creation. This needs to be done last to all other client work.
              */
-            peer_manager_.ClientAnnounce({ track_namespace, {} }, attrs, false, true);
+            peer_manager_.Announce(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
         }
 
         NotifySubscribeNamespaces(track_namespace, connection_handle, false);
@@ -785,7 +786,7 @@ namespace laps {
              * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and
              * data forwarding path creation. This needs to be done last to all other client work.
              */
-            peer_manager_.ClientAnnounce(publish_attributes.track_full_name, {}, false);
+            peer_manager_.Announce(ToPeeringTrack(publish_attributes.track_full_name), moq::peering::Announcement::kTrack);
         }
 
         // Check if there are any subscribers
@@ -1140,7 +1141,7 @@ namespace laps {
         }
 
         if (connection_handle)
-            peer_manager_.ClientAnnounce(s_it->second->GetFullTrackName(), {}, true);
+            peer_manager_.Withdraw(ToPeeringTrack(s_it->second->GetFullTrackName()), moq::peering::Announcement::kTrack);
 
         const auto publisher_handler = s_it->second;
 
@@ -1342,7 +1343,7 @@ namespace laps {
         }
 
         if (!has_subs) {
-            peer_manager_.ClientUnsubscribe(track_fullname_hash);
+            peer_manager_.Unsubscribe(track_fullname_hash);
         }
     }
 
@@ -1753,6 +1754,97 @@ namespace laps {
         return false;
     }
 
+    void ClientManager::OnSubscribe(const moq::peering::TrackName& name,
+                                    std::uint64_t,
+                                    const moq::peering::SubscribeParams& params)
+    {
+        const auto track_full_name = ToQuicrTrack(name);
+        const auto th = quicr::TrackHash(track_full_name);
+
+        bool matches = false;
+        {
+            std::lock_guard _(state_.state_mutex);
+            for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+                 it != state_.pub_subscribes.end();
+                 ++it) {
+                if (it->first.first != th.track_fullname_hash) {
+                    break;
+                }
+                matches = true;
+            }
+
+            if (!matches) {
+                for (auto& [key, track_aliases] : state_.pub_namespace_active) {
+                    if (!key.first.HasSamePrefix(track_full_name.name_space)) {
+                        continue;
+                    }
+                    matches = true;
+                    break;
+                }
+            }
+        }
+
+        if (!matches) {
+            return;
+        }
+
+        ProcessSubscribe(0, 0, th, track_full_name, ToQuicrParams(params), std::nullopt);
+    }
+
+    void ClientManager::OnUnsubscribe(std::uint64_t track_hash, bool subscribers_remain)
+    {
+        if (!subscribers_remain) {
+            PeerUnsubscribeTrack(track_hash);
+        }
+        RemoveOrPausePublisherSubscribe(track_hash);
+    }
+
+    void ClientManager::OnNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn)
+    {
+        const auto track_namespace = ToQuicrNamespace(name_space);
+        const auto th = quicr::TrackHash({ track_namespace, {} });
+        if (!withdrawn) {
+            PublishNamespaceReceived(nullptr, track_namespace, { .request_id = th.track_namespace_hash });
+        } else {
+            PublishNamespaceDoneReceived(nullptr, th.track_namespace_hash);
+        }
+    }
+
+    void ClientManager::OnTrack(const moq::peering::TrackName& name, bool withdrawn)
+    {
+        if (!withdrawn) {
+            const auto track_full_name = ToQuicrTrack(name);
+            quicr::PublishAttributes attrs{ .track_full_name = track_full_name,
+                                            .track_alias = quicr::TrackHash(track_full_name).track_fullname_hash,
+                                            .auth_tokens = {},
+                                            .expires = std::nullopt,
+                                            .largest_object = std::nullopt,
+                                            .forward = true,
+                                            .default_publisher_group_order = quicr::messages::GroupOrder::kAscending,
+                                            .dynamic_groups = true,
+                                            .publisher_priority = 64,
+                                            .max_cache_duration = std::nullopt,
+                                            .delivery_timeout = kDefaultObjectTtl,
+                                            .track_properties = {} };
+            PublishReceived(nullptr, 0, attrs, {});
+        } else {
+            PublishDoneReceived(nullptr, 0);
+        }
+    }
+
+    void ClientManager::OnData(std::uint64_t track_hash,
+                               bool is_new_stream,
+                               std::optional<uint64_t> stream_id,
+                               std::shared_ptr<const std::vector<uint8_t>> data)
+    {
+        PeerDataReceived(track_hash, is_new_stream, stream_id, std::move(data));
+    }
+
+    void ClientManager::OnPeerStreamClosed(std::uint64_t track_hash, std::uint64_t stream_id, bool reset)
+    {
+        PeerStreamClosed(track_hash, stream_id, reset);
+    }
+
     void ClientManager::ProcessSubscribe(std::uint64_t connection_handle,
                                          uint64_t request_id,
                                          const quicr::TrackHash& th,
@@ -1818,7 +1910,7 @@ namespace laps {
                                                   attrs.group_order,
                                                   {} });
 
-            peer_manager_.ClientSubscribe(track_full_name, attrs);
+            peer_manager_.Subscribe(ToPeeringTrack(track_full_name), ToPeeringParams(attrs));
         }
 
         // Resume publisher initiated subscribes

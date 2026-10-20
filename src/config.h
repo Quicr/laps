@@ -1,6 +1,6 @@
 #pragma once
 
-#include "peering/messages/node_info.h"
+#include <moq/peering/types.h>
 #include "spdlog_logger.h"
 #include "version_config.h"
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -48,7 +48,7 @@ namespace laps {
         uint32_t object_ttl_;
         uint32_t sub_dampen_ms_;
 
-        peering::NodeType node_type{ peering::NodeType::kEdge }; /// Node type of the relay
+        moq::peering::NodeType node_type{ moq::peering::NodeType::kEdge }; /// Node type of the relay
 
         std::shared_ptr<timeq::threaded_tick_service> tick_service_;
         std::optional<std::uint64_t> cache_key = std::nullopt;

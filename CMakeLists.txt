@@ -72,6 +72,23 @@ if(TARGET fmt::fmt)
 endif()
 CPMAddPackage("gh:gabime/spdlog@1.17.0")
 
+# Prefer the sibling checkout while moq-peering is developed locally. Once it is published,
+# a missing checkout falls back to the GitHub repository.
+set(MOQ_PEERING_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../moq-peering" CACHE PATH
+    "Local moq-peering source. Used when that directory contains CMakeLists.txt.")
+if(EXISTS "${MOQ_PEERING_SOURCE_DIR}/CMakeLists.txt")
+    CPMAddPackage(
+        NAME moq-peering
+        SOURCE_DIR "${MOQ_PEERING_SOURCE_DIR}"
+    )
+else()
+    CPMAddPackage(
+        NAME moq-peering
+        GITHUB_REPOSITORY quicr/moq-peering
+        GIT_TAG main
+    )
+endif()
+
 ###
 ### Build relay
 ###

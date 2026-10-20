@@ -5,7 +5,7 @@
 #include "state.h"
 
 #include "track_ranking.h"
-#include <peering/peer_manager.h>
+#include <moq/peering/peer_manager.h>
 #include <quicr/containers/cache.h>
 #include <quicr/messages/object.h>
 #include <quicr/session.h>
@@ -61,13 +61,14 @@ namespace laps {
     class ClientManager
       : public quicr::Session::ServerCallbacks
       , public quicr::SessionManager::Callbacks
+      , public moq::peering::Delegate
       , public std::enable_shared_from_this<ClientManager>
     {
       public:
         ClientManager(State& state,
                       const Config& config,
                       const quicr::ServerConfig& cfg,
-                      peering::PeerManager& peer_manager,
+                      moq::peering::PeerManager& peer_manager,
                       size_t cache_duration_ms = 60000);
         ~ClientManager();
 
@@ -151,7 +152,24 @@ namespace laps {
 
         void RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash);
 
-        friend class peering::PeerManager;
+        // -- moq::peering::Delegate -------------------------------------------------------------
+
+        void OnSubscribe(const moq::peering::TrackName& name,
+                         std::uint64_t track_hash,
+                         const moq::peering::SubscribeParams& params) override;
+
+        void OnUnsubscribe(std::uint64_t track_hash, bool subscribers_remain) override;
+
+        void OnNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn) override;
+
+        void OnTrack(const moq::peering::TrackName& name, bool withdrawn) override;
+
+        void OnData(std::uint64_t track_hash,
+                    bool is_new_stream,
+                    std::optional<std::uint64_t> stream_id,
+                    std::shared_ptr<const std::vector<uint8_t>> data) override;
+
+        void OnPeerStreamClosed(std::uint64_t track_hash, std::uint64_t stream_id, bool reset) override;
 
       private:
         /**
@@ -300,7 +318,7 @@ namespace laps {
         State& state_;
         const Config& config_;
         const quicr::ServerConfig server_config_;
-        peering::PeerManager& peer_manager_;
+        moq::peering::PeerManager& peer_manager_;
         std::shared_ptr<timeq::tick_service> tick_service_;
         MetricsPublisher metrics_publisher_;
 
