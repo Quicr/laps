@@ -421,7 +421,7 @@ namespace laps {
                     pending_batch_ = MetricsSample{ std::move(batched) };
                 }
 
-                SPDLOG_LOGGER_DEBUG(config_.logger_, "Metrics batch ready: {} samples coalesced", count);
+                SPDLOG_LOGGER_TRACE(config_.logger_, "Metrics batch ready: {} samples coalesced", count);
             }
 
             lock.lock();
