@@ -61,15 +61,59 @@ namespace laps {
     void ClientManager::Stop()
     {
         /*
-         * Shut the session manager down before anything else so its transport thread stops dispatching
-         * callbacks into relay state that is about to go away.
+         * Drop the peer delegate before the transport goes away so new peer callbacks do not enter relay
+         * state that is about to be released. The session manager is next so its thread stops dispatching.
          */
+        peer_manager_.SetDelegate(nullptr);
+
         session_manager_.reset();
 
         metrics_publisher_.Stop();
 
-        std::lock_guard<std::mutex> _(sessions_mutex_);
-        sessions_.clear();
+        {
+            std::lock_guard<std::mutex> _(sessions_mutex_);
+            sessions_.clear();
+        }
+
+        ReleaseTrackedHandlers();
+    }
+
+    void ClientManager::ReleaseTrackedHandlers()
+    {
+        std::vector<std::shared_ptr<SubscribeTrackHandler>> subscribe_handlers;
+        std::vector<std::shared_ptr<PublishNamespaceHandler>> namespace_handlers;
+
+        {
+            std::lock_guard<std::mutex> _(state_.state_mutex);
+
+            for (auto& [_, handler] : state_.pub_subscribes) {
+                if (handler) {
+                    subscribe_handlers.push_back(std::move(handler));
+                }
+            }
+            state_.pub_subscribes.clear();
+
+            for (auto& [_, handler] : state_.pub_subscribes_by_req_id) {
+                if (handler) {
+                    subscribe_handlers.push_back(std::move(handler));
+                }
+            }
+            state_.pub_subscribes_by_req_id.clear();
+
+            for (auto& [_, connections] : state_.subscribe_tracks) {
+                for (auto& [_, handler] : connections) {
+                    if (handler) {
+                        namespace_handlers.push_back(std::move(handler));
+                    }
+                }
+            }
+            state_.subscribe_tracks.clear();
+        }
+
+        // Destructors unbind subscriber publish handlers. sessions_mutex_ is still alive, and the
+        // sessions themselves are already gone, so the unbind finds nothing to send.
+        subscribe_handlers.clear();
+        namespace_handlers.clear();
     }
 
     std::shared_ptr<quicr::Session> ClientManager::GetSession(std::uint64_t connection_handle) const

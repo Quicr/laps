@@ -306,6 +306,15 @@ namespace laps {
 
         void PurgePublishState(std::uint64_t connection_handle);
 
+        /**
+         * @brief Drop handlers that call back into this relay
+         *
+         * @details State outlives ClientManager. A subscribe handler with a subscriber still holds a
+         *      publish handler, and its destructor unbinds that publish, which locks sessions_mutex_.
+         *      Releasing the handlers here runs that destructor while the mutex is still alive.
+         */
+        void ReleaseTrackedHandlers();
+
         quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> FetchReceived(
           std::uint64_t connection_handle,
           uint64_t request_id,
