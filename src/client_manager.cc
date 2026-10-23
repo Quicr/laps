@@ -1754,9 +1754,9 @@ namespace laps {
         return false;
     }
 
-    void ClientManager::OnSubscribe(const moq::peering::TrackName& name,
-                                    std::uint64_t,
-                                    const moq::peering::SubscribeParams& params)
+    void ClientManager::OnPeerSubscribe(const moq::peering::TrackName& name,
+                                        std::uint64_t,
+                                        const moq::peering::SubscribeParams& params)
     {
         const auto track_full_name = ToQuicrTrack(name);
         const auto th = quicr::TrackHash(track_full_name);
@@ -1788,10 +1788,11 @@ namespace laps {
             return;
         }
 
+        std::lock_guard _(state_.state_mutex);
         ProcessSubscribe(0, 0, th, track_full_name, ToQuicrParams(params), std::nullopt);
     }
 
-    void ClientManager::OnUnsubscribe(std::uint64_t track_hash, bool subscribers_remain)
+    void ClientManager::OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain)
     {
         if (!subscribers_remain) {
             PeerUnsubscribeTrack(track_hash);
@@ -1799,7 +1800,7 @@ namespace laps {
         RemoveOrPausePublisherSubscribe(track_hash);
     }
 
-    void ClientManager::OnNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn)
+    void ClientManager::OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn)
     {
         const auto track_namespace = ToQuicrNamespace(name_space);
         const auto th = quicr::TrackHash({ track_namespace, {} });
@@ -1810,7 +1811,7 @@ namespace laps {
         }
     }
 
-    void ClientManager::OnTrack(const moq::peering::TrackName& name, bool withdrawn)
+    void ClientManager::OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn)
     {
         if (!withdrawn) {
             const auto track_full_name = ToQuicrTrack(name);
@@ -1832,10 +1833,10 @@ namespace laps {
         }
     }
 
-    void ClientManager::OnData(std::uint64_t track_hash,
-                               bool is_new_stream,
-                               std::optional<uint64_t> stream_id,
-                               std::shared_ptr<const std::vector<uint8_t>> data)
+    void ClientManager::OnPeerData(std::uint64_t track_hash,
+                                   bool is_new_stream,
+                                   std::optional<uint64_t> stream_id,
+                                   std::shared_ptr<const std::vector<uint8_t>> data)
     {
         PeerDataReceived(track_hash, is_new_stream, stream_id, std::move(data));
     }

@@ -154,20 +154,20 @@ namespace laps {
 
         // -- moq::peering::Delegate -------------------------------------------------------------
 
-        void OnSubscribe(const moq::peering::TrackName& name,
-                         std::uint64_t track_hash,
-                         const moq::peering::SubscribeParams& params) override;
+        void OnPeerSubscribe(const moq::peering::TrackName& name,
+                             std::uint64_t track_hash,
+                             const moq::peering::SubscribeParams& params) override;
 
-        void OnUnsubscribe(std::uint64_t track_hash, bool subscribers_remain) override;
+        void OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain) override;
 
-        void OnNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn) override;
+        void OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn) override;
 
-        void OnTrack(const moq::peering::TrackName& name, bool withdrawn) override;
+        void OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn) override;
 
-        void OnData(std::uint64_t track_hash,
-                    bool is_new_stream,
-                    std::optional<std::uint64_t> stream_id,
-                    std::shared_ptr<const std::vector<uint8_t>> data) override;
+        void OnPeerData(std::uint64_t track_hash,
+                        bool is_new_stream,
+                        std::optional<std::uint64_t> stream_id,
+                        std::shared_ptr<const std::vector<uint8_t>> data) override;
 
         void OnPeerStreamClosed(std::uint64_t track_hash, std::uint64_t stream_id, bool reset) override;
 
