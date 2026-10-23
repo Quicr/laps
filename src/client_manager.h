@@ -299,7 +299,7 @@ namespace laps {
         void DropSubscribeNamespace(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix);
 
         quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceivedInternal(
-          std::uint64_t connection_handle,
+          const std::shared_ptr<quicr::Session>& session,
           uint64_t request_id,
           const quicr::PublishAttributes& publish_attributes,
           bool is_from_peer);

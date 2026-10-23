@@ -683,22 +683,24 @@ namespace laps {
       const quicr::PublishAttributes& publish_attributes,
       [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
     {
-        const auto connection_handle = ConnectionHandle(session);
         return PublishReceivedInternal(
-          connection_handle, request_id, publish_attributes, !connection_handle && !request_id);
+          session, request_id, publish_attributes, !ConnectionHandle(session) && !request_id);
     }
 
     void ClientManager::RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes)
     {
-        PublishReceivedInternal(0, 0, publish_attributes, false);
+        PublishReceivedInternal(nullptr, 0, publish_attributes, false);
     }
 
     quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> ClientManager::PublishReceivedInternal(
-      std::uint64_t connection_handle,
+      const std::shared_ptr<quicr::Session>& session,
       uint64_t request_id,
       const quicr::PublishAttributes& publish_attributes,
       bool is_from_peer)
     {
+        std::unique_lock lock(state_.state_mutex);
+        const auto connection_handle = ConnectionHandle(session);
+
         /*
          * Peer-originated publishes and relay-local publishes (e.g. the metrics track) both use the
          * connection_handle=0/request_id=0 sentinel because there is no real connection to resolve the
@@ -777,6 +779,20 @@ namespace laps {
             sub_track_handler->SupportNewGroupRequest(true);
         }
 
+        /*
+         * libquicr attaches the session only after this callback returns. The handler is visible to
+         * OnPeerSubscribe as soon as it is in pub_subscribes, and that callback sends on the session.
+         * Bind the session first. Announce below drops this lock, so the peer thread can proceed.
+         */
+        if (session) {
+            sub_track_handler->SetRequestId(request_id);
+            sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
+            sub_track_handler->SetDeliveryTimeout(
+              std::chrono::milliseconds(publish_attributes.delivery_timeout.value_or(config_.object_ttl_)));
+            sub_track_handler->SetPublisherDefaultGroupOrder(publish_attributes.default_publisher_group_order);
+            session->SubscribeTrack(sub_track_handler);
+        }
+
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
 
         if (!bypass_resolve) {
@@ -786,7 +802,9 @@ namespace laps {
              * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and
              * data forwarding path creation. This needs to be done last to all other client work.
              */
+            lock.unlock();
             peer_manager_.Announce(ToPeeringTrack(publish_attributes.track_full_name), moq::peering::Announcement::kTrack);
+            lock.lock();
         }
 
         // Check if there are any subscribers
@@ -1761,26 +1779,26 @@ namespace laps {
         const auto track_full_name = ToQuicrTrack(name);
         const auto th = quicr::TrackHash(track_full_name);
 
+        // Same lock PublishReceived holds until the handler's session is bound and published.
+        std::lock_guard _(state_.state_mutex);
+
         bool matches = false;
-        {
-            std::lock_guard _(state_.state_mutex);
-            for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
-                 it != state_.pub_subscribes.end();
-                 ++it) {
-                if (it->first.first != th.track_fullname_hash) {
-                    break;
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+            if (it->first.first != th.track_fullname_hash) {
+                break;
+            }
+            matches = true;
+        }
+
+        if (!matches) {
+            for (auto& [key, track_aliases] : state_.pub_namespace_active) {
+                if (!key.first.HasSamePrefix(track_full_name.name_space)) {
+                    continue;
                 }
                 matches = true;
-            }
-
-            if (!matches) {
-                for (auto& [key, track_aliases] : state_.pub_namespace_active) {
-                    if (!key.first.HasSamePrefix(track_full_name.name_space)) {
-                        continue;
-                    }
-                    matches = true;
-                    break;
-                }
+                break;
             }
         }
 
@@ -1788,12 +1806,13 @@ namespace laps {
             return;
         }
 
-        std::lock_guard _(state_.state_mutex);
         ProcessSubscribe(0, 0, th, track_full_name, ToQuicrParams(params), std::nullopt);
     }
 
     void ClientManager::OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain)
     {
+        std::lock_guard _(state_.state_mutex);
+
         if (!subscribers_remain) {
             PeerUnsubscribeTrack(track_hash);
         }
@@ -1802,6 +1821,8 @@ namespace laps {
 
     void ClientManager::OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn)
     {
+        std::lock_guard _(state_.state_mutex);
+
         const auto track_namespace = ToQuicrNamespace(name_space);
         const auto th = quicr::TrackHash({ track_namespace, {} });
         if (!withdrawn) {
