@@ -152,6 +152,28 @@ namespace laps {
 
         void RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash);
 
+        /**
+         * @brief Tell peering about local subscribe interest
+         *
+         * @details Peering is notified once, when the subscribe is new. A later subscribe updates peering
+         *      only when it requests a new group and peering is not already waiting for one.
+         *
+         * @return True when peering was subscribed or updated
+         */
+        bool NotifyPeeringSubscribe(const quicr::FullTrackName& track_full_name,
+                                    const quicr::SubscribeAttributes& attrs);
+
+        /**
+         * @brief A group arrived for a track peering is waiting on
+         *
+         * @details When the arrived group satisfies the outstanding new-group request, peering is updated
+         *      so that a new group is no longer requested.
+         */
+        void NotePeeringGroup(const quicr::FullTrackName& track_full_name, std::uint64_t group_id);
+
+        /// Drop local peering subscribe state after peering is unsubscribed.
+        void ForgetPeeringSubscribe(std::uint64_t track_fullname_hash);
+
         // -- moq::peering::Delegate -------------------------------------------------------------
 
         void OnPeerSubscribe(const moq::peering::TrackName& name,
@@ -359,6 +381,22 @@ namespace laps {
 
         // Key is track namespace hash
         std::unordered_map<std::uint64_t, std::shared_ptr<TrackRanking>> track_rankings_;
+
+        /**
+         * @brief Whether peering has been told about local subscribers for a track
+         *
+         * @details Keyed by full track name hash. waiting_for_new_group is set when peering was given a
+         *      new-group request that has not arrived yet.
+         */
+        struct PeeringInterest
+        {
+            bool notified{ false };
+            bool waiting_for_new_group{ false };
+            quicr::SubscribeAttributes attrs;
+        };
+
+        std::mutex peering_interest_mutex_;
+        std::map<std::uint64_t, PeeringInterest> peering_interest_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

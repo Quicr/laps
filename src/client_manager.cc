@@ -331,14 +331,14 @@ namespace laps {
         auto th = quicr::TrackHash(track_full_name);
         SPDLOG_INFO("New group requested received track_alais: {} group_id: {} ", th.track_fullname_hash, group_id);
 
-        // Update peering subscribe info - This will update existing instead of creating new
+        // Peering is updated only when this new group is not already pending.
         quicr::SubscribeAttributes update_attrs;
         update_attrs.priority = kDefaultPriority;
         update_attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
         update_attrs.expires = std::chrono::milliseconds(0);
         update_attrs.forward = 1;
         update_attrs.new_group_request_id = group_id;
-        peer_manager_.UpdateSubscribe(ToPeeringTrack(track_full_name), ToPeeringParams(update_attrs));
+        NotifyPeeringSubscribe(track_full_name, update_attrs);
 
         // Notify all publishers that there is a new group request
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
@@ -1406,6 +1406,7 @@ namespace laps {
 
         if (!has_subs) {
             peer_manager_.Unsubscribe(track_fullname_hash);
+            ForgetPeeringSubscribe(track_fullname_hash);
         }
     }
 
@@ -1775,6 +1776,80 @@ namespace laps {
         return {};
     }
 
+    bool ClientManager::NotifyPeeringSubscribe(const quicr::FullTrackName& track_full_name,
+                                               const quicr::SubscribeAttributes& attrs)
+    {
+        const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
+        const bool new_group_requested = attrs.new_group_request_id.has_value();
+
+        std::lock_guard lock(peering_interest_mutex_);
+        auto& interest = peering_interest_[track_hash];
+
+        if (!interest.notified) {
+            interest.notified = true;
+            interest.waiting_for_new_group = new_group_requested;
+            interest.attrs = attrs;
+
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Peering subscribe track_alias: {} new_group: {}",
+                                track_hash,
+                                new_group_requested ? std::to_string(*attrs.new_group_request_id)
+                                                    : std::string("none"));
+
+            peer_manager_.Subscribe(ToPeeringTrack(track_full_name), ToPeeringParams(interest.attrs));
+            return true;
+        }
+
+        // Already notified. Another subscriber updates peering only to request a new group that is not pending.
+        if (new_group_requested && !interest.waiting_for_new_group) {
+            interest.waiting_for_new_group = true;
+            interest.attrs.new_group_request_id = attrs.new_group_request_id;
+            interest.attrs.forward = attrs.forward != 0 ? attrs.forward : 1;
+
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Peering subscribe update track_alias: {} new_group: {}",
+                                track_hash,
+                                *attrs.new_group_request_id);
+
+            peer_manager_.UpdateSubscribe(ToPeeringTrack(track_full_name), ToPeeringParams(interest.attrs));
+            return true;
+        }
+
+        return false;
+    }
+
+    void ClientManager::NotePeeringGroup(const quicr::FullTrackName& track_full_name, std::uint64_t group_id)
+    {
+        const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
+
+        std::lock_guard lock(peering_interest_mutex_);
+        const auto it = peering_interest_.find(track_hash);
+        if (it == peering_interest_.end() || !it->second.notified || !it->second.waiting_for_new_group) {
+            return;
+        }
+
+        const auto requested = it->second.attrs.new_group_request_id;
+        if (requested.has_value() && *requested != 0 && group_id != 0 && group_id <= *requested) {
+            return;
+        }
+
+        it->second.waiting_for_new_group = false;
+        it->second.attrs.new_group_request_id = std::nullopt;
+
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Peering new group arrived track_alias: {} group_id: {}, new group no longer requested",
+                            track_hash,
+                            group_id);
+
+        peer_manager_.UpdateSubscribe(ToPeeringTrack(track_full_name), ToPeeringParams(it->second.attrs));
+    }
+
+    void ClientManager::ForgetPeeringSubscribe(std::uint64_t track_fullname_hash)
+    {
+        std::lock_guard lock(peering_interest_mutex_);
+        peering_interest_.erase(track_fullname_hash);
+    }
+
     bool ClientManager::DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                                         bool new_group_request)
     {
@@ -1976,7 +2051,7 @@ namespace laps {
                                                   attrs.group_order,
                                                   {} });
 
-            peer_manager_.Subscribe(ToPeeringTrack(track_full_name), ToPeeringParams(attrs));
+            NotifyPeeringSubscribe(track_full_name, attrs);
         }
 
         // Resume publisher initiated subscribes

@@ -189,6 +189,8 @@ namespace laps {
             pending_new_group_request_id_.reset();
         }
 
+        server_.NotePeeringGroup(GetFullTrackName(), object_headers.group_id);
+
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
         // Cache Object

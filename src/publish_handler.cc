@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "publish_handler.h"
-#include "peering_bridge.h"
 #include <quicr/handlers/publish_track_handler.h>
 
 namespace laps {
@@ -158,7 +157,7 @@ namespace laps {
                     publish_object_priority_ = priority;
                 }
 
-                server_.peer_manager_.Subscribe(ToPeeringTrack(GetFullTrackName()), ToPeeringParams(attrs));
+                server_.NotifyPeeringSubscribe(GetFullTrackName(), attrs);
                 break;
             }
         }
