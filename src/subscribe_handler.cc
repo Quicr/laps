@@ -587,11 +587,11 @@ namespace laps {
         quicr::messages::ObjectDatagram msg;
         if (dgram_buffer_ >> msg) {
             if (subscribers_.contains(0)) { // Is peering subscribed
-                server_.peer_manager_.ClientDataRecv(
+                server_.peer_manager_.SendData(
                   msg.track_alias,
                   GetSubscriberPriority(),
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
-                  peering::DataType::kDatagram,
+                  moq::peering::DataType::kDatagram,
                   msg.group_id,
                   0,
                   data);
@@ -629,15 +629,15 @@ namespace laps {
             return;
         }
 
-        peering::DataType d_type;
+        moq::peering::DataType d_type;
 
         if (is_datagram_) {
-            d_type = peering::DataType::kDatagram;
+            d_type = moq::peering::DataType::kDatagram;
         } else {
-            d_type = peering::DataType::kExistingStream;
+            d_type = moq::peering::DataType::kExistingStream;
 
             if (is_new_stream) {
-                d_type = peering::DataType::kNewStream;
+                d_type = moq::peering::DataType::kNewStream;
 
                 if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
                     // Use default if delivery timeout is not set
@@ -657,7 +657,7 @@ namespace laps {
         for (auto& [conn_handle, pub_handler] : subscribers_) {
             if (conn_handle == 0) { // from peer
                 if (forward_to_peers) {
-                    server_.peer_manager_.ClientDataRecv(
+                    server_.peer_manager_.SendData(
                       *track_alias,
                       GetSubscriberPriority(),
                       GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),

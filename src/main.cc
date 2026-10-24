@@ -11,7 +11,7 @@
 #include <spdlog/spdlog.h>
 
 #include "client_manager.h"
-#include "peering/peer_manager.h"
+#include <moq/peering/peer_manager.h>
 #include "signal_handler.h"
 #include "state.h"
 
@@ -75,11 +75,11 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
         const auto& node_type = cli_opts["node_type"].as<std::string>();
 
         if (node_type == "edge") {
-            cfg.node_type = peering::NodeType::kEdge;
+            cfg.node_type = moq::peering::NodeType::kEdge;
         } else if (node_type == "via") {
-            cfg.node_type = peering::NodeType::kVia;
+            cfg.node_type = moq::peering::NodeType::kVia;
         } else if (node_type == "stub") {
-            cfg.node_type = peering::NodeType::kStub;
+            cfg.node_type = moq::peering::NodeType::kStub;
         } else {
             SPDLOG_LOGGER_ERROR(cfg.logger_, "unknown node type: '{}'", node_type);
             exit(-1);
@@ -190,13 +190,24 @@ main(int argc, char* argv[])
     quicr::ServerConfig server_config = InitConfig(result, laps_config);
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Using metrics namespace: {}", laps_config.metrics_namespace_);
 
-    std::shared_ptr<peering::InfoBase> forwarding_info = std::make_shared<peering::InfoBase>();
-    peering::PeerManager peer_manager(laps_config, state, forwarding_info);
+    moq::peering::Config peer_config;
+    peer_config.node_id = laps_config.relay_id_;
+    peer_config.node_type = laps_config.node_type;
+    peer_config.listen_port = laps_config.peering.listening_port;
+    peer_config.peers = laps_config.peering.peers;
+    peer_config.tls_cert_filename = laps_config.tls_cert_filename_;
+    peer_config.tls_key_filename = laps_config.tls_key_filename_;
+    peer_config.object_ttl_ms = laps_config.object_ttl_;
+    peer_config.check_interval_ms = laps_config.peering.check_interval_ms;
+    peer_config.init_queue_size = laps_config.peering.init_queue_size;
+    peer_config.debug = laps_config.debug;
+    peer_config.logger = laps_config.logger_;
+    moq::peering::PeerManager peer_manager(peer_config);
 
     try {
         auto server = std::make_shared<ClientManager>(
           state, laps_config, server_config, peer_manager, result["cache_duration"].as<size_t>());
-        peer_manager.SetClientManager(server); // Set pointer to client manager (e.g., server) after construct
+        peer_manager.SetDelegate(server.get());
 
         if (server->Start() != quicr::Session::Status::kReady) {
             SPDLOG_ERROR("Server failed to start");
@@ -211,7 +222,7 @@ main(int argc, char* argv[])
         // Stop transport before releasing external shared_ptr refs; SessionManager holds a
         // shared_ptr back to ClientManager via callbacks and would otherwise prevent destruction.
         server->Stop();
-        peer_manager.SetClientManager(nullptr);
+        peer_manager.SetDelegate(nullptr);
     } catch (const std::invalid_argument& e) {
         std::cerr << "Invalid argument: " << e.what() << std::endl;
         result_code = EXIT_FAILURE;
