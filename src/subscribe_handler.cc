@@ -108,6 +108,12 @@ namespace laps {
             subscribers_.emplace(conn_handle, nullptr);
         }
 
+        // A publish accepted with no subscribers is marked paused and answered with forward off.
+        // Resume moves status back to ok so a later pause sends forward off again.
+        if (GetStatus() == Status::kPaused) {
+            Resume();
+        }
+
         RequestNewGroup(); // Use NGR to keep it clean for peering. NGR sets forward=1
     }
 
@@ -123,8 +129,32 @@ namespace laps {
         }
 
         if (subscribers_.empty() && sub_namespaces_.empty()) {
-            Pause();
+            PausePublisher();
         }
+    }
+
+    void SubscribeTrackHandler::PausePublisher()
+    {
+        if (GetStatus() == Status::kPaused) {
+            SetStatus(Status::kOk);
+        }
+
+        Pause();
+    }
+
+    bool SubscribeTrackHandler::HasLocalSubscribers() const
+    {
+        if (!sub_namespaces_.empty()) {
+            return true;
+        }
+
+        for (const auto& [conn_handle, _] : subscribers_) {
+            if (conn_handle != 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     void SubscribeTrackHandler::UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,

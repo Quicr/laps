@@ -90,6 +90,14 @@ namespace laps {
         void RemoveSubscriber(std::uint64_t conn_handle);
 
         /**
+         * @brief Tell the publisher to stop forwarding
+         *
+         * @details RequestNewGroup sends forward=1 while leaving status paused. Pause() then
+         *      returns without an update, and the publisher keeps sending.
+         */
+        void PausePublisher();
+
+        /**
          * @brief Add subscribe namespace publish namespace handler
          *
          * @param handler               Publish namespace handler to use to send matching tracks
@@ -108,6 +116,9 @@ namespace laps {
         void SetTrackRanking(std::weak_ptr<TrackRanking> track_ranking) { track_ranking_ = std::move(track_ranking); }
 
         bool HasSubscribers() const { return !subscribers_.empty() || !sub_namespaces_.empty(); }
+
+        /// A peering stand-in (connection 0) is not a local subscriber.
+        bool HasLocalSubscribers() const;
 
         /**
          * @brief Number of subscribers receiving fanout of this track via SUBSCRIBE

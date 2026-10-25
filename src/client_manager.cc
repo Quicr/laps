@@ -913,10 +913,16 @@ namespace laps {
                                connection_handle,
                                th.track_fullname_hash);
 
+            // Announce can attach the peering subscriber before this check. That subscriber
+            // is not a local one, and its new-group update would tell the publisher to forward.
+            sub_track_handler->RemoveSubscriber(0);
+
             if (bypass_resolve) {
                 sub_track_handler->Pause();
             } else {
                 forward = false;
+                // Pause before marking paused. Once status is paused, Pause() does not send.
+                sub_track_handler->Pause();
                 sub_track_handler->MarkPaused();
             }
         }
@@ -1360,12 +1366,15 @@ namespace laps {
 
     void ClientManager::RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash)
     {
-        // Do nothing if peering still has a subscriber
-        if (peer_manager_.HasSubscribers(track_fullname_hash)) {
-            return;
+        // A forwarding entry means some peer should still receive objects. That must keep the
+        // publisher going. It must not keep this relay's own upstream subscribe after every local
+        // client has gone, or the publisher relay still has a peer to send to.
+        const bool peers_want_data = peer_manager_.HasSubscribers(track_fullname_hash);
+        if (!peers_want_data) {
+            PeerUnsubscribeTrack(track_fullname_hash);
         }
 
-        bool has_subs{ false };
+        bool has_local_subs{ false };
 
         std::vector<std::pair<std::uint64_t, std::uint64_t>> remove_sub_pub;
         for (auto it = state_.pub_subscribes.lower_bound({ track_fullname_hash, 0 }); it != state_.pub_subscribes.end();
@@ -1375,10 +1384,12 @@ namespace laps {
             if (key.first != track_fullname_hash)
                 break;
 
-            if (sub_to_pub_handler->HasSubscribers()) {
-                has_subs = true;
-                // Do not pause or remove handler if there are still some subscriber/subscribe namespaces
-                has_subs = true;
+            if (sub_to_pub_handler->HasLocalSubscribers()) {
+                has_local_subs = true;
+                continue;
+            }
+
+            if (peers_want_data) {
                 continue;
             }
 
@@ -1388,7 +1399,7 @@ namespace laps {
                                    key.second,
                                    track_fullname_hash);
 
-                sub_to_pub_handler->Pause();
+                sub_to_pub_handler->PausePublisher();
             } else {
                 SPDLOG_LOGGER_INFO(LOGGER,
                                    "No subscribers left, unsubscribe publisher conn_id: {0} track_alias: {1}",
@@ -1404,9 +1415,9 @@ namespace laps {
             state_.pub_subscribes.erase(key);
         }
 
-        if (!has_subs) {
-            peer_manager_.Unsubscribe(track_fullname_hash);
+        if (!has_local_subs) {
             ForgetPeeringSubscribe(track_fullname_hash);
+            peer_manager_.Unsubscribe(track_fullname_hash);
         }
     }
 
