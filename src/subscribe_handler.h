@@ -92,8 +92,8 @@ namespace laps {
         /**
          * @brief Tell the publisher to stop forwarding
          *
-         * @details RequestNewGroup sends forward=1 while leaving status paused. Pause() then
-         *      returns without an update, and the publisher keeps sending.
+         * @details Sends one REQUEST_UPDATE with forward off. A later call while the handler
+         *      is already paused does not send again.
          */
         void PausePublisher();
 

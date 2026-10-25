@@ -126,19 +126,18 @@ namespace laps {
             }
 
             subscribers_.erase(conn_handle);
-        }
 
-        if (subscribers_.empty() && sub_namespaces_.empty()) {
-            PausePublisher();
+            if (subscribers_.empty() && sub_namespaces_.empty()) {
+                PausePublisher();
+            }
         }
     }
 
     void SubscribeTrackHandler::PausePublisher()
     {
-        if (GetStatus() == Status::kPaused) {
-            SetStatus(Status::kOk);
-        }
-
+        // Leave runs this from removing the peer subscriber and again from the publisher
+        // handler. Pause() sends one forward=0 update, then ignores calls while paused.
+        // Clearing kPaused first made each of those calls send another REQUEST_UPDATE.
         Pause();
     }
 
