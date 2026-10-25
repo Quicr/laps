@@ -902,9 +902,10 @@ namespace laps {
 
         /*
          * Accept the publish, but only ask the publisher to forward data if the relay has somewhere to send it.
-         * The handler is not bound to the connection until the accept is processed, so Pause() cannot send the
-         * update itself; answering the publish with forward off does the same thing in one less message. The
-         * handler is still marked paused so that gaining a subscriber resumes forwarding.
+         * The session is already bound, so Pause() would emit REQUEST_UPDATE before this response. A client
+         * such as QuicR handles that update on its packet thread, and its next stream create then fails.
+         * The publish response carries forward off, which is the pause. The handler is marked paused so
+         * that gaining a subscriber resumes forwarding.
          */
         std::optional<bool> forward = std::nullopt;
         if (!has_subs) {
@@ -921,8 +922,6 @@ namespace laps {
                 sub_track_handler->Pause();
             } else {
                 forward = false;
-                // Pause before marking paused. Once status is paused, Pause() does not send.
-                sub_track_handler->Pause();
                 sub_track_handler->MarkPaused();
             }
         }
