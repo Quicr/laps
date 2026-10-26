@@ -5,11 +5,18 @@ advanced selection to choose the best relay.
 
 ## Relay Discovery
 
-Relays discover themselves via the [Relay peering protocol](relay-protocol.md) using node advertisements.
-Relays update their advertisement to indicate various metrics, such as load, network bandwidth, loss, ...
-The relays can use out-of-band query API to a control server to query for relays to use. Discovery,
-best path selection, and node advertisements are described in the [Relay peering protocol](relay-protocol.md)
-document. 
+Relays discover one another with [moq-peering](https://github.com/Quicr/moq-peering). LAPS starts a
+`moq::peering::PeerManager` with a node id, a node type (`edge`, `via`, or `stub`), a peering listen
+port, and the peers to dial. After the session is up, relays exchange node advertisements. An
+advertisement carries reachability and path metrics such as load, network bandwidth, and loss. Relays
+can also use an out-of-band query API to a control server to learn which relays to use.
+
+Discovery, best-path selection, and node advertisements are specified in the
+[moq-peering relay protocol](https://github.com/Quicr/moq-peering/blob/main/docs/relay-protocol.md).
+
+Client sessions stay on MOQT. LAPS answers those client requests with the libquicr reply protocol
+described in the [README](../README.md#reply-protocol). Objects and subscribe interest move between
+relays through moq-peering. 
 
 ## Client Discovery
 
