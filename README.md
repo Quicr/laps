@@ -6,15 +6,28 @@ Also known as: MoQ relay, MOQT relay, Media over QUIC relay, Media over QUIC Tra
 
 ## What Is LAPS?
 
-LAPS implements MOQT relay behavior for publishers and subscribers and adds relay-to-relay peering for distributed media fan-out. The relay peering architecture can run as a simple mesh, or it can scale to large infrastructure by using Edge, Via, and Stub relay roles to build efficient forwarding paths between publishers and subscribers.
+LAPS implements MOQT relay behavior for publishers and subscribers and adds relay-to-relay peering for distributed media fan-out. Client sessions use the [libquicr](https://github.com/Quicr/libquicr) reply protocol. Relays forward to each other with the [moq-peering](https://github.com/Quicr/moq-peering) library. The peering architecture can run as a simple mesh, or it can scale to large infrastructure by using Edge, Via, and Stub relay roles to build efficient forwarding paths between publishers and subscribers.
 
-[Relay protocol peering](docs/relay-protocol.md) uses a LAPS-specific protocol between relays rather than MOQT itself. This peering layer provides low-latency data forwarding, traffic engineering, and policy-aware relay selection for global deployments. The current MOQT draft support is tied to the active branch and bundled `dependencies/libquicr` revision.
+The current MOQT draft support is tied to the active branch and bundled `dependencies/libquicr` revision.
+
+## Protocols
+
+### Reply protocol
+
+Publishers and subscribers connect to LAPS with Media over QUIC Transport. LAPS answers those requests through libquicr. Subscribe, publish, namespace, fetch, and track-status callbacks return a `quicr::Reply`. The reply carries the acceptance response or a reason code. libquicr sends the corresponding protocol message from that reply and correlates it with the request. An answer that needs work off the transport thread returns `Reply::Defer()` and completes later. Each request is answered once.
+
+### Peering with moq-peering
+
+[moq-peering](https://github.com/Quicr/moq-peering) is the relay-to-relay protocol library. It peers over QUIC and forwards track names, subscribes, and objects. The [peering protocol](https://github.com/Quicr/moq-peering/blob/main/docs/relay-protocol.md) covers node advertisements, control and data peering, source-routed forwarding, and path selection. LAPS links `moq::peering`, implements `moq::peering::Delegate`, and calls `moq::peering::PeerManager` to announce, subscribe, and forward. The build uses a sibling checkout at `../moq-peering` when that directory contains `CMakeLists.txt`. Otherwise CMake fetches `quicr/moq-peering`.
+
+This peering layer provides low-latency data forwarding, traffic engineering, and policy-aware relay selection for global deployments.
 
 ## MOQT Relay Features
 
 - Media over QUIC Transport (MOQT) relay support for publisher and subscriber client connections
+- Reply protocol handling of subscribe, publish, namespace, fetch, and track-status requests through libquicr
 - Low-latency publish/subscribe forwarding for media tracks and namespaces
-- Relay-to-relay peering for distributed MOQT deployments
+- Relay-to-relay peering through the [moq-peering](https://github.com/Quicr/moq-peering) library
 - Edge, Via, and Stub relay roles for different positions in the network
 - Control peering and data peering modes for separating signaling from media forwarding
 - On-demand Via relay aggregation for bandwidth-efficient fan-out between Edge relays
@@ -24,7 +37,7 @@ LAPS implements MOQT relay behavior for publishers and subscribers and adds rela
 
 ## Relay Peering At Scale
 
-LAPS peering is designed to solve relay-to-relay connectivity at scale. Edge relays accept MOQT client sessions and can act as origin relays, subscriber relays, or Via relays. Via relays aggregate traffic between Edge relays without carrying all publisher and subscriber state, reducing bandwidth and connection pressure during fan-out. Stub relays provide lightweight local fan-out behind NAT or firewall boundaries while the connected Edge relay represents them to the wider relay network.
+Relay-to-relay connectivity is implemented by moq-peering and specified in the [peering protocol](https://github.com/Quicr/moq-peering/blob/main/docs/relay-protocol.md). Edge relays accept MOQT client sessions and can act as origin relays, subscriber relays, or Via relays. Via relays aggregate traffic between Edge relays without carrying all publisher and subscriber state, reducing bandwidth and connection pressure during fan-out. Stub relays provide lightweight local fan-out behind NAT or firewall boundaries while the connected Edge relay represents them to the wider relay network.
 
 The peering selection algorithm can use direct hub-and-spoke forwarding when it is the best path, or inject Via relays when aggregation, congestion avoidance, alternate IP forwarding paths, regional constraints, or administrative policy call for it. Control peering distributes node, publish, and subscribe information bases; data peering forwards MOQT objects in a pipeline-friendly format with low encapsulation overhead.
 
@@ -57,7 +70,7 @@ A developer playground for interoperability testing with Media over QUIC Transpo
 - Relay-to-relay protocol development
 
 > [!IMPORTANT]
-> For relay implementation discussions, contact the team via Slack. See [relay-protocol documentation](docs/relay-protocol.md).
+> For relay implementation discussions, contact the team via Slack. The relay-to-relay wire protocol is [moq-peering](https://github.com/Quicr/moq-peering/blob/main/docs/relay-protocol.md).
 
 ### Network Topology
 

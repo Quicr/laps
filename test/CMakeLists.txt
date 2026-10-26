@@ -3,24 +3,8 @@
 
 add_executable(laps_test
         main.cc
-        peering_node.cc
-        peering_connect.cc
-        peering_subscribe.cc
-        peering_announce.cc
-        peering_sns.cc
-        peering_data_header.cc
-        peering_info_base.cc
         track_ranking.cc
         relay_health_check_test.cc
-
-        ../src/peering/messages/connect.cc
-        ../src/peering/messages/connect_response.cc
-        ../src/peering/messages/node_info.cc
-        ../src/peering/messages/subscribe_info.cc
-        ../src/peering/messages/announce_info.cc
-        ../src/peering/messages/subscribe_node_set.cc
-        ../src/peering/messages/data_header.cc
-        ../src/peering/info_base.cc
 )
 target_include_directories(laps_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 

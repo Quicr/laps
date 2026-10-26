@@ -5,7 +5,7 @@
 #include "state.h"
 
 #include "track_ranking.h"
-#include <peering/peer_manager.h>
+#include <moq/peering/peer_manager.h>
 #include <quicr/containers/cache.h>
 #include <quicr/messages/object.h>
 #include <quicr/session.h>
@@ -61,13 +61,14 @@ namespace laps {
     class ClientManager
       : public quicr::Session::ServerCallbacks
       , public quicr::SessionManager::Callbacks
+      , public moq::peering::Delegate
       , public std::enable_shared_from_this<ClientManager>
     {
       public:
         ClientManager(State& state,
                       const Config& config,
                       const quicr::ServerConfig& cfg,
-                      peering::PeerManager& peer_manager,
+                      moq::peering::PeerManager& peer_manager,
                       size_t cache_duration_ms = 60000);
         ~ClientManager();
 
@@ -151,7 +152,46 @@ namespace laps {
 
         void RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash);
 
-        friend class peering::PeerManager;
+        /**
+         * @brief Tell peering about local subscribe interest
+         *
+         * @details Peering is notified once, when the subscribe is new. A later subscribe updates peering
+         *      only when it requests a new group and peering is not already waiting for one.
+         *
+         * @return True when peering was subscribed or updated
+         */
+        bool NotifyPeeringSubscribe(const quicr::FullTrackName& track_full_name,
+                                    const quicr::SubscribeAttributes& attrs);
+
+        /**
+         * @brief A group arrived for a track peering is waiting on
+         *
+         * @details When the arrived group satisfies the outstanding new-group request, peering is updated
+         *      so that a new group is no longer requested.
+         */
+        void NotePeeringGroup(const quicr::FullTrackName& track_full_name, std::uint64_t group_id);
+
+        /// Drop local peering subscribe state after peering is unsubscribed.
+        void ForgetPeeringSubscribe(std::uint64_t track_fullname_hash);
+
+        // -- moq::peering::Delegate -------------------------------------------------------------
+
+        void OnPeerSubscribe(const moq::peering::TrackName& name,
+                             std::uint64_t track_hash,
+                             const moq::peering::SubscribeParams& params) override;
+
+        void OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain) override;
+
+        void OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn) override;
+
+        void OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn) override;
+
+        void OnPeerData(std::uint64_t track_hash,
+                        bool is_new_stream,
+                        std::optional<std::uint64_t> stream_id,
+                        std::shared_ptr<const std::vector<uint8_t>> data) override;
+
+        void OnPeerStreamClosed(std::uint64_t track_hash, std::uint64_t stream_id, bool reset) override;
 
       private:
         /**
@@ -281,12 +321,21 @@ namespace laps {
         void DropSubscribeNamespace(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix);
 
         quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> PublishReceivedInternal(
-          std::uint64_t connection_handle,
+          const std::shared_ptr<quicr::Session>& session,
           uint64_t request_id,
           const quicr::PublishAttributes& publish_attributes,
           bool is_from_peer);
 
         void PurgePublishState(std::uint64_t connection_handle);
+
+        /**
+         * @brief Drop handlers that call back into this relay
+         *
+         * @details State outlives ClientManager. A subscribe handler with a subscriber still holds a
+         *      publish handler, and its destructor unbinds that publish, which locks sessions_mutex_.
+         *      Releasing the handlers here runs that destructor while the mutex is still alive.
+         */
+        void ReleaseTrackedHandlers();
 
         quicr::Reply<const quicr::FetchResponse, quicr::FetchErrorCode> FetchReceived(
           std::uint64_t connection_handle,
@@ -300,7 +349,7 @@ namespace laps {
         State& state_;
         const Config& config_;
         const quicr::ServerConfig server_config_;
-        peering::PeerManager& peer_manager_;
+        moq::peering::PeerManager& peer_manager_;
         std::shared_ptr<timeq::tick_service> tick_service_;
         MetricsPublisher metrics_publisher_;
 
@@ -332,6 +381,22 @@ namespace laps {
 
         // Key is track namespace hash
         std::unordered_map<std::uint64_t, std::shared_ptr<TrackRanking>> track_rankings_;
+
+        /**
+         * @brief Whether peering has been told about local subscribers for a track
+         *
+         * @details Keyed by full track name hash. waiting_for_new_group is set when peering was given a
+         *      new-group request that has not arrived yet.
+         */
+        struct PeeringInterest
+        {
+            bool notified{ false };
+            bool waiting_for_new_group{ false };
+            quicr::SubscribeAttributes attrs;
+        };
+
+        std::mutex peering_interest_mutex_;
+        std::map<std::uint64_t, PeeringInterest> peering_interest_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

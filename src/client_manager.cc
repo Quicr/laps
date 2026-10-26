@@ -8,6 +8,7 @@
 
 #include "client_manager.h"
 #include "config.h"
+#include "peering_bridge.h"
 #include "fetch_handler.h"
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
@@ -20,7 +21,7 @@ namespace laps {
     ClientManager::ClientManager(State& state,
                                  const Config& config,
                                  const quicr::ServerConfig& cfg,
-                                 peering::PeerManager& peer_manager,
+                                 moq::peering::PeerManager& peer_manager,
                                  size_t cache_duration_ms)
       : state_(state)
       , config_(config)
@@ -60,15 +61,59 @@ namespace laps {
     void ClientManager::Stop()
     {
         /*
-         * Shut the session manager down before anything else so its transport thread stops dispatching
-         * callbacks into relay state that is about to go away.
+         * Drop the peer delegate before the transport goes away so new peer callbacks do not enter relay
+         * state that is about to be released. The session manager is next so its thread stops dispatching.
          */
+        peer_manager_.SetDelegate(nullptr);
+
         session_manager_.reset();
 
         metrics_publisher_.Stop();
 
-        std::lock_guard<std::mutex> _(sessions_mutex_);
-        sessions_.clear();
+        {
+            std::lock_guard<std::mutex> _(sessions_mutex_);
+            sessions_.clear();
+        }
+
+        ReleaseTrackedHandlers();
+    }
+
+    void ClientManager::ReleaseTrackedHandlers()
+    {
+        std::vector<std::shared_ptr<SubscribeTrackHandler>> subscribe_handlers;
+        std::vector<std::shared_ptr<PublishNamespaceHandler>> namespace_handlers;
+
+        {
+            std::lock_guard<std::mutex> _(state_.state_mutex);
+
+            for (auto& [_, handler] : state_.pub_subscribes) {
+                if (handler) {
+                    subscribe_handlers.push_back(std::move(handler));
+                }
+            }
+            state_.pub_subscribes.clear();
+
+            for (auto& [_, handler] : state_.pub_subscribes_by_req_id) {
+                if (handler) {
+                    subscribe_handlers.push_back(std::move(handler));
+                }
+            }
+            state_.pub_subscribes_by_req_id.clear();
+
+            for (auto& [_, connections] : state_.subscribe_tracks) {
+                for (auto& [_, handler] : connections) {
+                    if (handler) {
+                        namespace_handlers.push_back(std::move(handler));
+                    }
+                }
+            }
+            state_.subscribe_tracks.clear();
+        }
+
+        // Destructors unbind subscriber publish handlers. sessions_mutex_ is still alive, and the
+        // sessions themselves are already gone, so the unbind finds nothing to send.
+        subscribe_handlers.clear();
+        namespace_handlers.clear();
     }
 
     std::shared_ptr<quicr::Session> ClientManager::GetSession(std::uint64_t connection_handle) const
@@ -286,14 +331,14 @@ namespace laps {
         auto th = quicr::TrackHash(track_full_name);
         SPDLOG_INFO("New group requested received track_alais: {} group_id: {} ", th.track_fullname_hash, group_id);
 
-        // Update peering subscribe info - This will update existing instead of creating new
+        // Peering is updated only when this new group is not already pending.
         quicr::SubscribeAttributes update_attrs;
         update_attrs.priority = kDefaultPriority;
         update_attrs.delivery_timeout = std::chrono::milliseconds(kDefaultObjectTtl);
         update_attrs.expires = std::chrono::milliseconds(0);
         update_attrs.forward = 1;
         update_attrs.new_group_request_id = group_id;
-        peer_manager_.ClientSubscribeUpdate(track_full_name, update_attrs);
+        NotifyPeeringSubscribe(track_full_name, update_attrs);
 
         // Notify all publishers that there is a new group request
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
@@ -479,7 +524,7 @@ namespace laps {
         auto& track_namespace = std::any_cast<quicr::TrackNamespace&>(it->second.related_data);
         auto th = quicr::TrackHash({ track_namespace, {} });
 
-        peer_manager_.ClientAnnounce({ track_namespace, {} }, {}, true, true);
+        peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
 
         FanoutPublishNamespaceDone(track_namespace);
 
@@ -506,7 +551,7 @@ namespace laps {
         }
 
         if (connection_handle)
-            peer_manager_.ClientUnannounce({ track_namespace, {} });
+            peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kTrack);
     }
 
     void ClientManager::PurgePublishState(std::uint64_t connection_handle)
@@ -668,7 +713,7 @@ namespace laps {
              * Always send announcements to peer manager so new clients can trigger subscribe matching and data
              * forwarding path creation. This needs to be done last to all other client work.
              */
-            peer_manager_.ClientAnnounce({ track_namespace, {} }, attrs, false, true);
+            peer_manager_.Announce(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
         }
 
         NotifySubscribeNamespaces(track_namespace, connection_handle, false);
@@ -682,22 +727,24 @@ namespace laps {
       const quicr::PublishAttributes& publish_attributes,
       [[maybe_unused]] std::weak_ptr<quicr::SubscribeNamespaceHandler> sub_ns_handler)
     {
-        const auto connection_handle = ConnectionHandle(session);
         return PublishReceivedInternal(
-          connection_handle, request_id, publish_attributes, !connection_handle && !request_id);
+          session, request_id, publish_attributes, !ConnectionHandle(session) && !request_id);
     }
 
     void ClientManager::RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes)
     {
-        PublishReceivedInternal(0, 0, publish_attributes, false);
+        PublishReceivedInternal(nullptr, 0, publish_attributes, false);
     }
 
     quicr::Reply<const quicr::PublishResponse, quicr::PublishErrorCode> ClientManager::PublishReceivedInternal(
-      std::uint64_t connection_handle,
+      const std::shared_ptr<quicr::Session>& session,
       uint64_t request_id,
       const quicr::PublishAttributes& publish_attributes,
       bool is_from_peer)
     {
+        std::unique_lock lock(state_.state_mutex);
+        const auto connection_handle = ConnectionHandle(session);
+
         /*
          * Peer-originated publishes and relay-local publishes (e.g. the metrics track) both use the
          * connection_handle=0/request_id=0 sentinel because there is no real connection to resolve the
@@ -776,6 +823,20 @@ namespace laps {
             sub_track_handler->SupportNewGroupRequest(true);
         }
 
+        /*
+         * libquicr attaches the session only after this callback returns. The handler is visible to
+         * OnPeerSubscribe as soon as it is in pub_subscribes, and that callback sends on the session.
+         * Bind the session first. Announce below drops this lock, so the peer thread can proceed.
+         */
+        if (session) {
+            sub_track_handler->SetRequestId(request_id);
+            sub_track_handler->SetReceivedTrackAlias(publish_attributes.track_alias);
+            sub_track_handler->SetDeliveryTimeout(
+              std::chrono::milliseconds(publish_attributes.delivery_timeout.value_or(config_.object_ttl_)));
+            sub_track_handler->SetPublisherDefaultGroupOrder(publish_attributes.default_publisher_group_order);
+            session->SubscribeTrack(sub_track_handler);
+        }
+
         state_.pub_subscribes[{ th.track_fullname_hash, connection_handle }] = sub_track_handler;
 
         if (!bypass_resolve) {
@@ -785,7 +846,9 @@ namespace laps {
              * Always send publish as an announcement to peer manager so new clients can trigger subscribe matching and
              * data forwarding path creation. This needs to be done last to all other client work.
              */
-            peer_manager_.ClientAnnounce(publish_attributes.track_full_name, {}, false);
+            lock.unlock();
+            peer_manager_.Announce(ToPeeringTrack(publish_attributes.track_full_name), moq::peering::Announcement::kTrack);
+            lock.lock();
         }
 
         // Check if there are any subscribers
@@ -839,9 +902,10 @@ namespace laps {
 
         /*
          * Accept the publish, but only ask the publisher to forward data if the relay has somewhere to send it.
-         * The handler is not bound to the connection until the accept is processed, so Pause() cannot send the
-         * update itself; answering the publish with forward off does the same thing in one less message. The
-         * handler is still marked paused so that gaining a subscriber resumes forwarding.
+         * The session is already bound, so Pause() would emit REQUEST_UPDATE before this response. A client
+         * such as QuicR handles that update on its packet thread, and its next stream create then fails.
+         * The publish response carries forward off, which is the pause. The handler is marked paused so
+         * that gaining a subscriber resumes forwarding.
          */
         std::optional<bool> forward = std::nullopt;
         if (!has_subs) {
@@ -849,6 +913,10 @@ namespace laps {
                                "No subscribers, pause publish connection handle: {0} using track alias: {1}",
                                connection_handle,
                                th.track_fullname_hash);
+
+            // Announce can attach the peering subscriber before this check. That subscriber
+            // is not a local one, and its new-group update would tell the publisher to forward.
+            sub_track_handler->RemoveSubscriber(0);
 
             if (bypass_resolve) {
                 sub_track_handler->Pause();
@@ -1140,7 +1208,7 @@ namespace laps {
         }
 
         if (connection_handle)
-            peer_manager_.ClientAnnounce(s_it->second->GetFullTrackName(), {}, true);
+            peer_manager_.Withdraw(ToPeeringTrack(s_it->second->GetFullTrackName()), moq::peering::Announcement::kTrack);
 
         const auto publisher_handler = s_it->second;
 
@@ -1297,12 +1365,15 @@ namespace laps {
 
     void ClientManager::RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash)
     {
-        // Do nothing if peering still has a subscriber
-        if (peer_manager_.HasSubscribers(track_fullname_hash)) {
-            return;
+        // A forwarding entry means some peer should still receive objects. That must keep the
+        // publisher going. It must not keep this relay's own upstream subscribe after every local
+        // client has gone, or the publisher relay still has a peer to send to.
+        const bool peers_want_data = peer_manager_.HasSubscribers(track_fullname_hash);
+        if (!peers_want_data) {
+            PeerUnsubscribeTrack(track_fullname_hash);
         }
 
-        bool has_subs{ false };
+        bool has_local_subs{ false };
 
         std::vector<std::pair<std::uint64_t, std::uint64_t>> remove_sub_pub;
         for (auto it = state_.pub_subscribes.lower_bound({ track_fullname_hash, 0 }); it != state_.pub_subscribes.end();
@@ -1312,10 +1383,12 @@ namespace laps {
             if (key.first != track_fullname_hash)
                 break;
 
-            if (sub_to_pub_handler->HasSubscribers()) {
-                has_subs = true;
-                // Do not pause or remove handler if there are still some subscriber/subscribe namespaces
-                has_subs = true;
+            if (sub_to_pub_handler->HasLocalSubscribers()) {
+                has_local_subs = true;
+                continue;
+            }
+
+            if (peers_want_data) {
                 continue;
             }
 
@@ -1325,7 +1398,7 @@ namespace laps {
                                    key.second,
                                    track_fullname_hash);
 
-                sub_to_pub_handler->Pause();
+                sub_to_pub_handler->PausePublisher();
             } else {
                 SPDLOG_LOGGER_INFO(LOGGER,
                                    "No subscribers left, unsubscribe publisher conn_id: {0} track_alias: {1}",
@@ -1341,8 +1414,9 @@ namespace laps {
             state_.pub_subscribes.erase(key);
         }
 
-        if (!has_subs) {
-            peer_manager_.ClientUnsubscribe(track_fullname_hash);
+        if (!has_local_subs) {
+            ForgetPeeringSubscribe(track_fullname_hash);
+            peer_manager_.Unsubscribe(track_fullname_hash);
         }
     }
 
@@ -1712,6 +1786,80 @@ namespace laps {
         return {};
     }
 
+    bool ClientManager::NotifyPeeringSubscribe(const quicr::FullTrackName& track_full_name,
+                                               const quicr::SubscribeAttributes& attrs)
+    {
+        const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
+        const bool new_group_requested = attrs.new_group_request_id.has_value();
+
+        std::lock_guard lock(peering_interest_mutex_);
+        auto& interest = peering_interest_[track_hash];
+
+        if (!interest.notified) {
+            interest.notified = true;
+            interest.waiting_for_new_group = new_group_requested;
+            interest.attrs = attrs;
+
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Peering subscribe track_alias: {} new_group: {}",
+                                track_hash,
+                                new_group_requested ? std::to_string(*attrs.new_group_request_id)
+                                                    : std::string("none"));
+
+            peer_manager_.Subscribe(ToPeeringTrack(track_full_name), ToPeeringParams(interest.attrs));
+            return true;
+        }
+
+        // Already notified. Another subscriber updates peering only to request a new group that is not pending.
+        if (new_group_requested && !interest.waiting_for_new_group) {
+            interest.waiting_for_new_group = true;
+            interest.attrs.new_group_request_id = attrs.new_group_request_id;
+            interest.attrs.forward = attrs.forward != 0 ? attrs.forward : 1;
+
+            SPDLOG_LOGGER_DEBUG(LOGGER,
+                                "Peering subscribe update track_alias: {} new_group: {}",
+                                track_hash,
+                                *attrs.new_group_request_id);
+
+            peer_manager_.UpdateSubscribe(ToPeeringTrack(track_full_name), ToPeeringParams(interest.attrs));
+            return true;
+        }
+
+        return false;
+    }
+
+    void ClientManager::NotePeeringGroup(const quicr::FullTrackName& track_full_name, std::uint64_t group_id)
+    {
+        const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
+
+        std::lock_guard lock(peering_interest_mutex_);
+        const auto it = peering_interest_.find(track_hash);
+        if (it == peering_interest_.end() || !it->second.notified || !it->second.waiting_for_new_group) {
+            return;
+        }
+
+        const auto requested = it->second.attrs.new_group_request_id;
+        if (requested.has_value() && *requested != 0 && group_id != 0 && group_id <= *requested) {
+            return;
+        }
+
+        it->second.waiting_for_new_group = false;
+        it->second.attrs.new_group_request_id = std::nullopt;
+
+        SPDLOG_LOGGER_DEBUG(LOGGER,
+                            "Peering new group arrived track_alias: {} group_id: {}, new group no longer requested",
+                            track_hash,
+                            group_id);
+
+        peer_manager_.UpdateSubscribe(ToPeeringTrack(track_full_name), ToPeeringParams(it->second.attrs));
+    }
+
+    void ClientManager::ForgetPeeringSubscribe(std::uint64_t track_fullname_hash)
+    {
+        std::lock_guard lock(peering_interest_mutex_);
+        peering_interest_.erase(track_fullname_hash);
+    }
+
     bool ClientManager::DampenOrUpdateTrackSubscription(std::shared_ptr<SubscribeTrackHandler> sub_to_pub_track_handler,
                                                         bool new_group_request)
     {
@@ -1751,6 +1899,101 @@ namespace laps {
         }
 
         return false;
+    }
+
+    void ClientManager::OnPeerSubscribe(const moq::peering::TrackName& name,
+                                        std::uint64_t,
+                                        const moq::peering::SubscribeParams& params)
+    {
+        const auto track_full_name = ToQuicrTrack(name);
+        const auto th = quicr::TrackHash(track_full_name);
+
+        // Same lock PublishReceived holds until the handler's session is bound and published.
+        std::lock_guard _(state_.state_mutex);
+
+        bool matches = false;
+        for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+            if (it->first.first != th.track_fullname_hash) {
+                break;
+            }
+            matches = true;
+        }
+
+        if (!matches) {
+            for (auto& [key, track_aliases] : state_.pub_namespace_active) {
+                if (!key.first.HasSamePrefix(track_full_name.name_space)) {
+                    continue;
+                }
+                matches = true;
+                break;
+            }
+        }
+
+        if (!matches) {
+            return;
+        }
+
+        ProcessSubscribe(0, 0, th, track_full_name, ToQuicrParams(params), std::nullopt);
+    }
+
+    void ClientManager::OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain)
+    {
+        std::lock_guard _(state_.state_mutex);
+
+        if (!subscribers_remain) {
+            PeerUnsubscribeTrack(track_hash);
+        }
+        RemoveOrPausePublisherSubscribe(track_hash);
+    }
+
+    void ClientManager::OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn)
+    {
+        std::lock_guard _(state_.state_mutex);
+
+        const auto track_namespace = ToQuicrNamespace(name_space);
+        const auto th = quicr::TrackHash({ track_namespace, {} });
+        if (!withdrawn) {
+            PublishNamespaceReceived(nullptr, track_namespace, { .request_id = th.track_namespace_hash });
+        } else {
+            PublishNamespaceDoneReceived(nullptr, th.track_namespace_hash);
+        }
+    }
+
+    void ClientManager::OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn)
+    {
+        if (!withdrawn) {
+            const auto track_full_name = ToQuicrTrack(name);
+            quicr::PublishAttributes attrs{ .track_full_name = track_full_name,
+                                            .track_alias = quicr::TrackHash(track_full_name).track_fullname_hash,
+                                            .auth_tokens = {},
+                                            .expires = std::nullopt,
+                                            .largest_object = std::nullopt,
+                                            .forward = true,
+                                            .default_publisher_group_order = quicr::messages::GroupOrder::kAscending,
+                                            .dynamic_groups = true,
+                                            .publisher_priority = 64,
+                                            .max_cache_duration = std::nullopt,
+                                            .delivery_timeout = kDefaultObjectTtl,
+                                            .track_properties = {} };
+            PublishReceived(nullptr, 0, attrs, {});
+        } else {
+            PublishDoneReceived(nullptr, 0);
+        }
+    }
+
+    void ClientManager::OnPeerData(std::uint64_t track_hash,
+                                   bool is_new_stream,
+                                   std::optional<uint64_t> stream_id,
+                                   std::shared_ptr<const std::vector<uint8_t>> data)
+    {
+        PeerDataReceived(track_hash, is_new_stream, stream_id, std::move(data));
+    }
+
+    void ClientManager::OnPeerStreamClosed(std::uint64_t track_hash, std::uint64_t stream_id, bool reset)
+    {
+        PeerStreamClosed(track_hash, stream_id, reset);
     }
 
     void ClientManager::ProcessSubscribe(std::uint64_t connection_handle,
@@ -1818,7 +2061,7 @@ namespace laps {
                                                   attrs.group_order,
                                                   {} });
 
-            peer_manager_.ClientSubscribe(track_full_name, attrs);
+            NotifyPeeringSubscribe(track_full_name, attrs);
         }
 
         // Resume publisher initiated subscribes

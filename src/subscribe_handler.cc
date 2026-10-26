@@ -108,6 +108,12 @@ namespace laps {
             subscribers_.emplace(conn_handle, nullptr);
         }
 
+        // A publish accepted with no subscribers is marked paused and answered with forward off.
+        // Resume moves status back to ok so a later pause sends forward off again.
+        if (GetStatus() == Status::kPaused) {
+            Resume();
+        }
+
         RequestNewGroup(); // Use NGR to keep it clean for peering. NGR sets forward=1
     }
 
@@ -120,11 +126,34 @@ namespace laps {
             }
 
             subscribers_.erase(conn_handle);
+
+            if (subscribers_.empty() && sub_namespaces_.empty()) {
+                PausePublisher();
+            }
+        }
+    }
+
+    void SubscribeTrackHandler::PausePublisher()
+    {
+        // Leave runs this from removing the peer subscriber and again from the publisher
+        // handler. Pause() sends one forward=0 update, then ignores calls while paused.
+        // Clearing kPaused first made each of those calls send another REQUEST_UPDATE.
+        Pause();
+    }
+
+    bool SubscribeTrackHandler::HasLocalSubscribers() const
+    {
+        if (!sub_namespaces_.empty()) {
+            return true;
         }
 
-        if (subscribers_.empty() && sub_namespaces_.empty()) {
-            Pause();
+        for (const auto& [conn_handle, _] : subscribers_) {
+            if (conn_handle != 0) {
+                return true;
+            }
         }
+
+        return false;
     }
 
     void SubscribeTrackHandler::UpdateTrackedProperties(std::optional<quicr::Extensions> extensions,
@@ -188,6 +217,8 @@ namespace laps {
             (object_headers.group_id == 0 || object_headers.group_id > *pending_new_group_request_id_)) {
             pending_new_group_request_id_.reset();
         }
+
+        server_.NotePeeringGroup(GetFullTrackName(), object_headers.group_id);
 
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
@@ -587,11 +618,11 @@ namespace laps {
         quicr::messages::ObjectDatagram msg;
         if (dgram_buffer_ >> msg) {
             if (subscribers_.contains(0)) { // Is peering subscribed
-                server_.peer_manager_.ClientDataRecv(
+                server_.peer_manager_.SendData(
                   msg.track_alias,
                   GetSubscriberPriority(),
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
-                  peering::DataType::kDatagram,
+                  moq::peering::DataType::kDatagram,
                   msg.group_id,
                   0,
                   data);
@@ -629,15 +660,15 @@ namespace laps {
             return;
         }
 
-        peering::DataType d_type;
+        moq::peering::DataType d_type;
 
         if (is_datagram_) {
-            d_type = peering::DataType::kDatagram;
+            d_type = moq::peering::DataType::kDatagram;
         } else {
-            d_type = peering::DataType::kExistingStream;
+            d_type = moq::peering::DataType::kExistingStream;
 
             if (is_new_stream) {
-                d_type = peering::DataType::kNewStream;
+                d_type = moq::peering::DataType::kNewStream;
 
                 if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
                     // Use default if delivery timeout is not set
@@ -657,7 +688,7 @@ namespace laps {
         for (auto& [conn_handle, pub_handler] : subscribers_) {
             if (conn_handle == 0) { // from peer
                 if (forward_to_peers) {
-                    server_.peer_manager_.ClientDataRecv(
+                    server_.peer_manager_.SendData(
                       *track_alias,
                       GetSubscriberPriority(),
                       GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),

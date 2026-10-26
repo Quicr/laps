@@ -157,7 +157,7 @@ namespace laps {
                     publish_object_priority_ = priority;
                 }
 
-                server_.peer_manager_.ClientSubscribe(GetFullTrackName(), attrs);
+                server_.NotifyPeeringSubscribe(GetFullTrackName(), attrs);
                 break;
             }
         }

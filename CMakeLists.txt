@@ -18,7 +18,7 @@ set (CMAKE_POLICY_VERSION_MINIMUM 3.5)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.18.31
+        VERSION 0.18.36
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
@@ -71,6 +71,23 @@ if(TARGET fmt::fmt)
     set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "Use external fmt; avoid duplicate symbols with libquicr" FORCE)
 endif()
 CPMAddPackage("gh:gabime/spdlog@1.17.0")
+
+# Prefer the sibling checkout while moq-peering is developed locally. Once it is published,
+# a missing checkout falls back to the GitHub repository.
+set(MOQ_PEERING_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../moq-peering" CACHE PATH
+    "Local moq-peering source. Used when that directory contains CMakeLists.txt.")
+if(EXISTS "${MOQ_PEERING_SOURCE_DIR}/CMakeLists.txt")
+    CPMAddPackage(
+        NAME moq-peering
+        SOURCE_DIR "${MOQ_PEERING_SOURCE_DIR}"
+    )
+else()
+    CPMAddPackage(
+        NAME moq-peering
+        GITHUB_REPOSITORY quicr/moq-peering
+        GIT_TAG main
+    )
+endif()
 
 ###
 ### Build relay
