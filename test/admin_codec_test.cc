@@ -1,0 +1,113 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 Cisco Systems
+// SPDX-License-Identifier: BSD-2-Clause
+
+#include <doctest/doctest.h>
+
+#include "admin_codec.h"
+
+#include <string>
+
+TEST_CASE("admin namespace layout")
+{
+    std::string error;
+    const auto layout = laps::MakeAdminTrackLayout("laps/admin", "relay-b", "admin-client-xyz", error);
+    REQUIRE(layout.has_value());
+    CHECK(layout->subscribe_prefix == std::vector<std::string>{ "laps", "admin", "relay-b" });
+    CHECK(layout->request == std::vector<std::string>{ "laps", "admin", "relay-b", "admin-client-xyz" });
+    CHECK(layout->reply == std::vector<std::string>{ "laps", "admin", "admin-client-xyz", "relay-b" });
+
+    const quicr::TrackNamespace request(layout->request);
+    const auto suffix = laps::AdminClientSuffix(request, layout->subscribe_prefix);
+    REQUIRE(suffix.has_value());
+    CHECK(*suffix == std::vector<std::string>{ "admin-client-xyz" });
+
+    const quicr::TrackNamespace reply(layout->reply);
+    CHECK_FALSE(laps::AdminClientSuffix(reply, layout->subscribe_prefix).has_value());
+
+    const auto split_ids = laps::MakeAdminTrackLayout("laps/admin/", "relay/b", "admin/client", error);
+    REQUIRE(split_ids.has_value());
+    CHECK(split_ids->subscribe_prefix == std::vector<std::string>{ "laps", "admin", "relay", "b" });
+    CHECK(split_ids->request == std::vector<std::string>{ "laps", "admin", "relay", "b", "admin", "client" });
+    CHECK(split_ids->reply == std::vector<std::string>{ "laps", "admin", "admin", "client", "relay", "b" });
+}
+
+TEST_CASE("admin rpc json")
+{
+    const auto request = laps::ParseAdminMessage(R"({"id":"7","method":"state.sizes","params":{"verbose":true}})");
+    CHECK(request.valid);
+    CHECK(request.id == "7");
+    CHECK(request.method == "state.sizes");
+    CHECK(request.has_params);
+    CHECK(request.params_json == R"({"verbose":true})");
+
+    const auto numeric_id = laps::ParseAdminMessage(R"({"id":42,"method":"state.sizes"})");
+    CHECK(numeric_id.valid);
+    CHECK(numeric_id.id == "42");
+    CHECK_FALSE(numeric_id.has_params);
+
+    const auto broken = laps::ParseAdminMessage("{");
+    CHECK_FALSE(broken.valid);
+
+    laps::AdminStateSizes sizes;
+    sizes.relay_id = "relay-b";
+    sizes.connections = 2;
+    sizes.subscriptions = 4;
+    sizes.publishes = 3;
+    sizes.publish_namespaces = 1;
+    sizes.subscribe_namespaces = 5;
+    sizes.subscribe_tracks = 1;
+    const auto encoded = laps::EncodeAdminResult("7", laps::EncodeAdminStateSizes(sizes));
+    const auto response = laps::ParseAdminMessage(encoded);
+    CHECK(response.valid);
+    CHECK(response.id == "7");
+    CHECK(response.has_result);
+    CHECK(response.result_json.find("\"relay_id\":\"relay-b\"") != std::string::npos);
+    CHECK(response.result_json.find("\"connections\":2") != std::string::npos);
+    CHECK(response.result_json.find("\"subscribe_namespaces\":5") != std::string::npos);
+
+    sizes.cache.enabled = true;
+    sizes.cache.duration_ms = 60000;
+    sizes.cache.interval_ms = 1000;
+    sizes.cache.tracks = 1;
+    sizes.cache.groups = 2;
+    sizes.cache.objects = 3;
+    sizes.cache.bytes = 10;
+    laps::AdminCacheTrack cached;
+    cached.track_alias = 99;
+    cached.track_namespace = "media/live";
+    cached.track_name = "video";
+    cached.groups = 2;
+    cached.objects = 3;
+    cached.bytes = 10;
+    cached.has_groups = true;
+    cached.oldest_group = 4;
+    cached.newest_group = 5;
+    sizes.cache.entries.push_back(cached);
+    const auto with_cache = laps::EncodeAdminStateSizes(sizes);
+    CHECK(with_cache.find("\"cache\":{\"enabled\":true,\"duration_ms\":60000,\"interval_ms\":1000,\"tracks\":1,"
+                          "\"groups\":2,\"objects\":3,\"bytes\":10,\"entries\":[") != std::string::npos);
+    CHECK(with_cache.find("\"track_namespace\":\"media/live\"") != std::string::npos);
+    CHECK(with_cache.find("\"track_name\":\"video\"") != std::string::npos);
+    CHECK(with_cache.find("\"oldest_group\":4,\"newest_group\":5") != std::string::npos);
+    CHECK(laps::ParseAdminMessage(laps::EncodeAdminResult("7", with_cache)).valid);
+
+    const auto failure = laps::ParseAdminMessage(laps::EncodeAdminError("7", "unknown method"));
+    CHECK(failure.valid);
+    CHECK(failure.has_error);
+    CHECK(failure.error_message == "unknown method");
+
+    std::string json_error;
+    CHECK(laps::IsJsonValue("{}", json_error));
+    CHECK_FALSE(laps::IsJsonValue("{", json_error));
+
+    const auto pretty = laps::PrettyPrintJson(encoded);
+    REQUIRE(pretty.has_value());
+    CHECK(pretty->find("\n  \"id\": \"7\"") != std::string::npos);
+    CHECK(pretty->find("\n    \"relay_id\": \"relay-b\"") != std::string::npos);
+    CHECK(pretty->find("\n    \"connections\": 2") != std::string::npos);
+    CHECK(laps::ParseAdminMessage(*pretty).valid);
+    CHECK(laps::PrettyPrintJson("{}") == "{}");
+    CHECK(laps::PrettyPrintJson("[1,true]") == "[\n  1,\n  true\n]");
+    CHECK_FALSE(laps::PrettyPrintJson("{").has_value());
+    CHECK_FALSE(laps::PrettyPrintJson("1 2").has_value());
+}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client_manager.h"
+#include "admin_service.h"
 #include "metrics_publisher.h"
 #include "state.h"
 
@@ -52,6 +52,30 @@ struct std::less<laps::CacheObject>
         return lhs.headers.object_id < rhs.headers.object_id;
     }
 };
+
+namespace laps {
+    /// Bucket width used when a track cache is created. Groups expire on this interval.
+    inline constexpr std::size_t kCacheBucketIntervalMs = 1000;
+
+    /// Relay object cache that can report the groups it currently holds.
+    class ObjectCache : public quicr::Cache<std::uint64_t, std::set<CacheObject>>
+    {
+      public:
+        using quicr::Cache<std::uint64_t, std::set<CacheObject>>::Cache;
+
+        template<typename Fn>
+        void ForEachGroup(Fn&& fn)
+        {
+            Advance();
+            for (const auto& [group_id, objects] : cache_) {
+                if (!objects) {
+                    continue;
+                }
+                fn(group_id, static_cast<const std::set<CacheObject>&>(*objects));
+            }
+        }
+    };
+} // namespace laps
 
 namespace laps {
     /**
@@ -126,6 +150,26 @@ namespace laps {
          *      PublishReceived(nullptr, 0, ...) directly for relay-local publishes.
          */
         void RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes);
+
+        /**
+         * @brief Record the relay's own subscribe-tracks interest
+         *
+         * @details Used for the admin control prefix. The handler does not forward publishes.
+         */
+        void InstallLocalAdminSubscribe(const quicr::TrackNamespace& prefix,
+                                        const std::shared_ptr<PublishNamespaceHandler>& handler);
+
+        void RemoveLocalAdminSubscribe(const quicr::TrackNamespace& prefix);
+
+        /// Sizes of the relay maps, for the admin state.sizes RPC.
+        AdminStateSizes CollectAdminStateSizes();
+
+        /**
+         * @brief Deliver one object to the admin RPC when it is a request track
+         *
+         * @return True when the object was consumed and must not be forwarded as media
+         */
+        bool DispatchAdminObject(const quicr::FullTrackName& track, quicr::BytesSpan data);
 
         void ProcessSubscribe(std::uint64_t connection_handle,
                               uint64_t request_id,
@@ -352,6 +396,7 @@ namespace laps {
         moq::peering::PeerManager& peer_manager_;
         std::shared_ptr<timeq::tick_service> tick_service_;
         MetricsPublisher metrics_publisher_;
+        AdminService admin_service_;
 
         std::unique_ptr<quicr::SessionManager> session_manager_;
 
@@ -377,7 +422,7 @@ namespace laps {
         std::map<std::pair<std::uint64_t, std::uint64_t>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
-        std::map<std::uint64_t, quicr::Cache<std::uint64_t, std::set<CacheObject>>> cache_;
+        std::map<std::uint64_t, ObjectCache> cache_;
 
         // Key is track namespace hash
         std::unordered_map<std::uint64_t, std::shared_ptr<TrackRanking>> track_rankings_;

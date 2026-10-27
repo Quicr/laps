@@ -204,6 +204,11 @@ namespace laps {
                                                quicr::BytesSpan data,
                                                std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
     {
+        // Admin requests arrive on the client connection. Peer-injected copies are not answered here.
+        if (!is_from_peer_ && server_.DispatchAdminObject(GetFullTrackName(), data)) {
+            return;
+        }
+
         if (object_headers.track_mode.has_value()) {
             is_datagram_ = *object_headers.track_mode == quicr::TrackMode::kDatagram;
         }
@@ -225,10 +230,9 @@ namespace laps {
         // Cache Object
         if (!server_.config_.disable_cache) {
             if (server_.cache_.count(GetTrackAlias().value()) == 0) {
-                server_.cache_.insert(
-                  std::make_pair(GetTrackAlias().value(),
-                                 quicr::Cache<std::uint64_t, std::set<CacheObject>>{
-                                   server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
+                server_.cache_.insert(std::make_pair(
+                  GetTrackAlias().value(),
+                  ObjectCache{ server_.cache_duration_ms_, kCacheBucketIntervalMs, server_.config_.tick_service_ }));
             }
 
             auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
