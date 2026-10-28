@@ -92,6 +92,7 @@ namespace {
             << "\n"
             << "Methods:\n"
             << "  state, state.sizes    JSON sizes of the relay's internal maps\n"
+            << "  peers                 JSON list of accepted and dialed peers\n"
             << "\n"
             << "Options:\n"
             << "  --uri URI                  Relay URI (default moq://127.0.0.1:33435)\n"
@@ -256,130 +257,156 @@ main(int argc, char* argv[])
         config.transport_config.time_queue_max_duration = 10000;
         config.transport_config.idle_timeout_ms = static_cast<std::uint64_t>(options.timeout.count()) * 2;
 
-        auto setup_callback = std::make_shared<SetupCallback>();
-        auto setup_endpoint = setup_callback->Endpoint();
-        quicr::SessionManager session_manager(quicr_logger);
-        auto session = session_manager.AddTransport(config, setup_callback).lock();
-        if (session == nullptr) {
-            throw std::runtime_error("failed to create the admin session");
-        }
-
-        const bool connected =
-          WaitFor([&session]() { return session->GetStatus() == quicr::Session::Status::kReady; }, options.timeout);
-        if (!connected) {
-            session->Disconnect();
-            throw std::runtime_error("timed out connecting to " + options.uri);
-        }
-        if (setup_endpoint.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-            session->Disconnect();
-            throw std::runtime_error("connected to " + options.uri + " without a relay SETUP endpoint id");
-        }
-
-        const auto relay_endpoint = setup_endpoint.get();
-        if (relay_endpoint.empty()) {
-            session->Disconnect();
-            throw std::runtime_error("relay SETUP did not include an endpoint id");
-        }
-        if (options.relay_endpoint.has_value() && *options.relay_endpoint != relay_endpoint) {
-            session->Disconnect();
-            throw std::runtime_error("relay at " + options.uri + " identified itself as '" + relay_endpoint +
-                                     "', but --relay-endpoint is '" + *options.relay_endpoint +
-                                     "'. This relay subscribes to " + options.admin_namespace + "/" + relay_endpoint +
-                                     ". Retry with --relay-endpoint " + relay_endpoint);
-        }
-
-        std::string layout_error;
-        const auto layout =
-          laps::MakeAdminTrackLayout(options.admin_namespace, relay_endpoint, options.endpoint_id, layout_error);
-        if (!layout.has_value()) {
-            session->Disconnect();
-            throw std::runtime_error(layout_error);
-        }
-
-        const auto request_id = std::to_string(
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count());
-        const auto request_json = laps::EncodeAdminRequest(
-          request_id,
-          options.method,
-          options.params.has_value() ? std::optional<std::string_view>(*options.params) : std::nullopt);
-
-        SPDLOG_LOGGER_INFO(logger,
-                           "Admin request {} -> {} name {}",
-                           laps::JoinTrackNamespace(layout->request),
-                           laps::JoinTrackNamespace(layout->reply),
-                           laps::kAdminRpcTrackName);
-        SPDLOG_LOGGER_DEBUG(logger, "Admin request body {}", request_json);
-
-        const auto reply_track = laps::AdminFullTrackName(layout->reply);
-        const auto request_track = laps::AdminFullTrackName(layout->request);
-        auto reply = ReplyHandler::Create(reply_track);
-        auto response = reply->Response();
-        auto publish =
-          quicr::PublishTrackHandler::Create(request_track, quicr::TrackMode::kStream, 3, 3, 1000, { 0, 0 });
-
-        session->SubscribeTrack(reply);
-        session->PublishTrack(publish);
-
-        const bool ready = WaitFor(
-          [&publish]() {
-              const auto status = publish->GetStatus();
-              return publish->CanPublish() || status == quicr::PublishTrackHandler::Status::kPaused ||
-                     status == quicr::PublishTrackHandler::Status::kNoSubscribers;
-          },
-          options.timeout);
-        if (!ready || !publish->CanPublish()) {
-            const auto status = publish->GetStatus();
-            session->Disconnect();
-            const auto request_ns = laps::JoinTrackNamespace(layout->request);
-            if (status == quicr::PublishTrackHandler::Status::kPaused ||
-                status == quicr::PublishTrackHandler::Status::kNoSubscribers) {
-                throw std::runtime_error("relay paused " + request_ns + " (rpc). It subscribes to " +
-                                         options.admin_namespace + "/" + relay_endpoint +
-                                         ", so --relay-endpoint must be that endpoint id (publish status " +
-                                         PublishStatusName(status) + ")");
+        std::string body;
+        {
+            auto setup_callback = std::make_shared<SetupCallback>();
+            auto setup_endpoint = setup_callback->Endpoint();
+            quicr::SessionManager session_manager(quicr_logger);
+            auto session = session_manager.AddTransport(config, setup_callback).lock();
+            if (session == nullptr) {
+                throw std::runtime_error("failed to create the admin session");
             }
-            throw std::runtime_error("admin request track was not ready before timeout (publish status " +
-                                     std::string(PublishStatusName(status)) + ")");
-        }
 
-        const std::vector<std::uint8_t> payload(request_json.begin(), request_json.end());
-        const quicr::ObjectHeaders headers{ .group_id = 0,
-                                            .object_id = 0,
-                                            .subgroup_id = 0,
-                                            .payload_length = payload.size(),
-                                            .status = quicr::ObjectStatus::kAvailable,
-                                            .priority = 3,
-                                            .ttl = 1000,
-                                            .track_mode = quicr::TrackMode::kStream,
-                                            .extensions = std::nullopt,
-                                            .immutable_extensions = std::nullopt };
-        const auto publish_status = publish->PublishObject(headers, payload);
-        if (publish_status != quicr::PublishTrackHandler::PublishObjectStatus::kOk) {
+            const bool connected =
+              WaitFor([&session]() { return session->GetStatus() == quicr::Session::Status::kReady; }, options.timeout);
+            if (!connected) {
+                session->Disconnect();
+                throw std::runtime_error("timed out connecting to " + options.uri);
+            }
+            if (setup_endpoint.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+                session->Disconnect();
+                throw std::runtime_error("connected to " + options.uri + " without a relay SETUP endpoint id");
+            }
+
+            const auto relay_endpoint = setup_endpoint.get();
+            if (relay_endpoint.empty()) {
+                session->Disconnect();
+                throw std::runtime_error("relay SETUP did not include an endpoint id");
+            }
+            if (options.relay_endpoint.has_value() && *options.relay_endpoint != relay_endpoint) {
+                session->Disconnect();
+                throw std::runtime_error("relay at " + options.uri + " identified itself as '" + relay_endpoint +
+                                         "', but --relay-endpoint is '" + *options.relay_endpoint +
+                                         "'. This relay subscribes to " + options.admin_namespace + "/" +
+                                         relay_endpoint + ". Retry with --relay-endpoint " + relay_endpoint);
+            }
+
+            std::string layout_error;
+            const auto layout =
+              laps::MakeAdminTrackLayout(options.admin_namespace, relay_endpoint, options.endpoint_id, layout_error);
+            if (!layout.has_value()) {
+                session->Disconnect();
+                throw std::runtime_error(layout_error);
+            }
+
+            const auto request_id = std::to_string(
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
+            const auto request_json = laps::EncodeAdminRequest(
+              request_id,
+              options.method,
+              options.params.has_value() ? std::optional<std::string_view>(*options.params) : std::nullopt);
+
+            SPDLOG_LOGGER_INFO(logger,
+                               "Admin request {} -> {} name {}",
+                               laps::JoinTrackNamespace(layout->request),
+                               laps::JoinTrackNamespace(layout->reply),
+                               laps::kAdminRpcTrackName);
+            SPDLOG_LOGGER_DEBUG(logger, "Admin request body {}", request_json);
+
+            const auto reply_track = laps::AdminFullTrackName(layout->reply);
+            const auto request_track = laps::AdminFullTrackName(layout->request);
+            auto reply = ReplyHandler::Create(reply_track);
+            auto response = reply->Response();
+            auto publish =
+              quicr::PublishTrackHandler::Create(request_track, quicr::TrackMode::kStream, 3, 3, 1000, { 0, 0 });
+
+            session->SubscribeTrack(reply);
+            session->PublishTrack(publish);
+
+            const bool ready = WaitFor(
+              [&publish]() {
+                  const auto status = publish->GetStatus();
+                  return publish->CanPublish() || status == quicr::PublishTrackHandler::Status::kPaused ||
+                         status == quicr::PublishTrackHandler::Status::kNoSubscribers;
+              },
+              options.timeout);
+            if (!ready || !publish->CanPublish()) {
+                const auto status = publish->GetStatus();
+                session->Disconnect();
+                const auto request_ns = laps::JoinTrackNamespace(layout->request);
+                if (status == quicr::PublishTrackHandler::Status::kPaused ||
+                    status == quicr::PublishTrackHandler::Status::kNoSubscribers) {
+                    throw std::runtime_error("relay paused " + request_ns + " (rpc). It subscribes to " +
+                                             options.admin_namespace + "/" + relay_endpoint +
+                                             ", so --relay-endpoint must be that endpoint id (publish status " +
+                                             PublishStatusName(status) + ")");
+                }
+                throw std::runtime_error("admin request track was not ready before timeout (publish status " +
+                                         std::string(PublishStatusName(status)) + ")");
+            }
+
+            const std::vector<std::uint8_t> payload(request_json.begin(), request_json.end());
+            const quicr::ObjectHeaders headers{ .group_id = 0,
+                                                .object_id = 0,
+                                                .subgroup_id = 0,
+                                                .payload_length = payload.size(),
+                                                .status = quicr::ObjectStatus::kAvailable,
+                                                .priority = 3,
+                                                .ttl = 1000,
+                                                .track_mode = quicr::TrackMode::kStream,
+                                                .extensions = std::nullopt,
+                                                .immutable_extensions = std::nullopt };
+            const auto publish_status = publish->PublishObject(headers, payload);
+            if (publish_status != quicr::PublishTrackHandler::PublishObjectStatus::kOk) {
+                session->Disconnect();
+                throw std::runtime_error("failed to publish the admin request, status " +
+                                         std::to_string(static_cast<int>(publish_status)));
+            }
+
+            if (response.wait_for(options.timeout) != std::future_status::ready) {
+                session->Disconnect();
+                throw std::runtime_error("timed out waiting for the admin response");
+            }
+
+            body = response.get();
             session->Disconnect();
-            throw std::runtime_error("failed to publish the admin request, status " +
-                                     std::to_string(static_cast<int>(publish_status)));
+            publish.reset();
+            reply.reset();
+            session.reset();
         }
 
-        if (response.wait_for(options.timeout) != std::future_status::ready) {
-            session->Disconnect();
-            throw std::runtime_error("timed out waiting for the admin response");
-        }
+        logger->flush();
 
-        const auto body = response.get();
-        session->Disconnect();
+        const auto parsed = laps::ParseAdminMessage(body);
+        if (!parsed.has_api_version) {
+            SPDLOG_LOGGER_WARN(logger,
+                               "Relay did not report an admin API version; this client speaks version {}",
+                               laps::kAdminApiVersion);
+        } else if (parsed.api_version != laps::kAdminApiVersion) {
+            SPDLOG_LOGGER_WARN(logger,
+                               "Relay admin API version {}; this client speaks version {}",
+                               parsed.api_version,
+                               laps::kAdminApiVersion);
+        } else {
+            SPDLOG_LOGGER_INFO(logger, "Relay admin API version {}", parsed.api_version);
+        }
+        if (!parsed.valid || !parsed.has_result || parsed.has_error) {
+            if (!parsed.error_message.empty()) {
+                std::cerr << parsed.error_message << '\n';
+            }
+        }
+        logger->flush();
+
         const auto pretty = laps::PrettyPrintJson(body);
         const auto& printed = pretty.has_value() ? *pretty : body;
         std::cout << printed;
         if (printed.empty() || printed.back() != '\n') {
             std::cout << '\n';
         }
+        std::cout.flush();
 
-        const auto parsed = laps::ParseAdminMessage(body);
         if (!parsed.valid || !parsed.has_result || parsed.has_error) {
-            if (!parsed.error_message.empty()) {
-                std::cerr << parsed.error_message << '\n';
-            }
             return EXIT_FAILURE;
         }
         return EXIT_SUCCESS;

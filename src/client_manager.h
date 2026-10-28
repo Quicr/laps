@@ -164,6 +164,9 @@ namespace laps {
         /// Sizes of the relay maps, for the admin state.sizes RPC.
         AdminStateSizes CollectAdminStateSizes();
 
+        /// Accepted and dialed peering sessions, for the admin peers RPC.
+        AdminPeers CollectAdminPeers();
+
         /**
          * @brief Deliver one object to the admin RPC when it is a request track
          *

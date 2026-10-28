@@ -1,6 +1,6 @@
 # LAPS Admin API
 
-LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. The first method, `state.sizes`, reports the sizes of the relay's internal maps and the contents of the object cache.
+LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state.sizes` reports the sizes of the relay's internal maps and the contents of the object cache. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it.
 
 The relay binary is `lapsRelay`. The admin client is `lapsAdmin`.
 
@@ -79,6 +79,8 @@ The reply publish, the per-client group counter, and the admin consume path run 
 
 Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as a decimal string of milliseconds since the Unix epoch. The relay copies the received `id` into the response. A response produced before an id is parsed uses an empty id.
 
+The relay adds `api_version` to every result and every error. It is an unsigned integer and identifies the admin RPC this process speaks. The API has not been released, so every response reports version `1`. That number stays at 1 while the message shape is still changing. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
+
 Request:
 
 ```json
@@ -96,6 +98,7 @@ Result:
 ```json
 {
   "id": "1793081125284",
+  "api_version": 1,
   "result": {}
 }
 ```
@@ -105,6 +108,7 @@ Error:
 ```json
 {
   "id": "1793081125284",
+  "api_version": 1,
   "error": {
     "message": "unknown method"
   }
@@ -132,6 +136,7 @@ The result is a snapshot taken while `state_.state_mutex` is held. Session and p
 ```json
 {
   "id": "1793081125284",
+  "api_version": 1,
   "result": {
     "relay_id": "relay-b",
     "connections": 1,
@@ -227,6 +232,71 @@ Each entry:
 
 Reading the cache advances its time buckets, so groups that have already expired are dropped before they are counted.
 
+## `peers`
+
+Method name: `peers`.
+
+The result lists the peering sessions this relay currently holds. A session this relay accepted from a remote peer has `role` `accepted`. A session this relay opened itself has `role` `dialed`. Dialed sessions stay in the list while the relay retries them, including when `status` is `disconnected`. Accepted sessions leave the list when the connection closes.
+
+`node_id`, `contact`, and `node_type` are present after the peering handshake identifies the remote node. `contact` is that peer's relay endpoint id. `metrics.srtt_us` is the smoothed RTT in microseconds, sampled when the RPC runs. It is `0` when the connection has no sample yet.
+
+`metrics.subscribe_tracks` is the number of tracks this relay is currently forwarding to that peer. That is the client forwarding table for the peer, plus each peer-to-peer flow sent onward to it. `metrics.publishes` is the number of tracks arriving from that peer that this relay is forwarding to a local subscriber or to another peer. Both are gauges of the forwarding tables at the moment of the RPC. A session with no connection reports `0` for both. The local client path uses session id 0 and is not a peer, so it is not included.
+
+```json
+{
+  "id": "1793081125284",
+  "api_version": 1,
+  "result": {
+    "relay_id": "relay-b",
+    "peers": [
+      {
+        "session_id": 11,
+        "role": "accepted",
+        "status": "connected",
+        "host": "192.0.2.10",
+        "port": 33434,
+        "node_id": 42,
+        "contact": "relay-a",
+        "node_type": "edge",
+        "metrics": {
+          "srtt_us": 1500,
+          "subscribe_tracks": 4,
+          "publishes": 2
+        }
+      },
+      {
+        "session_id": 12,
+        "role": "dialed",
+        "status": "connecting",
+        "host": "192.0.2.20",
+        "port": 33434,
+        "metrics": {
+          "srtt_us": 0,
+          "subscribe_tracks": 0,
+          "publishes": 0
+        }
+      }
+    ]
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `relay_id` | This relay's `--endpoint_id`. |
+| `peers` | Accepted sessions first, then dialed sessions. Within a role, ordered by host, port, then session id. |
+| `session_id` | QUIC connection id of the peering session. `0` when a dialed session has no connection. |
+| `role` | `accepted` when the peer connected to this relay. `dialed` when this relay opened the connection. |
+| `status` | `connecting`, `connected`, or `disconnected`. |
+| `host` | Peer address. For an accepted session this is the remote address. For a dialed session this is the configured peer host. |
+| `port` | Peer UDP port. |
+| `node_id` | Numeric id assigned from the remote endpoint id. Omitted until the handshake identifies the peer. |
+| `contact` | Remote relay endpoint id. Omitted until the handshake identifies the peer. |
+| `node_type` | `edge`, `via`, or `stub`. Omitted until the handshake identifies the peer. |
+| `metrics.srtt_us` | Smoothed RTT in microseconds. |
+| `metrics.subscribe_tracks` | Tracks this relay is forwarding to the peer because of a subscribe. |
+| `metrics.publishes` | Tracks arriving from the peer that this relay is forwarding onward. |
+
 ## `lapsRelay`
 
 ```text
@@ -287,13 +357,13 @@ The admin prefix is not authenticated. Any client that can open a session and pu
 
 The API is local to the relay that receives the publish. Peering subscribes are for a full track name, not a prefix, and the relay does not register an admin reply for an object that arrived from a peer. An admin client talks to the relay it connected to.
 
-`state.sizes` is the only implemented method. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
+`state.sizes` and `peers` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
 
 ## Code
 
 | Piece | Role |
 | --- | --- |
-| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state.sizes` encoding, pretty printer. |
+| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state.sizes` and `peers` encoding, pretty printer. |
 | `src/admin_service.h`, `src/admin_service.cc` | Local subscribe-tracks interest, request dispatch, reply publish. |
 | `src/admin_client.cc` | `lapsAdmin`. |
 | `src/client_manager.cc` | Installs the interest, keeps admin publishes unpaused, collects the snapshot, registers the local reply. |

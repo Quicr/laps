@@ -21,6 +21,12 @@ namespace laps {
     /// First admin RPC. Returns sizes of the relay's internal maps.
     inline constexpr std::string_view kAdminStateSizesMethod = "state.sizes";
 
+    /// Peering sessions this relay has accepted or dialed, with RTT and forwarding counts.
+    inline constexpr std::string_view kAdminPeersMethod = "peers";
+
+    /// Admin RPC spoken by this build. Stays at 1 until the API is released.
+    inline constexpr std::uint64_t kAdminApiVersion = 1;
+
     /// Connection handle of the relay's own subscribe-tracks interest. Not a QUIC connection.
     inline constexpr std::uint64_t kLocalAdminSubscriberConnection = static_cast<std::uint64_t>(-1);
 
@@ -89,6 +95,30 @@ namespace laps {
         AdminCacheMetrics cache;
     };
 
+    /// One peering session reported by the peers RPC.
+    struct AdminPeer
+    {
+        std::uint64_t session_id{ 0 };
+        std::string role;
+        std::string status;
+        std::string host;
+        std::uint16_t port{ 0 };
+        bool identified{ false };
+        std::uint64_t node_id{ 0 };
+        std::string contact;
+        std::string node_type;
+        std::uint64_t srtt_us{ 0 };
+        std::uint64_t subscribe_tracks{ 0 };
+        std::uint64_t publishes{ 0 };
+    };
+
+    /// Peers this relay has accepted or dialed.
+    struct AdminPeers
+    {
+        std::string relay_id;
+        std::vector<AdminPeer> peers;
+    };
+
     /// One JSON object exchanged on an admin RPC track.
     struct AdminRpcMessage
     {
@@ -103,6 +133,8 @@ namespace laps {
         std::string result_json;
         bool has_error{ false };
         std::string error_message;
+        bool has_api_version{ false };
+        std::uint64_t api_version{ 0 };
     };
 
     /// Split a slash-delimited namespace. Empty segments are dropped.
@@ -146,4 +178,6 @@ namespace laps {
     std::string EncodeAdminError(std::string_view id, std::string_view message);
 
     std::string EncodeAdminStateSizes(const AdminStateSizes& sizes);
+
+    std::string EncodeAdminPeers(const AdminPeers& peers);
 } // namespace laps

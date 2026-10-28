@@ -652,6 +652,21 @@ namespace laps {
                     } else if (key == "error") {
                         message.has_error = true;
                         message.error_message = ReadErrorMessage(reader);
+                    } else if (key == "api_version") {
+                        if (!reader.StartsNumber()) {
+                            throw std::runtime_error("api_version must be an unsigned integer");
+                        }
+                        const auto text = reader.CaptureValue();
+                        if (text.empty() || text.front() == '-') {
+                            throw std::runtime_error("api_version must be an unsigned integer");
+                        }
+                        std::size_t consumed = 0;
+                        const auto value = std::stoull(text, &consumed);
+                        if (consumed != text.size()) {
+                            throw std::runtime_error("api_version must be an unsigned integer");
+                        }
+                        message.api_version = value;
+                        message.has_api_version = true;
                     } else {
                         reader.SkipValue();
                     }
@@ -721,14 +736,16 @@ namespace laps {
     std::string EncodeAdminResult(std::string_view id, std::string_view result_json)
     {
         std::ostringstream out;
-        out << "{\"id\":\"" << JsonEscape(id) << "\",\"result\":" << result_json << '}';
+        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion
+            << ",\"result\":" << result_json << '}';
         return out.str();
     }
 
     std::string EncodeAdminError(std::string_view id, std::string_view message)
     {
         std::ostringstream out;
-        out << "{\"id\":\"" << JsonEscape(id) << "\",\"error\":{\"message\":\"" << JsonEscape(message) << "\"}}";
+        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion
+            << ",\"error\":{\"message\":\"" << JsonEscape(message) << "\"}}";
         return out.str();
     }
 
@@ -755,6 +772,30 @@ namespace laps {
         AppendUint(out, first, "peering_interests", sizes.peering_interests);
         AppendCache(out, sizes.cache);
         out << '}';
+        return out.str();
+    }
+
+    std::string EncodeAdminPeers(const AdminPeers& peers)
+    {
+        std::ostringstream out;
+        out << "{\"relay_id\":\"" << JsonEscape(peers.relay_id) << "\",\"peers\":[";
+        bool first = true;
+        for (const auto& peer : peers.peers) {
+            if (!first) {
+                out << ',';
+            }
+            first = false;
+            out << "{\"session_id\":" << peer.session_id << ",\"role\":\"" << JsonEscape(peer.role)
+                << "\",\"status\":\"" << JsonEscape(peer.status) << "\",\"host\":\"" << JsonEscape(peer.host)
+                << "\",\"port\":" << peer.port;
+            if (peer.identified) {
+                out << ",\"node_id\":" << peer.node_id << ",\"contact\":\"" << JsonEscape(peer.contact)
+                    << "\",\"node_type\":\"" << JsonEscape(peer.node_type) << '"';
+            }
+            out << ",\"metrics\":{\"srtt_us\":" << peer.srtt_us << ",\"subscribe_tracks\":" << peer.subscribe_tracks
+                << ",\"publishes\":" << peer.publishes << "}}";
+        }
+        out << "]}";
         return out.str();
     }
 } // namespace laps

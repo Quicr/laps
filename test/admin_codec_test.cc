@@ -61,6 +61,9 @@ TEST_CASE("admin rpc json")
     CHECK(response.valid);
     CHECK(response.id == "7");
     CHECK(response.has_result);
+    CHECK(response.has_api_version);
+    CHECK(response.api_version == laps::kAdminApiVersion);
+    CHECK(encoded.find("\"api_version\":" + std::to_string(laps::kAdminApiVersion)) != std::string::npos);
     CHECK(response.result_json.find("\"relay_id\":\"relay-b\"") != std::string::npos);
     CHECK(response.result_json.find("\"connections\":2") != std::string::npos);
     CHECK(response.result_json.find("\"subscribe_namespaces\":5") != std::string::npos);
@@ -91,9 +94,48 @@ TEST_CASE("admin rpc json")
     CHECK(with_cache.find("\"oldest_group\":4,\"newest_group\":5") != std::string::npos);
     CHECK(laps::ParseAdminMessage(laps::EncodeAdminResult("7", with_cache)).valid);
 
+    laps::AdminPeers peers;
+    peers.relay_id = "relay-b";
+    laps::AdminPeer accepted;
+    accepted.session_id = 11;
+    accepted.role = "accepted";
+    accepted.status = "connected";
+    accepted.host = "192.0.2.10";
+    accepted.port = 33434;
+    accepted.identified = true;
+    accepted.node_id = 42;
+    accepted.contact = "relay-a";
+    accepted.node_type = "edge";
+    accepted.srtt_us = 1500;
+    accepted.subscribe_tracks = 4;
+    accepted.publishes = 2;
+    laps::AdminPeer dialed;
+    dialed.session_id = 12;
+    dialed.role = "dialed";
+    dialed.status = "connecting";
+    dialed.host = "192.0.2.20";
+    dialed.port = 33434;
+    dialed.srtt_us = 0;
+    peers.peers.push_back(accepted);
+    peers.peers.push_back(dialed);
+    const auto peer_json = laps::EncodeAdminPeers(peers);
+    CHECK(peer_json.find("\"role\":\"accepted\"") != std::string::npos);
+    CHECK(peer_json.find("\"role\":\"dialed\"") != std::string::npos);
+    CHECK(peer_json.find("\"contact\":\"relay-a\"") != std::string::npos);
+    CHECK(peer_json.find("\"node_type\":\"edge\"") != std::string::npos);
+    CHECK(peer_json.find("\"metrics\":{\"srtt_us\":1500,\"subscribe_tracks\":4,\"publishes\":2}") != std::string::npos);
+    CHECK(peer_json.find("\"metrics\":{\"srtt_us\":0,\"subscribe_tracks\":0,\"publishes\":0}") != std::string::npos);
+    CHECK(peer_json.find("192.0.2.20") != std::string::npos);
+    CHECK(peer_json.find("\"node_id\":") != std::string::npos);
+    const auto dialed_pos = peer_json.find("\"role\":\"dialed\"");
+    CHECK(peer_json.find("\"node_type\"", dialed_pos) == std::string::npos);
+    CHECK(laps::ParseAdminMessage(laps::EncodeAdminResult("9", peer_json)).valid);
+
     const auto failure = laps::ParseAdminMessage(laps::EncodeAdminError("7", "unknown method"));
     CHECK(failure.valid);
     CHECK(failure.has_error);
+    CHECK(failure.has_api_version);
+    CHECK(failure.api_version == laps::kAdminApiVersion);
     CHECK(failure.error_message == "unknown method");
 
     std::string json_error;

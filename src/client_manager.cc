@@ -852,6 +852,66 @@ namespace laps {
         return sizes;
     }
 
+    AdminPeers ClientManager::CollectAdminPeers()
+    {
+        AdminPeers result;
+        result.relay_id = config_.relay_id_;
+
+        auto peers = peer_manager_.Peers();
+        std::sort(
+          peers.begin(), peers.end(), [](const moq::peering::PeerSnapshot& lhs, const moq::peering::PeerSnapshot& rhs) {
+              if (lhs.origin != rhs.origin) {
+                  return lhs.origin < rhs.origin;
+              }
+              if (lhs.host != rhs.host) {
+                  return lhs.host < rhs.host;
+              }
+              if (lhs.port != rhs.port) {
+                  return lhs.port < rhs.port;
+              }
+              return lhs.session_id < rhs.session_id;
+          });
+
+        result.peers.reserve(peers.size());
+        for (const auto& peer : peers) {
+            AdminPeer entry;
+            entry.session_id = peer.session_id;
+            entry.role = peer.origin == moq::peering::PeerOrigin::kAccepted ? "accepted" : "dialed";
+            switch (peer.status) {
+                case moq::peering::PeerLinkStatus::kConnecting:
+                    entry.status = "connecting";
+                    break;
+                case moq::peering::PeerLinkStatus::kConnected:
+                    entry.status = "connected";
+                    break;
+                case moq::peering::PeerLinkStatus::kDisconnected:
+                    entry.status = "disconnected";
+                    break;
+            }
+            entry.host = peer.host;
+            entry.port = peer.port;
+            entry.identified = peer.identified;
+            entry.node_id = peer.node_id;
+            entry.contact = peer.contact;
+            switch (peer.node_type) {
+                case moq::peering::NodeType::kVia:
+                    entry.node_type = "via";
+                    break;
+                case moq::peering::NodeType::kEdge:
+                    entry.node_type = "edge";
+                    break;
+                case moq::peering::NodeType::kStub:
+                    entry.node_type = "stub";
+                    break;
+            }
+            entry.srtt_us = peer.srtt_us;
+            entry.subscribe_tracks = peer.subscribe_tracks;
+            entry.publishes = peer.publishes;
+            result.peers.push_back(std::move(entry));
+        }
+        return result;
+    }
+
     bool ClientManager::DispatchAdminObject(const quicr::FullTrackName& track, quicr::BytesSpan data)
     {
         return admin_service_.Consume(track, data);
