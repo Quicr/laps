@@ -1,6 +1,6 @@
 # LAPS Admin API
 
-LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state.sizes` reports the sizes of the relay's internal maps and the contents of the object cache. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it.
+LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `add-peer`, `remove-peer`, and `restart-peer` change those sessions.
 
 The relay binary is `lapsRelay`. The admin client is `lapsAdmin`.
 
@@ -79,41 +79,72 @@ The reply publish, the per-client group counter, and the admin consume path run 
 
 Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as a decimal string of milliseconds since the Unix epoch. The relay copies the received `id` into the response. A response produced before an id is parsed uses an empty id.
 
-The relay adds `api_version` to every result and every error. It is an unsigned integer and identifies the admin RPC this process speaks. The API has not been released, so every response reports version `1`. That number stays at 1 while the message shape is still changing. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
+The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. The API has not been released, so every response reports version `1`. That number stays at 1 while the message shape is still changing. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
+
+`relay_id` is this relay's `--endpoint_id`. `node_id` is the peering node id of this relay, written as `high.high:low.low`. It is the same id a remote peer learns for this relay.
+
+One command may send several requests. Each request is one JSON object, and each reply on the track is one JSON object. `lapsAdmin` prints one document after its log lines. `api_version`, `relay_id`, and `node_id` are on that document. `results` holds one object per call, keyed by the method name. The per-reply `result` wrapper is not printed. A method called more than once is keyed `method#1`, `method#2`, and so on, in call order. A failed call is `{"error":{"message":"..."}}` under its key. `node_id` is omitted when a reply does not include it.
 
 Request:
 
 ```json
 {
   "id": "1793081125284",
-  "method": "state.sizes",
+  "method": "state",
   "params": {}
 }
 ```
 
-`params` is optional. When present it must be one JSON value. `state.sizes` parses `params` and does not use them.
+`params` is optional. When present it must be one JSON value. `state` parses `params` and does not use them.
 
-Result:
+Result on the wire:
 
 ```json
 {
   "id": "1793081125284",
   "api_version": 1,
+  "relay_id": "relay-b",
+  "node_id": "0.0:0.1001",
   "result": {}
 }
 ```
 
-Error:
+Error on the wire:
 
 ```json
 {
   "id": "1793081125284",
   "api_version": 1,
+  "relay_id": "relay-b",
+  "node_id": "0.0:0.1001",
   "error": {
     "message": "unknown method"
   }
 }
 ```
+
+`lapsAdmin` prints one document for the command. Two methods look like this:
+
+```json
+{
+  "api_version": 1,
+  "relay_id": "relay-b",
+  "node_id": "0.0:0.1001",
+  "results": {
+    "state": {},
+    "peers": {}
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `api_version` | Admin RPC version reported by the relay. |
+| `relay_id` | This relay's `--endpoint_id`. |
+| `node_id` | Peering node id of this relay, `high.high:low.low`. Omitted when the reply does not include it. |
+| `results` | One object per call. The key is the method name. |
+| `results.<method>` | The object that was inside that reply's `result`. |
+| `results.<method>#N` | Used when that method was called more than once. `N` starts at 1. |
 
 | Condition | `error.message` |
 | --- | --- |
@@ -123,59 +154,56 @@ Error:
 | `method` is not implemented | `unknown method` |
 | Handling the request throws | The exception text |
 
-`lapsAdmin` prints the response on stdout, indented with two spaces. Empty objects and arrays stay on one line. A body that is not a single JSON value is printed as received. The process exits 0 when the body parses as a result and has no `error`. Otherwise it exits 1 and, when the error object contains `message`, prints that message on stderr.
+`lapsAdmin` prints that document on stdout, indented with two spaces. Empty objects and arrays stay on one line. The process exits 0 when every reply parses as a result and has no `error`. Otherwise it exits 1 and, when an error object contains `message`, prints that message on stderr before the document.
 
-## `state.sizes`
+## `state`
 
-Method name: `state.sizes`. `lapsAdmin` accepts `state` as an alias and sends `state.sizes`.
+Method name: `state`.
 
 The result is a snapshot taken while `state_.state_mutex` is held. Session and peering maps are counted under their own locks inside that hold. The object cache has no separate lock. The snapshot runs on the transport thread, which is also the thread that inserts cache entries.
 
 `cache_tracks` remains the number of cached tracks. The same count is `cache.tracks`.
 
+`lapsAdmin` prints this object at `results["state"]`:
+
 ```json
 {
-  "id": "1793081125284",
-  "api_version": 1,
-  "result": {
-    "relay_id": "relay-b",
-    "connections": 1,
-    "subscriptions": 1,
-    "publishes": 2,
-    "publish_namespaces": 0,
-    "subscribe_namespaces": 0,
-    "subscribe_tracks": 1,
-    "requests": 0,
-    "subscribe_active": 1,
-    "publish_subscribes_by_request": 1,
-    "subscribe_alias_by_request": 1,
-    "connection_metrics": 2,
-    "fanout_namespaces": 0,
-    "notified_namespaces": 0,
-    "cache_tracks": 1,
-    "track_rankings": 0,
-    "peering_interests": 1,
-    "cache": {
-      "enabled": true,
-      "duration_ms": 60000,
-      "interval_ms": 1000,
-      "tracks": 1,
-      "groups": 2,
-      "objects": 3,
-      "bytes": 10,
-      "entries": [
-        {
-          "track_alias": 99,
-          "track_namespace": "media/live",
-          "track_name": "video",
-          "groups": 2,
-          "objects": 3,
-          "bytes": 10,
-          "oldest_group": 4,
-          "newest_group": 5
-        }
-      ]
-    }
+  "connections": 1,
+  "subscriptions": 1,
+  "publishes": 2,
+  "publish_namespaces": 0,
+  "subscribe_namespaces": 0,
+  "subscribe_tracks": 1,
+  "requests": 0,
+  "subscribe_active": 1,
+  "publish_subscribes_by_request": 1,
+  "subscribe_alias_by_request": 1,
+  "connection_metrics": 2,
+  "fanout_namespaces": 0,
+  "notified_namespaces": 0,
+  "cache_tracks": 1,
+  "track_rankings": 0,
+  "peering_interests": 1,
+  "cache": {
+    "enabled": true,
+    "duration_ms": 60000,
+    "interval_ms": 1000,
+    "tracks": 1,
+    "groups": 2,
+    "objects": 3,
+    "bytes": 10,
+    "entries": [
+      {
+        "track_alias": 99,
+        "track_namespace": "media/live",
+        "track_name": "video",
+        "groups": 2,
+        "objects": 3,
+        "bytes": 10,
+        "oldest_group": 4,
+        "newest_group": 5
+      }
+    ]
   }
 }
 ```
@@ -184,7 +212,6 @@ The result is a snapshot taken while `state_.state_mutex` is held. Session and p
 
 | Field | Count |
 | --- | --- |
-| `relay_id` | This relay's `--endpoint_id`. |
 | `connections` | Accepted MoQ sessions. |
 | `subscriptions` | Subscriber tracks in `state_.subscribes`, keyed by track alias and subscriber connection. One connection may subscribe to a full track name once. |
 | `publishes` | Publisher tracks the relay has subscribed to, in `state_.pub_subscribes`, keyed by track alias and publisher connection. Local publishes use connection handle 0. |
@@ -238,64 +265,95 @@ Method name: `peers`.
 
 The result lists the peering sessions this relay currently holds. A session this relay accepted from a remote peer has `role` `accepted`. A session this relay opened itself has `role` `dialed`. Dialed sessions stay in the list while the relay retries them, including when `status` is `disconnected`. Accepted sessions leave the list when the connection closes.
 
-`node_id`, `contact`, and `node_type` are present after the peering handshake identifies the remote node. `contact` is that peer's relay endpoint id. `metrics.srtt_us` is the smoothed RTT in microseconds, sampled when the RPC runs. It is `0` when the connection has no sample yet.
+A peer's `node_id`, `contact`, and `node_type` are present after the peering handshake identifies the remote node. That `node_id` is the remote peer's id. `contact` is that peer's relay endpoint id. The document's own `node_id` is this relay. `metrics.srtt_us` is the smoothed RTT in microseconds, sampled when the RPC runs. It is `0` when the connection has no sample yet. `metrics.connect_time_us` is the Unix time in microseconds when this attempt became connected. It is `0` while the peer is connecting or disconnected, and it is recorded again after a reconnect. `metrics.connect_time` is that same instant as UTC `YYYY-MM-DD HH:MM:SS`, truncated to the second. It is an empty string when `connect_time_us` is `0`.
 
 `metrics.subscribe_tracks` is the number of tracks this relay is currently forwarding to that peer. That is the client forwarding table for the peer, plus each peer-to-peer flow sent onward to it. `metrics.publishes` is the number of tracks arriving from that peer that this relay is forwarding to a local subscriber or to another peer. Both are gauges of the forwarding tables at the moment of the RPC. A session with no connection reports `0` for both. The local client path uses session id 0 and is not a peer, so it is not included.
 
+`lapsAdmin` prints this object at `results["peers"]`:
+
 ```json
 {
-  "id": "1793081125284",
-  "api_version": 1,
-  "result": {
-    "relay_id": "relay-b",
-    "peers": [
-      {
-        "session_id": 11,
-        "role": "accepted",
-        "status": "connected",
-        "host": "192.0.2.10",
-        "port": 33434,
-        "node_id": 42,
-        "contact": "relay-a",
-        "node_type": "edge",
-        "metrics": {
-          "srtt_us": 1500,
-          "subscribe_tracks": 4,
-          "publishes": 2
-        }
-      },
-      {
-        "session_id": 12,
-        "role": "dialed",
-        "status": "connecting",
-        "host": "192.0.2.20",
-        "port": 33434,
-        "metrics": {
-          "srtt_us": 0,
-          "subscribe_tracks": 0,
-          "publishes": 0
-        }
+  "peers": [
+    {
+      "session_id": 11,
+      "role": "accepted",
+      "status": "connected",
+      "host": "192.0.2.10",
+      "port": 33434,
+      "node_id": "0.0:0.42",
+      "contact": "relay-a",
+      "node_type": "edge",
+      "metrics": {
+        "srtt_us": 1500,
+        "connect_time_us": 1720000000000000,
+        "connect_time": "2024-07-03 09:46:40",
+        "subscribe_tracks": 4,
+        "publishes": 2
       }
-    ]
-  }
+    },
+    {
+      "session_id": 12,
+      "role": "dialed",
+      "status": "connecting",
+      "host": "192.0.2.20",
+      "port": 33434,
+      "metrics": {
+        "srtt_us": 0,
+        "connect_time_us": 0,
+        "connect_time": "",
+        "subscribe_tracks": 0,
+        "publishes": 0
+      }
+    }
+  ]
 }
 ```
 
 | Field | Description |
 | --- | --- |
-| `relay_id` | This relay's `--endpoint_id`. |
 | `peers` | Accepted sessions first, then dialed sessions. Within a role, ordered by host, port, then session id. |
 | `session_id` | QUIC connection id of the peering session. `0` when a dialed session has no connection. |
 | `role` | `accepted` when the peer connected to this relay. `dialed` when this relay opened the connection. |
 | `status` | `connecting`, `connected`, or `disconnected`. |
 | `host` | Peer address. For an accepted session this is the remote address. For a dialed session this is the configured peer host. |
 | `port` | Peer UDP port. |
-| `node_id` | Numeric id assigned from the remote endpoint id. Omitted until the handshake identifies the peer. |
+| `node_id` | Remote peer's peering node id, `high.high:low.low`. Omitted until the handshake identifies the peer. |
 | `contact` | Remote relay endpoint id. Omitted until the handshake identifies the peer. |
 | `node_type` | `edge`, `via`, or `stub`. Omitted until the handshake identifies the peer. |
 | `metrics.srtt_us` | Smoothed RTT in microseconds. |
+| `metrics.connect_time_us` | Unix time in microseconds when this attempt became connected. `0` when the peer is not connected. |
+| `metrics.connect_time` | Same instant as UTC `YYYY-MM-DD HH:MM:SS`. Empty when the peer is not connected. |
 | `metrics.subscribe_tracks` | Tracks this relay is forwarding to the peer because of a subscribe. |
 | `metrics.publishes` | Tracks arriving from the peer that this relay is forwarding onward. |
+
+## `add-peer`, `remove-peer`, and `restart-peer`
+
+Each method takes one address, `host:port`. On the wire that is a params object:
+
+```json
+{"host":"192.0.2.10","port":33434}
+```
+
+An IPv6 address is written `[2001:db8::1]:33434` on the command line. The host stored in params does not include the brackets.
+
+`add-peer` dials that address and keeps retrying it. If a session to that host is already accepted, the relay does not open a second connection. It remembers the address and dials it if the inbound session later closes. The relay logs `Added peer <host>:<port> but it is already accepted as inbound`. If that exact address is already dialed, the result is an error, `duplicate peer <host>:<port>`.
+
+`remove-peer` disconnects the peer and drops forwarding state for that session: nodes learned from it, subscribe and publish forwarding entries, and any remembered redial. A dialed peer is removed, so it is not reconnected. An accepted peer is disconnected and removed. A missing peer is an error, `peer <host>:<port> does not exist`.
+
+`restart-peer` disconnects the peer and drops that same forwarding state. A dialed peer is connected again. An accepted peer is only disconnected. The relay logs `Disconnected peer <host>:<port> because it was accepted as inbound`. If a redial address was remembered for that host, the relay then dials it. If the peer is not connected, the relay logs `Peer <host>:<port> is not connected` and still drops its state. A missing peer is the same error as `remove-peer`.
+
+A successful result is printed at `results["add-peer"]`:
+
+```json
+{
+  "host": "192.0.2.10",
+  "port": 33434,
+  "action": "added",
+  "message": "Added peer 192.0.2.10:33434 but it is already accepted as inbound"
+}
+```
+
+`action` is `added`, `removed`, or `restarted`.
 
 ## `lapsRelay`
 
@@ -317,20 +375,20 @@ An empty admin namespace or an empty endpoint id prevents the relay from finishi
 ## `lapsAdmin`
 
 ```text
-lapsAdmin --uri moq://127.0.0.1:33435 state
+lapsAdmin --uri moq://127.0.0.1:33435 state peers
 ```
 
-The client connects, reads the endpoint id from the relay SETUP, subscribes to the reply track, publishes the request track, and sends one object after the relay accepts the publish with forwarding on. It then waits for the first non-empty reply object.
+The client connects, reads the endpoint id from the relay SETUP, subscribes to the reply track, publishes the request track, and sends one object per method after the relay accepts the publish with forwarding on. It waits for each reply before sending the next method.
 
 | Option | Default | Role |
 | --- | --- | --- |
-| positional method | required | `state` or `state.sizes`. Any other string is sent as the method so an unknown-method error can be observed. |
+| positional methods | required | One or more of `state`, `peers`, `add-peer`, `remove-peer`, and `restart-peer`. Any other string is sent as the method so an unknown-method error can be observed. |
+| method parameters | next argument | Required after `add-peer`, `remove-peer`, and `restart-peer`. Commas separate values. Each value is one call, as `host:port` or `[ipv6]:port`. |
 | `--uri` | `moq://127.0.0.1:33435` | Relay URI. `33435` is the `lapsRelay` default listen port. |
 | `--relay-endpoint` | SETUP endpoint id | Must equal the endpoint id in the relay SETUP. Omit it to use that id. |
 | `--endpoint-id` | `admin-<pid>` | This client's endpoint id, appended to the request namespace and placed before the relay id in the reply namespace. |
 | `--admin-namespace` | `laps/admin` | Same base prefix the relay was given. |
-| `--params` | omitted | One JSON value sent as `params`. |
-| `--timeout-ms` | `5000` | Time allowed to connect, to be allowed to publish, and to receive the reply. The QUIC idle timeout is twice this value. |
+| `--timeout-ms` | `5000` | Time allowed to connect, to be allowed to publish, and to receive each reply. The QUIC idle timeout is twice this value. |
 | `--debug` | off | Debug logging. |
 
 When `--relay-endpoint` is set and differs from SETUP, the client disconnects before publishing and prints the endpoint id to use. When the relay pauses the request track, the client reports the subscribe prefix it expected (`<admin-namespace>/<relay endpoint id>`).
@@ -338,7 +396,7 @@ When `--relay-endpoint` is set and differs from SETUP, the client disconnects be
 Example against a relay that advertises `relay-b`:
 
 ```text
-lapsAdmin --uri moq://127.0.0.1:33435 --endpoint-id admin-client-xyz state
+lapsAdmin --uri moq://127.0.0.1:33435 --endpoint-id admin-client-xyz state peers
 ```
 
 Example that also checks the endpoint id:
@@ -353,17 +411,17 @@ lapsAdmin --uri moq://127.0.0.1:33435 \
 
 ## Authorization and scope
 
-The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes and cache summary.
+The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes and cache summary, and can add, remove, or restart peers.
 
 The API is local to the relay that receives the publish. Peering subscribes are for a full track name, not a prefix, and the relay does not register an admin reply for an object that arrived from a peer. An admin client talks to the relay it connected to.
 
-`state.sizes` and `peers` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
+`state`, `peers`, `add-peer`, `remove-peer`, and `restart-peer` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
 
 ## Code
 
 | Piece | Role |
 | --- | --- |
-| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state.sizes` and `peers` encoding, pretty printer. |
+| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state` and `peers` encoding, pretty printer. |
 | `src/admin_service.h`, `src/admin_service.cc` | Local subscribe-tracks interest, request dispatch, reply publish. |
 | `src/admin_client.cc` | `lapsAdmin`. |
 | `src/client_manager.cc` | Installs the interest, keeps admin publishes unpaused, collects the snapshot, registers the local reply. |

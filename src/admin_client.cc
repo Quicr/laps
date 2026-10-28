@@ -15,8 +15,10 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -37,8 +39,12 @@ namespace {
         /// Unset until --relay-endpoint is passed. Otherwise taken from the relay SETUP endpoint id.
         std::optional<std::string> relay_endpoint;
         std::string endpoint_id;
-        std::string method{ laps::kAdminStateSizesMethod };
-        std::optional<std::string> params;
+        struct Call
+        {
+            std::string method;
+            std::optional<std::string> params_json;
+        };
+        std::vector<Call> calls;
         std::chrono::milliseconds timeout{ 5000 };
         bool debug{ false };
     };
@@ -51,7 +57,16 @@ namespace {
             return std::shared_ptr<ReplyHandler>(new ReplyHandler(full_track_name));
         }
 
-        std::future<std::string> Response() { return promise_.get_future(); }
+        std::optional<std::string> Wait(std::chrono::milliseconds timeout)
+        {
+            std::unique_lock lock(mutex_);
+            if (!ready_.wait_for(lock, timeout, [this]() { return !replies_.empty(); })) {
+                return std::nullopt;
+            }
+            auto payload = std::move(replies_.front());
+            replies_.pop_front();
+            return payload;
+        }
 
         void ObjectReceived(const quicr::ObjectHeaders&,
                             quicr::BytesSpan data,
@@ -63,11 +78,8 @@ namespace {
 
             std::string payload(reinterpret_cast<const char*>(data.data()), data.size());
             std::lock_guard lock(mutex_);
-            if (completed_) {
-                return;
-            }
-            completed_ = true;
-            promise_.set_value(std::move(payload));
+            replies_.push_back(std::move(payload));
+            ready_.notify_one();
         }
 
       private:
@@ -77,32 +89,44 @@ namespace {
         }
 
         std::mutex mutex_;
-        bool completed_{ false };
-        std::promise<std::string> promise_;
+        std::condition_variable ready_;
+        std::deque<std::string> replies_;
     };
 
     void PrintUsage(std::ostream& out, const char* program)
     {
-        out << "Usage: " << program << " [options] <method>\n"
+        out << "Usage: " << program << " [options] <method> [params] [<method> [params] ...]\n"
             << "\n"
             << "Talk to a LAPS relay admin RPC. The client publishes a request on\n"
             << "  <admin-namespace>/<relay-endpoint>/<endpoint-id>  name rpc\n"
             << "and subscribes to the reply on\n"
             << "  <admin-namespace>/<endpoint-id>/<relay-endpoint>  name rpc\n"
             << "\n"
+            << "Several methods may be given. Each runs in order on one session.\n"
+            << "A method that takes parameters reads the next argument. Separate\n"
+            << "multiple values in that argument with commas. Each value is one call.\n"
+            << "\n"
             << "Methods:\n"
-            << "  state, state.sizes    JSON sizes of the relay's internal maps\n"
-            << "  peers                 JSON list of accepted and dialed peers\n"
+            << "  state                           JSON sizes of the relay's internal maps\n"
+            << "  peers                           JSON list of accepted and dialed peers\n"
+            << "  add-peer <host>:<port>          Dial a peer, or remember an accepted one\n"
+            << "  remove-peer <host>:<port>       Disconnect a peer and drop its state\n"
+            << "  restart-peer <host>:<port>      Drop a peer's state. Dialed peers reconnect\n"
             << "\n"
             << "Options:\n"
             << "  --uri URI                  Relay URI (default moq://127.0.0.1:33435)\n"
             << "  --relay-endpoint ID        Relay --endpoint_id (default: the id from relay SETUP)\n"
             << "  --endpoint-id ID           This admin client endpoint id (default admin-<pid>)\n"
             << "  --admin-namespace PREFIX   Slash-delimited base prefix (default laps/admin)\n"
-            << "  --params JSON              Optional request params, one JSON value\n"
-            << "  --timeout-ms MS            How long to wait for the response (default 5000)\n"
+            << "  --timeout-ms MS            How long to wait for each response (default 5000)\n"
             << "  --debug\n"
             << "  -h, --help\n";
+    }
+
+    bool MethodTakesParams(std::string_view method)
+    {
+        return method == laps::kAdminAddPeerMethod || method == laps::kAdminRemovePeerMethod ||
+               method == laps::kAdminRestartPeerMethod;
     }
 
     std::string RequireValue(int argc, char* argv[], int& index, std::string_view option)
@@ -118,7 +142,6 @@ namespace {
     {
         Options options;
         options.endpoint_id = "admin-" + std::to_string(static_cast<long long>(::getpid()));
-        std::optional<std::string> method;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg(argv[i]);
@@ -134,8 +157,6 @@ namespace {
                 options.endpoint_id = RequireValue(argc, argv, i, arg);
             } else if (arg == "--admin-namespace") {
                 options.admin_namespace = RequireValue(argc, argv, i, arg);
-            } else if (arg == "--params") {
-                options.params = RequireValue(argc, argv, i, arg);
             } else if (arg == "--timeout-ms") {
                 const auto text = RequireValue(argc, argv, i, arg);
                 std::size_t consumed = 0;
@@ -148,17 +169,37 @@ namespace {
                 options.debug = true;
             } else if (!arg.empty() && arg.front() == '-') {
                 throw std::runtime_error("unknown option: " + std::string(arg));
-            } else if (method.has_value()) {
-                throw std::runtime_error("unexpected argument: " + std::string(arg));
             } else {
-                method = std::string(arg);
+                const auto method = std::string(arg);
+                if (!MethodTakesParams(method)) {
+                    options.calls.push_back(Options::Call{ method, std::nullopt });
+                    continue;
+                }
+                if (i + 1 >= argc) {
+                    throw std::runtime_error(method + " requires host:port");
+                }
+                ++i;
+                const auto parts = laps::SplitAdminParams(argv[i]);
+                if (parts.empty()) {
+                    throw std::runtime_error(method + " requires host:port");
+                }
+                for (const auto& part : parts) {
+                    if (part.empty()) {
+                        throw std::runtime_error(method + " has an empty parameter");
+                    }
+                    std::string error;
+                    const auto endpoint = laps::ParseAdminPeerEndpoint(part, error);
+                    if (!endpoint.has_value()) {
+                        throw std::runtime_error(method + " " + error + ": " + part);
+                    }
+                    options.calls.push_back(Options::Call{ method, laps::EncodeAdminPeerParams(*endpoint) });
+                }
             }
         }
 
-        if (!method.has_value()) {
+        if (options.calls.empty()) {
             throw std::runtime_error("a method is required");
         }
-        options.method = *method == "state" ? std::string(laps::kAdminStateSizesMethod) : *method;
         return options;
     }
 
@@ -239,12 +280,6 @@ main(int argc, char* argv[])
 {
     try {
         const auto options = ParseArgs(argc, argv);
-        if (options.params.has_value()) {
-            std::string params_error;
-            if (!laps::IsJsonValue(*options.params, params_error)) {
-                throw std::runtime_error("params are not a JSON value: " + params_error);
-            }
-        }
 
         auto logger = spdlog::stderr_color_mt("lapsAdmin");
         logger->set_level(options.debug ? spdlog::level::debug : spdlog::level::info);
@@ -257,7 +292,12 @@ main(int argc, char* argv[])
         config.transport_config.time_queue_max_duration = 10000;
         config.transport_config.idle_timeout_ms = static_cast<std::uint64_t>(options.timeout.count()) * 2;
 
-        std::string body;
+        std::vector<laps::AdminResultCall> replies;
+        std::string relay_endpoint;
+        std::vector<std::string> errors;
+        bool failed = false;
+        std::optional<std::uint64_t> reported_version;
+        bool reported_missing_version = false;
         {
             auto setup_callback = std::make_shared<SetupCallback>();
             auto setup_endpoint = setup_callback->Endpoint();
@@ -278,7 +318,7 @@ main(int argc, char* argv[])
                 throw std::runtime_error("connected to " + options.uri + " without a relay SETUP endpoint id");
             }
 
-            const auto relay_endpoint = setup_endpoint.get();
+            relay_endpoint = setup_endpoint.get();
             if (relay_endpoint.empty()) {
                 session->Disconnect();
                 throw std::runtime_error("relay SETUP did not include an endpoint id");
@@ -299,25 +339,19 @@ main(int argc, char* argv[])
                 throw std::runtime_error(layout_error);
             }
 
-            const auto request_id = std::to_string(
-              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-                .count());
-            const auto request_json = laps::EncodeAdminRequest(
-              request_id,
-              options.method,
-              options.params.has_value() ? std::optional<std::string_view>(*options.params) : std::nullopt);
+            const auto request_base = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::system_clock::now().time_since_epoch())
+                                         .count();
 
             SPDLOG_LOGGER_INFO(logger,
                                "Admin request {} -> {} name {}",
                                laps::JoinTrackNamespace(layout->request),
                                laps::JoinTrackNamespace(layout->reply),
                                laps::kAdminRpcTrackName);
-            SPDLOG_LOGGER_DEBUG(logger, "Admin request body {}", request_json);
 
             const auto reply_track = laps::AdminFullTrackName(layout->reply);
             const auto request_track = laps::AdminFullTrackName(layout->request);
             auto reply = ReplyHandler::Create(reply_track);
-            auto response = reply->Response();
             auto publish =
               quicr::PublishTrackHandler::Create(request_track, quicr::TrackMode::kStream, 3, 3, 1000, { 0, 0 });
 
@@ -346,30 +380,58 @@ main(int argc, char* argv[])
                                          std::string(PublishStatusName(status)) + ")");
             }
 
-            const std::vector<std::uint8_t> payload(request_json.begin(), request_json.end());
-            const quicr::ObjectHeaders headers{ .group_id = 0,
-                                                .object_id = 0,
-                                                .subgroup_id = 0,
-                                                .payload_length = payload.size(),
-                                                .status = quicr::ObjectStatus::kAvailable,
-                                                .priority = 3,
-                                                .ttl = 1000,
-                                                .track_mode = quicr::TrackMode::kStream,
-                                                .extensions = std::nullopt,
-                                                .immutable_extensions = std::nullopt };
-            const auto publish_status = publish->PublishObject(headers, payload);
-            if (publish_status != quicr::PublishTrackHandler::PublishObjectStatus::kOk) {
-                session->Disconnect();
-                throw std::runtime_error("failed to publish the admin request, status " +
-                                         std::to_string(static_cast<int>(publish_status)));
+            for (std::size_t index = 0; index < options.calls.size(); ++index) {
+                const auto& call = options.calls[index];
+                const auto request_id = std::to_string(request_base) + "-" + std::to_string(index);
+                const auto request_json = laps::EncodeAdminRequest(
+                  request_id,
+                  call.method,
+                  call.params_json.has_value() ? std::optional<std::string_view>(*call.params_json) : std::nullopt);
+                SPDLOG_LOGGER_DEBUG(logger, "Admin request body {}", request_json);
+
+                const std::vector<std::uint8_t> payload(request_json.begin(), request_json.end());
+                const quicr::ObjectHeaders headers{ .group_id = static_cast<std::uint64_t>(index),
+                                                    .object_id = 0,
+                                                    .subgroup_id = 0,
+                                                    .payload_length = payload.size(),
+                                                    .status = quicr::ObjectStatus::kAvailable,
+                                                    .priority = 3,
+                                                    .ttl = 1000,
+                                                    .track_mode = quicr::TrackMode::kStream,
+                                                    .extensions = std::nullopt,
+                                                    .immutable_extensions = std::nullopt };
+                const auto publish_status = publish->PublishObject(headers, payload);
+                if (publish_status != quicr::PublishTrackHandler::PublishObjectStatus::kOk) {
+                    session->Disconnect();
+                    throw std::runtime_error("failed to publish the admin request, status " +
+                                             std::to_string(static_cast<int>(publish_status)));
+                }
+
+                const auto response = reply->Wait(options.timeout);
+                if (!response.has_value()) {
+                    failed = true;
+                    errors.push_back("timed out waiting for the admin response to " + call.method);
+                    replies.push_back(
+                      laps::AdminResultCall{ call.method,
+                                             R"({"error":{"message":"timed out waiting for the admin response"}})" });
+                    break;
+                }
+
+                replies.push_back(laps::AdminResultCall{ call.method, *response });
+                const auto parsed = laps::ParseAdminMessage(*response);
+                if (!parsed.has_api_version) {
+                    reported_missing_version = true;
+                } else {
+                    reported_version = parsed.api_version;
+                }
+                if (!parsed.valid || !parsed.has_result || parsed.has_error) {
+                    failed = true;
+                    if (!parsed.error_message.empty()) {
+                        errors.push_back(parsed.error_message);
+                    }
+                }
             }
 
-            if (response.wait_for(options.timeout) != std::future_status::ready) {
-                session->Disconnect();
-                throw std::runtime_error("timed out waiting for the admin response");
-            }
-
-            body = response.get();
             session->Disconnect();
             publish.reset();
             reply.reset();
@@ -378,35 +440,36 @@ main(int argc, char* argv[])
 
         logger->flush();
 
-        const auto parsed = laps::ParseAdminMessage(body);
-        if (!parsed.has_api_version) {
+        if (reported_missing_version && !reported_version.has_value()) {
             SPDLOG_LOGGER_WARN(logger,
                                "Relay did not report an admin API version; this client speaks version {}",
                                laps::kAdminApiVersion);
-        } else if (parsed.api_version != laps::kAdminApiVersion) {
+        } else if (reported_version.has_value() && *reported_version != laps::kAdminApiVersion) {
             SPDLOG_LOGGER_WARN(logger,
                                "Relay admin API version {}; this client speaks version {}",
-                               parsed.api_version,
+                               *reported_version,
                                laps::kAdminApiVersion);
-        } else {
-            SPDLOG_LOGGER_INFO(logger, "Relay admin API version {}", parsed.api_version);
-        }
-        if (!parsed.valid || !parsed.has_result || parsed.has_error) {
-            if (!parsed.error_message.empty()) {
-                std::cerr << parsed.error_message << '\n';
-            }
+        } else if (reported_version.has_value()) {
+            SPDLOG_LOGGER_INFO(logger, "Relay admin API version {}", *reported_version);
         }
         logger->flush();
 
-        const auto pretty = laps::PrettyPrintJson(body);
-        const auto& printed = pretty.has_value() ? *pretty : body;
-        std::cout << printed;
-        if (printed.empty() || printed.back() != '\n') {
-            std::cout << '\n';
+        for (const auto& error : errors) {
+            std::cerr << error << '\n';
         }
-        std::cout.flush();
 
-        if (!parsed.valid || !parsed.has_result || parsed.has_error) {
+        if (!replies.empty()) {
+            const auto document = laps::EncodeAdminResultsDocument(replies, relay_endpoint);
+            const auto pretty = laps::PrettyPrintJson(document);
+            const auto& printed = pretty.has_value() ? *pretty : document;
+            std::cout << printed;
+            if (printed.empty() || printed.back() != '\n') {
+                std::cout << '\n';
+            }
+            std::cout.flush();
+        }
+
+        if (failed || replies.empty()) {
             return EXIT_FAILURE;
         }
         return EXIT_SUCCESS;

@@ -113,31 +113,67 @@ namespace laps {
         }
         const auto client_key = JoinTrackNamespace(*client_entries);
 
+        AdminRelayIdentity identity;
         try {
+            identity = server_.CollectAdminRelayIdentity();
             std::string response;
             if (data.size() > kMaxAdminPayloadBytes) {
-                response = EncodeAdminError("", "request exceeds 65536 bytes");
+                response = EncodeAdminError("", identity, "request exceeds 65536 bytes");
             } else {
                 const std::string payload(reinterpret_cast<const char*>(data.data()), data.size());
                 const auto message = ParseAdminMessage(payload);
                 if (!message.valid || !message.has_method || message.method.empty()) {
                     const auto reason = message.error.empty() ? "request requires a method" : message.error;
-                    response = EncodeAdminError(message.id, reason);
+                    response = EncodeAdminError(message.id, identity, reason);
                 } else if (message.method == kAdminStateSizesMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
-                    response = EncodeAdminResult(message.id, EncodeAdminStateSizes(server_.CollectAdminStateSizes()));
+                    response =
+                      EncodeAdminResult(message.id, identity, EncodeAdminStateSizes(server_.CollectAdminStateSizes()));
                 } else if (message.method == kAdminPeersMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
-                    response = EncodeAdminResult(message.id, EncodeAdminPeers(server_.CollectAdminPeers()));
+                    response = EncodeAdminResult(message.id, identity, EncodeAdminPeers(server_.CollectAdminPeers()));
+                } else if (message.method == kAdminAddPeerMethod || message.method == kAdminRemovePeerMethod ||
+                           message.method == kAdminRestartPeerMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    if (!message.has_params) {
+                        response =
+                          EncodeAdminError(message.id, identity, std::string(message.method) + " requires host:port");
+                    } else {
+                        std::string params_error;
+                        const auto endpoint = ParseAdminPeerParams(message.params_json, params_error);
+                        if (!endpoint.has_value()) {
+                            response = EncodeAdminError(message.id, identity, params_error);
+                        } else {
+                            moq::peering::PeerAdminResult outcome;
+                            if (message.method == kAdminAddPeerMethod) {
+                                outcome = server_.AdminAddPeer(endpoint->host, endpoint->port);
+                            } else if (message.method == kAdminRemovePeerMethod) {
+                                outcome = server_.AdminRemovePeer(endpoint->host, endpoint->port);
+                            } else {
+                                outcome = server_.AdminRestartPeer(endpoint->host, endpoint->port);
+                            }
+                            if (!outcome.ok) {
+                                response = EncodeAdminError(message.id, identity, outcome.message);
+                            } else {
+                                AdminPeerCommand command;
+                                command.host = outcome.host;
+                                command.port = outcome.port;
+                                command.action = outcome.action;
+                                command.message = outcome.message;
+                                response = EncodeAdminResult(message.id, identity, EncodeAdminPeerCommand(command));
+                            }
+                        }
+                    }
                 } else {
                     SPDLOG_LOGGER_INFO(config_.logger_,
                                        "Admin RPC unknown method {} from {} id {}",
                                        message.method,
                                        client_key,
                                        message.id);
-                    response = EncodeAdminError(message.id, "unknown method");
+                    response = EncodeAdminError(message.id, identity, "unknown method");
                 }
             }
 
@@ -145,7 +181,7 @@ namespace laps {
         } catch (const std::exception& ex) {
             SPDLOG_LOGGER_WARN(config_.logger_, "Admin RPC failed for {}: {}", client_key, ex.what());
             try {
-                PublishReply(client_key, *client_entries, EncodeAdminError("", ex.what()));
+                PublishReply(client_key, *client_entries, EncodeAdminError("", identity, ex.what()));
             } catch (const std::exception& publish_error) {
                 SPDLOG_LOGGER_WARN(config_.logger_, "Admin RPC error response failed: {}", publish_error.what());
             }

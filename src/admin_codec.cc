@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -14,6 +16,24 @@ namespace laps {
         constexpr std::size_t kMaxNamespaceEntries = 32;
 
         std::string JsonEscape(std::string_view value);
+
+        /// UTC `YYYY-MM-DD HH:MM:SS` for a Unix time in microseconds. Empty when `epoch_us` is 0.
+        std::string FormatUtcTimestamp(std::uint64_t epoch_us)
+        {
+            if (epoch_us == 0) {
+                return {};
+            }
+            const auto seconds = static_cast<std::time_t>(epoch_us / 1000000);
+            std::tm utc{};
+            if (gmtime_r(&seconds, &utc) == nullptr) {
+                return {};
+            }
+            char formatted[32];
+            if (std::strftime(formatted, sizeof(formatted), "%Y-%m-%d %H:%M:%S", &utc) == 0) {
+                return {};
+            }
+            return formatted;
+        }
 
         class JsonReader
         {
@@ -527,6 +547,81 @@ namespace laps {
         {
             return std::string(reinterpret_cast<const char*>(entry.data()), entry.size());
         }
+
+        std::uint64_t ReadUnsigned(JsonReader& reader, std::string_view field)
+        {
+            if (!reader.StartsNumber()) {
+                throw std::runtime_error(std::string(field) + " must be an unsigned integer");
+            }
+            const auto text = reader.CaptureValue();
+            if (text.empty() || text.front() == '-') {
+                throw std::runtime_error(std::string(field) + " must be an unsigned integer");
+            }
+            std::size_t consumed = 0;
+            const auto value = std::stoull(text, &consumed);
+            if (consumed != text.size()) {
+                throw std::runtime_error(std::string(field) + " must be an unsigned integer");
+            }
+            return value;
+        }
+
+        /// Drop a top-level `relay_id` string from an object. Other values are copied through.
+        struct StrippedResult
+        {
+            std::string json;
+            std::optional<std::string> relay_id;
+        };
+
+        StrippedResult StripTopLevelRelayId(std::string_view object_json)
+        {
+            StrippedResult stripped;
+            stripped.json = std::string(object_json);
+            JsonReader reader(object_json);
+            if (!reader.Consume('{')) {
+                return stripped;
+            }
+
+            std::ostringstream out;
+            out << '{';
+            bool first = true;
+            if (!reader.Consume('}')) {
+                while (true) {
+                    const auto key = reader.ParseString();
+                    if (!reader.Consume(':')) {
+                        return stripped;
+                    }
+                    const auto value = reader.CaptureValue();
+                    if (key == "relay_id") {
+                        try {
+                            JsonReader value_reader(value);
+                            auto id = value_reader.ParseString();
+                            if (value_reader.Exhausted()) {
+                                stripped.relay_id = std::move(id);
+                            }
+                        } catch (const std::exception&) {
+                        }
+                    } else {
+                        if (!first) {
+                            out << ',';
+                        }
+                        first = false;
+                        out << '"' << JsonEscape(key) << "\":" << value;
+                    }
+                    if (reader.Consume('}')) {
+                        break;
+                    }
+                    if (!reader.Consume(',')) {
+                        return stripped;
+                    }
+                }
+            }
+            if (!reader.Exhausted()) {
+                return stripped;
+            }
+            out << '}';
+            stripped.json = out.str();
+            return stripped;
+        }
     } // namespace
 
     std::vector<std::string> SplitTrackNamespace(std::string_view value)
@@ -653,20 +748,14 @@ namespace laps {
                         message.has_error = true;
                         message.error_message = ReadErrorMessage(reader);
                     } else if (key == "api_version") {
-                        if (!reader.StartsNumber()) {
-                            throw std::runtime_error("api_version must be an unsigned integer");
-                        }
-                        const auto text = reader.CaptureValue();
-                        if (text.empty() || text.front() == '-') {
-                            throw std::runtime_error("api_version must be an unsigned integer");
-                        }
-                        std::size_t consumed = 0;
-                        const auto value = std::stoull(text, &consumed);
-                        if (consumed != text.size()) {
-                            throw std::runtime_error("api_version must be an unsigned integer");
-                        }
-                        message.api_version = value;
+                        message.api_version = ReadUnsigned(reader, "api_version");
                         message.has_api_version = true;
+                    } else if (key == "relay_id") {
+                        message.relay_id = reader.ParseString();
+                        message.has_relay_id = true;
+                    } else if (key == "node_id") {
+                        message.node_id = reader.ParseString();
+                        message.has_node_id = true;
                     } else {
                         reader.SkipValue();
                     }
@@ -733,27 +822,126 @@ namespace laps {
         return out.str();
     }
 
-    std::string EncodeAdminResult(std::string_view id, std::string_view result_json)
+    std::string EncodeAdminResult(std::string_view id,
+                                  const AdminRelayIdentity& identity,
+                                  std::string_view result_json)
     {
         std::ostringstream out;
-        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion
-            << ",\"result\":" << result_json << '}';
+        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\""
+            << JsonEscape(identity.relay_id) << "\",\"node_id\":\"" << JsonEscape(identity.node_id)
+            << "\",\"result\":" << result_json
+            << '}';
         return out.str();
     }
 
-    std::string EncodeAdminError(std::string_view id, std::string_view message)
+    std::string EncodeAdminError(std::string_view id, const AdminRelayIdentity& identity, std::string_view message)
     {
         std::ostringstream out;
-        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion
-            << ",\"error\":{\"message\":\"" << JsonEscape(message) << "\"}}";
+        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\""
+            << JsonEscape(identity.relay_id) << "\",\"node_id\":\"" << JsonEscape(identity.node_id)
+            << "\",\"error\":{\"message\":\""
+            << JsonEscape(message) << "\"}}";
+        return out.str();
+    }
+
+    std::string EncodeAdminResultsDocument(const std::vector<AdminResultCall>& calls,
+                                           std::string_view fallback_relay_id)
+    {
+        std::optional<std::uint64_t> api_version;
+        std::optional<std::string> relay_id;
+        std::optional<std::string> node_id;
+        std::vector<std::pair<std::string, std::string>> entries;
+        entries.reserve(calls.size());
+
+        std::map<std::string, int> totals;
+        for (const auto& call : calls) {
+            ++totals[call.method];
+        }
+        std::map<std::string, int> seen;
+
+        for (const auto& call : calls) {
+            const auto message = ParseAdminMessage(call.body);
+            if (!api_version.has_value() && message.has_api_version) {
+                api_version = message.api_version;
+            }
+            if (!relay_id.has_value() && message.has_relay_id && !message.relay_id.empty()) {
+                relay_id = message.relay_id;
+            }
+            if (!node_id.has_value() && message.has_node_id && !message.node_id.empty()) {
+                node_id = message.node_id;
+            }
+
+            std::string value;
+            if (!message.valid) {
+                const auto reason = message.error.empty() ? "response was not a JSON object" : message.error;
+                value = "{\"error\":{\"message\":\"" + JsonEscape(reason) + "\"}}";
+            } else if (message.has_error || !message.has_result) {
+                const auto reason = !message.error_message.empty() ? message.error_message : "response had no result";
+                value = "{\"error\":{\"message\":\"" + JsonEscape(reason) + "\"}}";
+            } else {
+                try {
+                    const auto stripped = StripTopLevelRelayId(message.result_json);
+                    value = stripped.json;
+                    if (!relay_id.has_value() && stripped.relay_id.has_value() && !stripped.relay_id->empty()) {
+                        relay_id = stripped.relay_id;
+                    }
+                } catch (const std::exception&) {
+                    value = std::string(message.result_json);
+                }
+            }
+
+            auto& index = seen[call.method];
+            ++index;
+            std::string key = call.method;
+            if (totals[call.method] > 1) {
+                key += "#" + std::to_string(index);
+            }
+            entries.emplace_back(std::move(key), std::move(value));
+        }
+
+        if (!relay_id.has_value()) {
+            relay_id = std::string(fallback_relay_id);
+        }
+
+        std::ostringstream out;
+        out << '{';
+        bool first = true;
+        const auto field = [&out, &first](std::string_view key, std::string_view raw_value) {
+            if (!first) {
+                out << ',';
+            }
+            first = false;
+            out << '"' << JsonEscape(key) << "\":" << raw_value;
+        };
+        if (api_version.has_value()) {
+            field("api_version", std::to_string(*api_version));
+        }
+        field("relay_id", "\"" + JsonEscape(*relay_id) + "\"");
+        if (node_id.has_value()) {
+            field("node_id", "\"" + JsonEscape(*node_id) + "\"");
+        }
+
+        std::ostringstream results;
+        results << '{';
+        bool first_result = true;
+        for (const auto& [key, value] : entries) {
+            if (!first_result) {
+                results << ',';
+            }
+            first_result = false;
+            results << '"' << JsonEscape(key) << "\":" << value;
+        }
+        results << '}';
+        field("results", results.str());
+        out << '}';
         return out.str();
     }
 
     std::string EncodeAdminStateSizes(const AdminStateSizes& sizes)
     {
         std::ostringstream out;
-        bool first = false;
-        out << "{\"relay_id\":\"" << JsonEscape(sizes.relay_id) << '"';
+        bool first = true;
+        out << '{';
         AppendUint(out, first, "connections", sizes.connections);
         AppendUint(out, first, "subscriptions", sizes.subscriptions);
         AppendUint(out, first, "publishes", sizes.publishes);
@@ -778,7 +966,7 @@ namespace laps {
     std::string EncodeAdminPeers(const AdminPeers& peers)
     {
         std::ostringstream out;
-        out << "{\"relay_id\":\"" << JsonEscape(peers.relay_id) << "\",\"peers\":[";
+        out << "{\"peers\":[";
         bool first = true;
         for (const auto& peer : peers.peers) {
             if (!first) {
@@ -789,13 +977,171 @@ namespace laps {
                 << "\",\"status\":\"" << JsonEscape(peer.status) << "\",\"host\":\"" << JsonEscape(peer.host)
                 << "\",\"port\":" << peer.port;
             if (peer.identified) {
-                out << ",\"node_id\":" << peer.node_id << ",\"contact\":\"" << JsonEscape(peer.contact)
+                out << ",\"node_id\":\"" << JsonEscape(peer.node_id) << "\",\"contact\":\"" << JsonEscape(peer.contact)
                     << "\",\"node_type\":\"" << JsonEscape(peer.node_type) << '"';
             }
-            out << ",\"metrics\":{\"srtt_us\":" << peer.srtt_us << ",\"subscribe_tracks\":" << peer.subscribe_tracks
-                << ",\"publishes\":" << peer.publishes << "}}";
+            out << ",\"metrics\":{\"srtt_us\":" << peer.srtt_us << ",\"connect_time_us\":" << peer.connect_time_us
+                << ",\"connect_time\":\"" << JsonEscape(FormatUtcTimestamp(peer.connect_time_us))
+                << "\",\"subscribe_tracks\":" << peer.subscribe_tracks << ",\"publishes\":" << peer.publishes << "}}";
         }
         out << "]}";
+        return out.str();
+    }
+
+    std::vector<std::string> SplitAdminParams(std::string_view text)
+    {
+        std::vector<std::string> parts;
+        std::size_t start = 0;
+        while (start <= text.size()) {
+            const auto comma = text.find(',', start);
+            const auto token = text.substr(start, comma == std::string_view::npos ? std::string_view::npos : comma - start);
+            std::size_t left = 0;
+            std::size_t right = token.size();
+            while (left < right && std::isspace(static_cast<unsigned char>(token[left]))) {
+                ++left;
+            }
+            while (right > left && std::isspace(static_cast<unsigned char>(token[right - 1]))) {
+                --right;
+            }
+            parts.emplace_back(token.substr(left, right - left));
+            if (comma == std::string_view::npos) {
+                break;
+            }
+            start = comma + 1;
+        }
+        return parts;
+    }
+
+    std::optional<AdminPeerEndpoint> ParseAdminPeerEndpoint(std::string_view text, std::string& error)
+    {
+        const auto trimmed = SplitAdminParams(text);
+        if (trimmed.size() != 1 || trimmed.front().empty()) {
+            error = "expected host:port";
+            return std::nullopt;
+        }
+        const auto& value = trimmed.front();
+
+        std::string host;
+        std::string port_text;
+        if (!value.empty() && value.front() == '[') {
+            const auto end = value.find(']');
+            if (end == std::string::npos || end + 1 >= value.size() || value[end + 1] != ':') {
+                error = "expected [ipv6]:port";
+                return std::nullopt;
+            }
+            host = value.substr(1, end - 1);
+            port_text = value.substr(end + 2);
+        } else {
+            const auto colon = value.rfind(':');
+            if (colon == std::string::npos || colon == 0 || colon + 1 >= value.size()) {
+                error = "expected host:port";
+                return std::nullopt;
+            }
+            host = value.substr(0, colon);
+            port_text = value.substr(colon + 1);
+        }
+
+        if (host.empty()) {
+            error = "expected host:port";
+            return std::nullopt;
+        }
+
+        std::size_t consumed = 0;
+        unsigned long port = 0;
+        try {
+            port = std::stoul(port_text, &consumed);
+        } catch (const std::exception&) {
+            error = "port must be an integer from 1 to 65535";
+            return std::nullopt;
+        }
+        if (consumed != port_text.size() || port == 0 || port > 65535) {
+            error = "port must be an integer from 1 to 65535";
+            return std::nullopt;
+        }
+
+        AdminPeerEndpoint endpoint;
+        endpoint.host = std::move(host);
+        endpoint.port = static_cast<std::uint16_t>(port);
+        return endpoint;
+    }
+
+    std::optional<AdminPeerEndpoint> ParseAdminPeerParams(std::string_view params_json, std::string& error)
+    {
+        try {
+            JsonReader reader(params_json);
+            if (!reader.Consume('{')) {
+                error = "peer params must be an object";
+                return std::nullopt;
+            }
+
+            std::optional<std::string> host;
+            std::optional<std::uint16_t> port;
+            if (!reader.Consume('}')) {
+                while (true) {
+                    const auto key = reader.ParseString();
+                    if (!reader.Consume(':')) {
+                        error = "expected ':'";
+                        return std::nullopt;
+                    }
+                    if (key == "host") {
+                        host = reader.ParseString();
+                    } else if (key == "port") {
+                        if (!reader.StartsNumber()) {
+                            error = "port must be an integer from 1 to 65535";
+                            return std::nullopt;
+                        }
+                        const auto text = reader.CaptureValue();
+                        std::size_t consumed = 0;
+                        const auto value = std::stoul(text, &consumed);
+                        if (consumed != text.size() || value == 0 || value > 65535) {
+                            error = "port must be an integer from 1 to 65535";
+                            return std::nullopt;
+                        }
+                        port = static_cast<std::uint16_t>(value);
+                    } else {
+                        reader.SkipValue();
+                    }
+
+                    if (reader.Consume('}')) {
+                        break;
+                    }
+                    if (!reader.Consume(',')) {
+                        error = "expected ',' or '}'";
+                        return std::nullopt;
+                    }
+                }
+            }
+            if (!reader.Exhausted()) {
+                error = "trailing data after peer params";
+                return std::nullopt;
+            }
+            if (!host.has_value() || host->empty() || !port.has_value()) {
+                error = "peer params require host and port";
+                return std::nullopt;
+            }
+
+            AdminPeerEndpoint endpoint;
+            endpoint.host = *host;
+            endpoint.port = *port;
+            return endpoint;
+        } catch (const std::exception& ex) {
+            error = ex.what();
+            return std::nullopt;
+        }
+    }
+
+    std::string EncodeAdminPeerParams(const AdminPeerEndpoint& endpoint)
+    {
+        std::ostringstream out;
+        out << "{\"host\":\"" << JsonEscape(endpoint.host) << "\",\"port\":" << endpoint.port << '}';
+        return out.str();
+    }
+
+    std::string EncodeAdminPeerCommand(const AdminPeerCommand& command)
+    {
+        std::ostringstream out;
+        out << "{\"host\":\"" << JsonEscape(command.host) << "\",\"port\":" << command.port << ",\"action\":\""
+            << JsonEscape(command.action) << "\",\"message\":\"" << JsonEscape(command.message) << "\"}";
         return out.str();
     }
 } // namespace laps

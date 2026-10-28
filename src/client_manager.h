@@ -161,11 +161,18 @@ namespace laps {
 
         void RemoveLocalAdminSubscribe(const quicr::TrackNamespace& prefix);
 
-        /// Sizes of the relay maps, for the admin state.sizes RPC.
+        /// Sizes of the relay maps, for the admin state RPC.
         AdminStateSizes CollectAdminStateSizes();
 
         /// Accepted and dialed peering sessions, for the admin peers RPC.
         AdminPeers CollectAdminPeers();
+
+        /// Endpoint id and the peering node id, copied onto every admin reply.
+        AdminRelayIdentity CollectAdminRelayIdentity() const;
+
+        moq::peering::PeerAdminResult AdminAddPeer(const std::string& host, std::uint16_t port);
+        moq::peering::PeerAdminResult AdminRemovePeer(const std::string& host, std::uint16_t port);
+        moq::peering::PeerAdminResult AdminRestartPeer(const std::string& host, std::uint16_t port);
 
         /**
          * @brief Deliver one object to the admin RPC when it is a request track

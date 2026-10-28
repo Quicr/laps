@@ -19,10 +19,19 @@ namespace laps {
     inline constexpr std::string_view kDefaultAdminPrefix = "laps/admin";
 
     /// First admin RPC. Returns sizes of the relay's internal maps.
-    inline constexpr std::string_view kAdminStateSizesMethod = "state.sizes";
+    inline constexpr std::string_view kAdminStateSizesMethod = "state";
 
     /// Peering sessions this relay has accepted or dialed, with RTT and forwarding counts.
     inline constexpr std::string_view kAdminPeersMethod = "peers";
+
+    /// Dial a peer, or remember the address when that peer is already accepted.
+    inline constexpr std::string_view kAdminAddPeerMethod = "add-peer";
+
+    /// Disconnect a peer and drop the forwarding state for it.
+    inline constexpr std::string_view kAdminRemovePeerMethod = "remove-peer";
+
+    /// Disconnect a peer and drop its forwarding state. A dialed peer is connected again.
+    inline constexpr std::string_view kAdminRestartPeerMethod = "restart-peer";
 
     /// Admin RPC spoken by this build. Stays at 1 until the API is released.
     inline constexpr std::uint64_t kAdminApiVersion = 1;
@@ -72,10 +81,23 @@ namespace laps {
         std::vector<AdminCacheTrack> entries;
     };
 
-    /// Sizes of the relay maps reported by the state.sizes RPC.
-    struct AdminStateSizes
+    /// Relay endpoint id and the peering node id text for this process.
+    struct AdminRelayIdentity
     {
         std::string relay_id;
+        std::string node_id;
+    };
+
+    /// One admin reply to place in the printed results document.
+    struct AdminResultCall
+    {
+        std::string method;
+        std::string body;
+    };
+
+    /// Sizes of the relay maps reported by the state RPC.
+    struct AdminStateSizes
+    {
         std::uint64_t connections{ 0 };
         std::uint64_t subscriptions{ 0 };
         std::uint64_t publishes{ 0 };
@@ -104,10 +126,11 @@ namespace laps {
         std::string host;
         std::uint16_t port{ 0 };
         bool identified{ false };
-        std::uint64_t node_id{ 0 };
+        std::string node_id;
         std::string contact;
         std::string node_type;
         std::uint64_t srtt_us{ 0 };
+        std::uint64_t connect_time_us{ 0 };
         std::uint64_t subscribe_tracks{ 0 };
         std::uint64_t publishes{ 0 };
     };
@@ -115,8 +138,23 @@ namespace laps {
     /// Peers this relay has accepted or dialed.
     struct AdminPeers
     {
-        std::string relay_id;
         std::vector<AdminPeer> peers;
+    };
+
+    /// host:port argument of add-peer, remove-peer, and restart-peer.
+    struct AdminPeerEndpoint
+    {
+        std::string host;
+        std::uint16_t port{ 0 };
+    };
+
+    /// Result of add-peer, remove-peer, or restart-peer.
+    struct AdminPeerCommand
+    {
+        std::string host;
+        std::uint16_t port{ 0 };
+        std::string action;
+        std::string message;
     };
 
     /// One JSON object exchanged on an admin RPC track.
@@ -135,6 +173,10 @@ namespace laps {
         std::string error_message;
         bool has_api_version{ false };
         std::uint64_t api_version{ 0 };
+        bool has_relay_id{ false };
+        std::string relay_id;
+        bool has_node_id{ false };
+        std::string node_id;
     };
 
     /// Split a slash-delimited namespace. Empty segments are dropped.
@@ -173,11 +215,37 @@ namespace laps {
                                    std::string_view method,
                                    std::optional<std::string_view> params_json = std::nullopt);
 
-    std::string EncodeAdminResult(std::string_view id, std::string_view result_json);
+    std::string EncodeAdminResult(std::string_view id,
+                                  const AdminRelayIdentity& identity,
+                                  std::string_view result_json);
 
-    std::string EncodeAdminError(std::string_view id, std::string_view message);
+    std::string EncodeAdminError(std::string_view id, const AdminRelayIdentity& identity, std::string_view message);
+
+    /**
+     * @brief One JSON document for every reply from a command
+     *
+     * @details `api_version`, `relay_id`, and `node_id` are taken from the replies. Each call's
+     *      `result` object is stored under `results` by method name, without that wrapper. A method
+     *      that was called more than once uses `method#1`, `method#2`, and so on. `fallback_relay_id`
+     *      is used when no reply carries a relay id.
+     */
+    std::string EncodeAdminResultsDocument(const std::vector<AdminResultCall>& calls,
+                                           std::string_view fallback_relay_id);
 
     std::string EncodeAdminStateSizes(const AdminStateSizes& sizes);
 
     std::string EncodeAdminPeers(const AdminPeers& peers);
+
+    /// Split a comma-delimited parameter argument. Tokens are trimmed. Empty tokens are kept.
+    std::vector<std::string> SplitAdminParams(std::string_view text);
+
+    /// Parse `host:port`. IPv6 addresses use `[addr]:port`.
+    std::optional<AdminPeerEndpoint> ParseAdminPeerEndpoint(std::string_view text, std::string& error);
+
+    /// Parse `{"host":"...","port":N}`.
+    std::optional<AdminPeerEndpoint> ParseAdminPeerParams(std::string_view params_json, std::string& error);
+
+    std::string EncodeAdminPeerParams(const AdminPeerEndpoint& endpoint);
+
+    std::string EncodeAdminPeerCommand(const AdminPeerCommand& command);
 } // namespace laps

@@ -765,7 +765,6 @@ namespace laps {
     AdminStateSizes ClientManager::CollectAdminStateSizes()
     {
         AdminStateSizes sizes;
-        sizes.relay_id = config_.relay_id_;
 
         {
             std::lock_guard state_lock(state_.state_mutex);
@@ -852,11 +851,17 @@ namespace laps {
         return sizes;
     }
 
+    AdminRelayIdentity ClientManager::CollectAdminRelayIdentity() const
+    {
+        AdminRelayIdentity identity;
+        identity.relay_id = config_.relay_id_;
+            identity.node_id = moq::peering::FormatNodeId(peer_manager_.LocalNodeId());
+        return identity;
+    }
+
     AdminPeers ClientManager::CollectAdminPeers()
     {
         AdminPeers result;
-        result.relay_id = config_.relay_id_;
-
         auto peers = peer_manager_.Peers();
         std::sort(
           peers.begin(), peers.end(), [](const moq::peering::PeerSnapshot& lhs, const moq::peering::PeerSnapshot& rhs) {
@@ -891,7 +896,9 @@ namespace laps {
             entry.host = peer.host;
             entry.port = peer.port;
             entry.identified = peer.identified;
-            entry.node_id = peer.node_id;
+            if (peer.identified) {
+                entry.node_id = moq::peering::FormatNodeId(peer.node_id);
+            }
             entry.contact = peer.contact;
             switch (peer.node_type) {
                 case moq::peering::NodeType::kVia:
@@ -905,11 +912,27 @@ namespace laps {
                     break;
             }
             entry.srtt_us = peer.srtt_us;
+            entry.connect_time_us = peer.connect_time_us;
             entry.subscribe_tracks = peer.subscribe_tracks;
             entry.publishes = peer.publishes;
             result.peers.push_back(std::move(entry));
         }
         return result;
+    }
+
+    moq::peering::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host, std::uint16_t port)
+    {
+        return peer_manager_.AddPeer(host, port);
+    }
+
+    moq::peering::PeerAdminResult ClientManager::AdminRemovePeer(const std::string& host, std::uint16_t port)
+    {
+        return peer_manager_.RemovePeer(host, port);
+    }
+
+    moq::peering::PeerAdminResult ClientManager::AdminRestartPeer(const std::string& host, std::uint16_t port)
+    {
+        return peer_manager_.RestartPeer(host, port);
     }
 
     bool ClientManager::DispatchAdminObject(const quicr::FullTrackName& track, quicr::BytesSpan data)
