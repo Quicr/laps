@@ -81,11 +81,13 @@ namespace laps {
         std::vector<AdminCacheTrack> entries;
     };
 
-    /// Relay endpoint id and the peering node id text for this process.
+    /// Relay endpoint id, peering node id, and the time this process started.
     struct AdminRelayIdentity
     {
         std::string relay_id;
         std::string node_id;
+        /// Unix time in microseconds when the relay started. 0 when unknown.
+        std::uint64_t start_time_us{ 0 };
     };
 
     /// One admin reply to place in the printed results document.
@@ -177,6 +179,10 @@ namespace laps {
         std::string relay_id;
         bool has_node_id{ false };
         std::string node_id;
+        bool has_start_time_us{ false };
+        std::uint64_t start_time_us{ 0 };
+        bool has_start_time{ false };
+        std::string start_time;
     };
 
     /// Split a slash-delimited namespace. Empty segments are dropped.
@@ -224,8 +230,8 @@ namespace laps {
     /**
      * @brief One JSON document for every reply from a command
      *
-     * @details `api_version`, `relay_id`, and `node_id` are taken from the replies. Each call's
-     *      `result` object is stored under `results` by method name, without that wrapper. A method
+     * @details `api_version`, `relay_id`, `node_id`, and the relay start time are taken from the replies.
+     *      Each call's `result` object is stored under `results` by method name, without that wrapper. A method
      *      that was called more than once uses `method#1`, `method#2`, and so on. `fallback_relay_id`
      *      is used when no reply carries a relay id.
      */

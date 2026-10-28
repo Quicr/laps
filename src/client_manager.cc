@@ -47,6 +47,12 @@ namespace laps {
          * thread dispatches all control/data callbacks; starting metrics publishing first avoids any chance
          * of racing with that thread while touching ClientManager state.
          */
+        if (relay_start_time_us_ == 0) {
+            const auto now = std::chrono::system_clock::now().time_since_epoch();
+            relay_start_time_us_ =
+              static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now).count());
+        }
+
         metrics_publisher_.Start();
         admin_service_.Start();
 
@@ -860,7 +866,8 @@ namespace laps {
     {
         AdminRelayIdentity identity;
         identity.relay_id = config_.relay_id_;
-            identity.node_id = moq::peering::FormatNodeId(peer_manager_.LocalNodeId());
+        identity.node_id = moq::peering::FormatNodeId(peer_manager_.LocalNodeId());
+        identity.start_time_us = relay_start_time_us_;
         return identity;
     }
 

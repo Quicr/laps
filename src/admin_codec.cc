@@ -756,6 +756,12 @@ namespace laps {
                     } else if (key == "node_id") {
                         message.node_id = reader.ParseString();
                         message.has_node_id = true;
+                    } else if (key == "start_time_us") {
+                        message.start_time_us = ReadUnsigned(reader, "start_time_us");
+                        message.has_start_time_us = true;
+                    } else if (key == "start_time") {
+                        message.start_time = reader.ParseString();
+                        message.has_start_time = true;
                     } else {
                         reader.SkipValue();
                     }
@@ -829,8 +835,8 @@ namespace laps {
         std::ostringstream out;
         out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\""
             << JsonEscape(identity.relay_id) << "\",\"node_id\":\"" << JsonEscape(identity.node_id)
-            << "\",\"result\":" << result_json
-            << '}';
+            << "\",\"start_time_us\":" << identity.start_time_us << ",\"start_time\":\""
+            << JsonEscape(FormatUtcTimestamp(identity.start_time_us)) << "\",\"result\":" << result_json << '}';
         return out.str();
     }
 
@@ -839,7 +845,8 @@ namespace laps {
         std::ostringstream out;
         out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\""
             << JsonEscape(identity.relay_id) << "\",\"node_id\":\"" << JsonEscape(identity.node_id)
-            << "\",\"error\":{\"message\":\""
+            << "\",\"start_time_us\":" << identity.start_time_us << ",\"start_time\":\""
+            << JsonEscape(FormatUtcTimestamp(identity.start_time_us)) << "\",\"error\":{\"message\":\""
             << JsonEscape(message) << "\"}}";
         return out.str();
     }
@@ -850,6 +857,8 @@ namespace laps {
         std::optional<std::uint64_t> api_version;
         std::optional<std::string> relay_id;
         std::optional<std::string> node_id;
+        std::optional<std::uint64_t> start_time_us;
+        std::optional<std::string> start_time;
         std::vector<std::pair<std::string, std::string>> entries;
         entries.reserve(calls.size());
 
@@ -869,6 +878,12 @@ namespace laps {
             }
             if (!node_id.has_value() && message.has_node_id && !message.node_id.empty()) {
                 node_id = message.node_id;
+            }
+            if (!start_time_us.has_value() && message.has_start_time_us) {
+                start_time_us = message.start_time_us;
+            }
+            if (!start_time.has_value() && message.has_start_time) {
+                start_time = message.start_time;
             }
 
             std::string value;
@@ -919,6 +934,12 @@ namespace laps {
         field("relay_id", "\"" + JsonEscape(*relay_id) + "\"");
         if (node_id.has_value()) {
             field("node_id", "\"" + JsonEscape(*node_id) + "\"");
+        }
+        if (start_time_us.has_value()) {
+            field("start_time_us", std::to_string(*start_time_us));
+        }
+        if (start_time.has_value()) {
+            field("start_time", "\"" + JsonEscape(*start_time) + "\"");
         }
 
         std::ostringstream results;

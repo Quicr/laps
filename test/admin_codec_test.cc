@@ -51,6 +51,7 @@ TEST_CASE("admin rpc json")
     laps::AdminRelayIdentity identity;
     identity.relay_id = "relay-b";
     identity.node_id = "0.0:0.1001";
+    identity.start_time_us = 1720000000000000;
 
     laps::AdminStateSizes sizes;
     sizes.connections = 2;
@@ -70,6 +71,10 @@ TEST_CASE("admin rpc json")
     CHECK(response.relay_id == "relay-b");
     CHECK(response.has_node_id);
     CHECK(response.node_id == "0.0:0.1001");
+    CHECK(response.has_start_time_us);
+    CHECK(response.start_time_us == 1720000000000000);
+    CHECK(response.has_start_time);
+    CHECK(response.start_time == "2024-07-03 09:46:40");
     CHECK(encoded.find("\"api_version\":" + std::to_string(laps::kAdminApiVersion)) != std::string::npos);
     CHECK(response.result_json.find("\"relay_id\"") == std::string::npos);
     CHECK(response.result_json.find("\"connections\":2") != std::string::npos);
@@ -177,6 +182,8 @@ TEST_CASE("admin rpc json")
     CHECK(document.find("\"api_version\":" + std::to_string(laps::kAdminApiVersion)) != std::string::npos);
     CHECK(document.find("\"relay_id\":\"relay-b\"") != std::string::npos);
     CHECK(document.find("\"node_id\":\"0.0:0.1001\"") != std::string::npos);
+    CHECK(document.find("\"start_time_us\":1720000000000000") != std::string::npos);
+    CHECK(document.find("\"start_time\":\"2024-07-03 09:46:40\"") != std::string::npos);
     CHECK(document.find("\"results\":{\"state\":{\"connections\":2") != std::string::npos);
     CHECK(document.find("\"peers\":{\"peers\":[") != std::string::npos);
     CHECK(document.find("\"add-peer#1\":{\"host\":\"192.0.2.10\",\"port\":33434}") != std::string::npos);
@@ -190,6 +197,7 @@ TEST_CASE("admin rpc json")
       { { "state", R"({"id":"1","result":{"relay_id":"legacy","connections":1}})" } }, "setup-id");
     CHECK(legacy.find("\"relay_id\":\"legacy\"") != std::string::npos);
     CHECK(legacy.find("\"node_id\"") == std::string::npos);
+    CHECK(legacy.find("\"start_time\"") == std::string::npos);
     CHECK(legacy.find("\"results\":{\"state\":{\"connections\":1}}") != std::string::npos);
 }
 

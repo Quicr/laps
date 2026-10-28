@@ -60,7 +60,7 @@ The target relay learns the full track name from that announce and subscribes to
 
 The reply is a relay-local publish, like the metrics track. The client subscribed to it before it existed, so the target announces the reply after creating it. That announce attaches the peering subscribe that is already waiting. The reply object is encoded as a subgroup stream and sent on that subscribe, because a relay-local object has no publisher stream bytes and the object fan-out does not send to the peering subscriber. The connected relay delivers the object to the client.
 
-`relay_id` and `node_id` in the printed document are the target relay, not the relay at `--uri`.
+`relay_id`, `node_id`, `start_time_us`, and `start_time` in the printed document are the target relay, not the relay at `--uri`.
 
 ```mermaid
 sequenceDiagram
@@ -116,9 +116,9 @@ Every message is one JSON object. Unknown object fields are ignored. `id` may be
 
 The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. The api_version changes only when there is a schema change. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
 
-`relay_id` is the answering relay's `--endpoint_id`. `node_id` is that relay's peering node id, written as `high.high:low.low`. With `--target-endpoint`, both name the target relay, which may not be the relay at `--uri`.
+`relay_id` is the answering relay's `--endpoint_id`. `node_id` is that relay's peering node id, written as `high.high:low.low`. With `--target-endpoint`, both name the target relay, which may not be the relay at `--uri`. `start_time_us` is the Unix time in microseconds when that relay started, recorded when it begins startup and before it listens. `start_time` is that same instant as UTC `YYYY-MM-DD HH:MM:SS`, truncated to the second. It is an empty string when `start_time_us` is `0`.
 
-One command may send several requests. Each request is one JSON object, and each reply on the track is one JSON object. `lapsAdmin` prints one document after its log lines. `api_version`, `relay_id`, and `node_id` are on that document. `results` holds one object per call, keyed by the method name. The per-reply `result` wrapper is not printed. A method called more than once is keyed `method#1`, `method#2`, and so on, in call order. A failed call is `{"error":{"message":"..."}}` under its key. `node_id` is omitted when a reply does not include it.
+One command may send several requests. Each request is one JSON object, and each reply on the track is one JSON object. `lapsAdmin` prints one document after its log lines. `api_version`, `relay_id`, `node_id`, `start_time_us`, and `start_time` are on that document. `results` holds one object per call, keyed by the method name. The per-reply `result` wrapper is not printed. A method called more than once is keyed `method#1`, `method#2`, and so on, in call order. A failed call is `{"error":{"message":"..."}}` under its key. `node_id`, `start_time_us`, and `start_time` are omitted when a reply does not include them.
 
 Request:
 
@@ -140,6 +140,8 @@ Result on the wire:
   "api_version": 1,
   "relay_id": "relay-b",
   "node_id": "0.0:0.1001",
+  "start_time_us": 1720000000000000,
+  "start_time": "2024-07-03 09:46:40",
   "result": {}
 }
 ```
@@ -152,6 +154,8 @@ Error on the wire:
   "api_version": 1,
   "relay_id": "relay-b",
   "node_id": "0.0:0.1001",
+  "start_time_us": 1720000000000000,
+  "start_time": "2024-07-03 09:46:40",
   "error": {
     "message": "unknown method"
   }
@@ -165,6 +169,8 @@ Error on the wire:
   "api_version": 1,
   "relay_id": "relay-b",
   "node_id": "0.0:0.1001",
+  "start_time_us": 1720000000000000,
+  "start_time": "2024-07-03 09:46:40",
   "results": {
     "state": {},
     "peers": {}
@@ -177,6 +183,8 @@ Error on the wire:
 | `api_version` | Admin RPC version reported by the relay. |
 | `relay_id` | `--endpoint_id` of the relay that answered. With `--target-endpoint`, that is the target relay. |
 | `node_id` | Peering node id of that relay, `high.high:low.low`. Omitted when the reply does not include it. |
+| `start_time_us` | Unix time in microseconds when the answering relay started. Omitted when the reply does not include it. |
+| `start_time` | Same instant as UTC `YYYY-MM-DD HH:MM:SS`. Empty when `start_time_us` is `0`. Omitted when the reply does not include it. |
 | `results` | One object per call. The key is the method name. |
 | `results.<method>` | The object that was inside that reply's `result`. |
 | `results.<method>#N` | Used when that method was called more than once. `N` starts at 1. |

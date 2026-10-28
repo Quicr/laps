@@ -410,6 +410,8 @@ namespace laps {
         std::shared_ptr<timeq::tick_service> tick_service_;
         MetricsPublisher metrics_publisher_;
         AdminService admin_service_;
+        /// Unix time in microseconds when Start() began. 0 until the relay starts.
+        std::uint64_t relay_start_time_us_{ 0 };
 
         std::unique_ptr<quicr::SessionManager> session_manager_;
 
