@@ -151,6 +151,9 @@ namespace laps {
          */
         void RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes);
 
+        /// Announce a relay-local track so a peer that already subscribed can attach, as metrics does.
+        void AnnounceLocalTrack(const quicr::FullTrackName& track_full_name);
+
         /**
          * @brief Record the relay's own subscribe-tracks interest
          *

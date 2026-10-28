@@ -69,7 +69,10 @@ namespace laps {
         }
         started_ = false;
         server_.RemoveLocalAdminSubscribe(local_prefix_);
-        reply_tracks_.clear();
+        {
+            std::lock_guard lock(reply_mutex_);
+            reply_tracks_.clear();
+        }
         SPDLOG_LOGGER_INFO(config_.logger_, "Admin subscribe tracks stopped");
     }
 
@@ -193,6 +196,7 @@ namespace laps {
     AdminService::ReplyTrack& AdminService::EnsureReplyTrack(const std::string& client_key,
                                                              const std::vector<std::string>& client_entries)
     {
+        // Caller holds reply_mutex_.
         if (const auto it = reply_tracks_.find(client_key); it != reply_tracks_.end()) {
             return it->second;
         }
@@ -216,6 +220,9 @@ namespace laps {
                                                    config_.object_ttl_,
                                                    {} };
         server_.RegisterLocalPublish(attributes);
+        // The admin client subscribes before this track exists. Announcing it attaches that peering subscribe,
+        // the same way a metrics reader attaches to a track the relay has published.
+        server_.AnnounceLocalTrack(full_track_name);
 
         SPDLOG_LOGGER_INFO(config_.logger_,
                            "Admin reply track namespace: {} name {}",
@@ -230,13 +237,20 @@ namespace laps {
                                     const std::vector<std::string>& client_entries,
                                     const std::string& json)
     {
-        auto& track = EnsureReplyTrack(client_key, client_entries);
+        std::uint64_t track_hash = 0;
+        std::uint64_t group_id = 0;
+        {
+            std::lock_guard lock(reply_mutex_);
+            auto& track = EnsureReplyTrack(client_key, client_entries);
+            track_hash = track.track_fullname_hash;
+            group_id = track.next_group_id++;
+        }
         std::vector<std::uint8_t> payload(json.begin(), json.end());
 
         const auto ttl = config_.object_ttl_ > std::numeric_limits<std::uint16_t>::max()
                            ? std::numeric_limits<std::uint16_t>::max()
                            : static_cast<std::uint16_t>(config_.object_ttl_);
-        const quicr::ObjectHeaders headers{ .group_id = track.next_group_id++,
+        const quicr::ObjectHeaders headers{ .group_id = group_id,
                                             .object_id = 0,
                                             .subgroup_id = 0,
                                             .payload_length = payload.size(),
@@ -247,7 +261,7 @@ namespace laps {
                                             .extensions = std::nullopt,
                                             .immutable_extensions = std::nullopt };
 
-        if (!server_.PublishLocalObject(track.track_fullname_hash, headers, payload)) {
+        if (!server_.PublishLocalObject(track_hash, headers, payload)) {
             SPDLOG_LOGGER_WARN(config_.logger_, "Admin reply track is not registered for {}", client_key);
         }
     }

@@ -7,6 +7,7 @@
 #include "publish_namespace_handler.h"
 
 #include <quicr/handlers/forwarding_subscribe_track_handler.h>
+#include <quicr/messages/message_serialisation.h>
 #include <quicr/session.h>
 
 namespace laps {
@@ -204,8 +205,8 @@ namespace laps {
                                                quicr::BytesSpan data,
                                                std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
     {
-        // Admin requests arrive on the client connection. Peer-injected copies are not answered here.
-        if (!is_from_peer_ && server_.DispatchAdminObject(GetFullTrackName(), data)) {
+        // Admin requests are consumed here, including a copy that arrived through peering.
+        if (server_.DispatchAdminObject(GetFullTrackName(), data)) {
             return;
         }
 
@@ -270,6 +271,50 @@ namespace laps {
         } catch (const std::exception& e) {
             SPDLOG_ERROR("Caught exception trying to publish. (error={})", e.what());
         }
+    }
+
+    void SubscribeTrackHandler::ForwardLocalObject(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
+    {
+        if (!subscribers_.contains(0) || !GetTrackAlias().has_value()) {
+            return;
+        }
+
+        const auto track_alias = *GetTrackAlias();
+        const auto priority = GetSubscriberPriority();
+        const auto ttl = static_cast<std::uint32_t>(
+          GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count());
+
+        // Same subgroup header libquicr writes for a stream publish when the caller does not set one.
+        const quicr::messages::StreamHeaderProperties properties(
+          true, quicr::messages::SubgroupIdType::kExplicit, false, false, true);
+
+        quicr::Bytes bytes;
+        quicr::messages::StreamHeaderSubGroup header;
+        header.properties.emplace(properties);
+        header.track_alias = track_alias;
+        header.group_id = object_headers.group_id;
+        header.subgroup_id = object_headers.subgroup_id;
+        header.publisher_priority = priority;
+        bytes << header;
+
+        quicr::messages::StreamSubGroupObject object;
+        object.object_delta = object_headers.object_id;
+        object.object_status = object_headers.status;
+        object.properties.emplace(properties);
+        object.extensions = object_headers.extensions;
+        object.immutable_extensions = object_headers.immutable_extensions;
+        object.payload.assign(data.begin(), data.end());
+        bytes << object;
+
+        auto encoded = std::make_shared<std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
+        server_.peer_manager_.SendData(track_alias,
+                                       priority,
+                                       ttl,
+                                       moq::peering::DataType::kNewStream,
+                                       object_headers.group_id,
+                                       object_headers.subgroup_id,
+                                       encoded);
+        server_.peer_manager_.EndSubgroup(track_alias, object_headers.group_id, object_headers.subgroup_id, false);
     }
 
     void SubscribeTrackHandler::SubgroupStarted(std::uint64_t group_id,

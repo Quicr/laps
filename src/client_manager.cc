@@ -740,6 +740,11 @@ namespace laps {
         PublishReceivedInternal(nullptr, 0, publish_attributes, false);
     }
 
+    void ClientManager::AnnounceLocalTrack(const quicr::FullTrackName& track_full_name)
+    {
+        peer_manager_.Announce(ToPeeringTrack(track_full_name), moq::peering::Announcement::kTrack);
+    }
+
     void ClientManager::InstallLocalAdminSubscribe(const quicr::TrackNamespace& prefix,
                                                    const std::shared_ptr<PublishNamespaceHandler>& handler)
     {
@@ -2193,8 +2198,8 @@ namespace laps {
 
     void ClientManager::OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn)
     {
+        const auto track_full_name = ToQuicrTrack(name);
         if (!withdrawn) {
-            const auto track_full_name = ToQuicrTrack(name);
             quicr::PublishAttributes attrs{ .track_full_name = track_full_name,
                                             .track_alias = quicr::TrackHash(track_full_name).track_fullname_hash,
                                             .auth_tokens = {},
@@ -2208,7 +2213,23 @@ namespace laps {
                                             .delivery_timeout = kDefaultObjectTtl,
                                             .track_properties = {} };
             PublishReceived(nullptr, 0, attrs, {});
+
+            // A peered admin publish is addressed to this relay. Subscribe the way a metrics reader does,
+            // so the ingress relay forwards the objects here.
+            if (admin_service_.InterestedIn(track_full_name)) {
+                quicr::SubscribeAttributes subscribe;
+                subscribe.priority = 3;
+                subscribe.forward = 1;
+                subscribe.delivery_timeout = std::chrono::milliseconds(config_.object_ttl_);
+                subscribe.expires = subscribe.delivery_timeout;
+                NotifyPeeringSubscribe(track_full_name, subscribe);
+            }
         } else {
+            if (admin_service_.InterestedIn(track_full_name)) {
+                const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
+                ForgetPeeringSubscribe(track_hash);
+                peer_manager_.Unsubscribe(track_hash);
+            }
             PublishDoneReceived(nullptr, 0);
         }
     }
@@ -2370,6 +2391,7 @@ namespace laps {
         }
 
         it->second->ObjectReceived(object_headers, data);
+        it->second->ForwardLocalObject(object_headers, data);
         return true;
     }
 

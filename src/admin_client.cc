@@ -4,6 +4,7 @@
 #include "admin_codec.h"
 #include "spdlog_logger.h"
 
+#include <quicr/handlers/publish_namespace_handler.h>
 #include <quicr/handlers/publish_track_handler.h>
 #include <quicr/handlers/subscribe_track_handler.h>
 #include <quicr/messages/object.h>
@@ -37,8 +38,8 @@ namespace {
     {
         std::string uri{ "moq://127.0.0.1:33435" };
         std::string admin_namespace{ std::string(laps::kDefaultAdminPrefix) };
-        /// Unset until --relay-endpoint is passed. Otherwise taken from the relay SETUP endpoint id.
-        std::optional<std::string> relay_endpoint;
+        /// Unset until --target-endpoint is passed. Otherwise taken from the relay SETUP endpoint id.
+        std::optional<std::string> target_endpoint;
         std::string endpoint_id;
         struct Call
         {
@@ -101,9 +102,9 @@ namespace {
         out << "Usage: " << program << " [options] <method> [params] [<method> [params] ...]\n"
             << "\n"
             << "Talk to a LAPS relay admin RPC. The client publishes a request on\n"
-            << "  <admin-namespace>/<relay-endpoint>/<endpoint-id>  name rpc\n"
+            << "  <admin-namespace>/<target-endpoint>/<endpoint-id>  name rpc\n"
             << "and subscribes to the reply on\n"
-            << "  <admin-namespace>/<endpoint-id>/<relay-endpoint>  name rpc\n"
+            << "  <admin-namespace>/<endpoint-id>/<target-endpoint>  name rpc\n"
             << "\n"
             << "Several methods may be given. Each runs in order on one session.\n"
             << "A method that takes parameters reads the next argument. Separate\n"
@@ -118,7 +119,7 @@ namespace {
             << "\n"
             << "Options:\n"
             << "  --uri URI                  Relay URI (default moq://127.0.0.1:33435)\n"
-            << "  --relay-endpoint ID        Admin namespace endpoint id (default: the id from relay SETUP)\n"
+            << "  --target-endpoint ID       Target relay endpoint (default: the id from relay SETUP)\n"
             << "  --endpoint-id ID           This admin client endpoint id (default admin-<pid>)\n"
             << "  --admin-namespace PREFIX   Slash-delimited base prefix (default laps/admin)\n"
             << "  --timeout-ms MS            How long to wait for each response (default 5000)\n"
@@ -155,8 +156,8 @@ namespace {
             }
             if (arg == "--uri") {
                 options.uri = RequireValue(argc, argv, i, arg);
-            } else if (arg == "--relay-endpoint") {
-                options.relay_endpoint = RequireValue(argc, argv, i, arg);
+            } else if (arg == "--target-endpoint") {
+                options.target_endpoint = RequireValue(argc, argv, i, arg);
             } else if (arg == "--endpoint-id") {
                 options.endpoint_id = RequireValue(argc, argv, i, arg);
             } else if (arg == "--admin-namespace") {
@@ -332,12 +333,12 @@ main(int argc, char* argv[])
                 session->Disconnect();
                 throw std::runtime_error("relay SETUP did not include an endpoint id");
             }
-            if (options.relay_endpoint.has_value()) {
-                if (options.relay_endpoint->empty()) {
+            if (options.target_endpoint.has_value()) {
+                if (options.target_endpoint->empty()) {
                     session->Disconnect();
-                    throw std::runtime_error("--relay-endpoint requires an endpoint id");
+                    throw std::runtime_error("--target-endpoint requires an endpoint id");
                 }
-                relay_endpoint = *options.relay_endpoint;
+                relay_endpoint = *options.target_endpoint;
                 if (relay_endpoint != connected_endpoint) {
                     SPDLOG_LOGGER_INFO(logger,
                                        "Connected to relay {}; admin namespace uses {}",
@@ -369,31 +370,25 @@ main(int argc, char* argv[])
             const auto reply_track = laps::AdminFullTrackName(layout->reply);
             const auto request_track = laps::AdminFullTrackName(layout->request);
             auto reply = ReplyHandler::Create(reply_track);
+            auto request_namespace = quicr::PublishNamespaceHandler::Create(request_track.name_space);
             auto publish =
               quicr::PublishTrackHandler::Create(request_track, quicr::TrackMode::kStream, 3, 3, 1000, { 0, 0 });
 
+            // Subscribe to the reply first, the same way a metrics reader subscribes to a known track.
+            // Publish the request namespace and track so peering can announce them to the target relay.
             session->SubscribeTrack(reply);
+            session->PublishNamespace(request_namespace);
             session->PublishTrack(publish);
 
-            const bool ready = WaitFor(
-              [&publish]() {
-                  const auto status = publish->GetStatus();
-                  return publish->CanPublish() || status == quicr::PublishTrackHandler::Status::kPaused ||
-                         status == quicr::PublishTrackHandler::Status::kNoSubscribers;
-              },
-              options.timeout);
+            const bool ready = WaitFor([&publish]() { return publish->CanPublish(); }, options.timeout);
             if (!ready || !publish->CanPublish()) {
                 const auto status = publish->GetStatus();
                 session->Disconnect();
                 const auto request_ns = laps::JoinTrackNamespace(layout->request);
-                if (status == quicr::PublishTrackHandler::Status::kPaused ||
-                    status == quicr::PublishTrackHandler::Status::kNoSubscribers) {
-                    throw std::runtime_error("relay paused " + request_ns +
-                                             " (rpc). Nothing subscribed to that admin namespace (publish status " +
-                                             std::string(PublishStatusName(status)) + ")");
-                }
-                throw std::runtime_error("admin request track was not ready before timeout (publish status " +
-                                         std::string(PublishStatusName(status)) + ")");
+                throw std::runtime_error("admin request " + request_ns +
+                                         " (rpc) was not accepted before timeout (publish status " +
+                                         std::string(PublishStatusName(status)) +
+                                         "). The target relay subscribes to this namespace through peering.");
             }
 
             for (std::size_t index = 0; index < options.calls.size(); ++index) {
@@ -450,6 +445,7 @@ main(int argc, char* argv[])
 
             session->Disconnect();
             publish.reset();
+            request_namespace.reset();
             reply.reset();
             session.reset();
         }

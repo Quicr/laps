@@ -8,6 +8,7 @@
 #include <quicr/utilities/bytes.h>
 
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -76,7 +77,9 @@ namespace laps {
         quicr::TrackNamespace local_prefix_;
         bool started_{ false };
 
-        /// Keyed by the client namespace suffix. Touched only from the transport thread.
+        /// Keyed by the client namespace suffix. A local request is consumed on the transport thread and a
+        /// peered request on the peering thread, so the map is guarded.
+        std::mutex reply_mutex_;
         std::unordered_map<std::string, ReplyTrack> reply_tracks_;
     };
 } // namespace laps
