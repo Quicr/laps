@@ -203,7 +203,7 @@ Error on the wire:
 
 Method name: `state`.
 
-The map counts are taken while `state_.state_mutex` is held. The connection count is taken under `sessions_mutex_` and `peering_interests` under `peering_interest_mutex_` during that hold. The `peers` method is separate and does not hold `state_mutex`. The object cache has no separate lock. A request from a client connected to this relay runs on the transport thread, which is also the thread that inserts cache entries. A request that arrived through peering runs on the peering thread.
+The map counts are taken while `state_.state_mutex` is held. `accepted_connections` is taken under `sessions_mutex_` and `peering_interests` under `peering_interest_mutex_` during that hold. The `peers` method is separate and does not hold `state_mutex`. The object cache has no separate lock. A request from a client connected to this relay runs on the transport thread, which is also the thread that inserts cache entries. A request that arrived through peering runs on the peering thread.
 
 `cache_tracks` remains the number of cached tracks. The same count is `cache.tracks`.
 
@@ -211,7 +211,7 @@ The map counts are taken while `state_.state_mutex` is held. The connection coun
 
 ```json
 {
-  "connections": 1,
+  "accepted_connections": 1,
   "subscriptions": 1,
   "publishes": 2,
   "publish_namespaces": 0,
@@ -221,7 +221,7 @@ The map counts are taken while `state_.state_mutex` is held. The connection coun
   "subscribe_active": 1,
   "publish_subscribes_by_request": 1,
   "subscribe_alias_by_request": 1,
-  "connection_metrics": 2,
+  "total_connections": 2,
   "fanout_namespaces": 0,
   "notified_namespaces": 0,
   "cache_tracks": 1,
@@ -255,7 +255,7 @@ The map counts are taken while `state_.state_mutex` is held. The connection coun
 
 | Field | Count |
 | --- | --- |
-| `connections` | Accepted MoQ sessions. |
+| `accepted_connections` | Accepted MoQ sessions. |
 | `subscriptions` | Subscriber tracks in `state_.subscribes`, keyed by track alias and subscriber connection. One connection may subscribe to a full track name once. |
 | `publishes` | Publisher tracks the relay has subscribed to, in `state_.pub_subscribes`, keyed by track alias and publisher connection. Local publishes use connection handle 0. |
 | `publish_namespaces` | Announced publish namespaces in `state_.pub_namespace_active`. |
@@ -265,7 +265,7 @@ The map counts are taken while `state_.state_mutex` is held. The connection coun
 | `subscribe_active` | Distinct tracks in `state_.subscribe_active_`, keyed by namespace and track-name hash. Each entry holds the set of subscribers for that track. The field is the number of tracks, not the number of subscribers inside those sets. |
 | `publish_subscribes_by_request` | Publisher-initiated subscribes indexed by request id and connection. |
 | `subscribe_alias_by_request` | Request id to track-alias mappings for subscribes received from clients. |
-| `connection_metrics` | Connections with publish or subscribe counters. Connection handle 0 is included when a local publish, such as metrics or an admin reply, has incremented that counter. |
+| `total_connections` | Connections with publish or subscribe counters. Connection handle 0 is included when a local publish, such as metrics or an admin reply, has incremented that counter. |
 | `fanout_namespaces` | Publish-namespace handlers created to fan a namespace out to a subscriber. |
 | `notified_namespaces` | Namespaces already reported with `NAMESPACE` to a subscriber. |
 | `cache_tracks` | Tracks present in the object cache. Same value as `cache.tracks`. |

@@ -963,7 +963,7 @@ namespace laps {
         std::ostringstream out;
         bool first = true;
         out << '{';
-        AppendUint(out, first, "connections", sizes.connections);
+        AppendUint(out, first, "accepted_connections", sizes.accepted_connections);
         AppendUint(out, first, "subscriptions", sizes.subscriptions);
         AppendUint(out, first, "publishes", sizes.publishes);
         AppendUint(out, first, "publish_namespaces", sizes.publish_namespaces);
@@ -973,7 +973,7 @@ namespace laps {
         AppendUint(out, first, "subscribe_active", sizes.subscribe_active);
         AppendUint(out, first, "publish_subscribes_by_request", sizes.publish_subscribes_by_request);
         AppendUint(out, first, "subscribe_alias_by_request", sizes.subscribe_alias_by_request);
-        AppendUint(out, first, "connection_metrics", sizes.connection_metrics);
+        AppendUint(out, first, "total_connections", sizes.total_connections);
         AppendUint(out, first, "fanout_namespaces", sizes.fanout_namespaces);
         AppendUint(out, first, "notified_namespaces", sizes.notified_namespaces);
         AppendUint(out, first, "cache_tracks", sizes.cache_tracks);

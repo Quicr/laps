@@ -103,7 +103,7 @@ namespace laps {
     /// Sizes of the relay maps reported by the state RPC.
     struct AdminStateSizes
     {
-        std::uint64_t connections{ 0 };
+        std::uint64_t accepted_connections{ 0 };
         std::uint64_t subscriptions{ 0 };
         std::uint64_t publishes{ 0 };
         std::uint64_t publish_namespaces{ 0 };
@@ -113,7 +113,7 @@ namespace laps {
         std::uint64_t subscribe_active{ 0 };
         std::uint64_t publish_subscribes_by_request{ 0 };
         std::uint64_t subscribe_alias_by_request{ 0 };
-        std::uint64_t connection_metrics{ 0 };
+        std::uint64_t total_connections{ 0 };
         std::uint64_t fanout_namespaces{ 0 };
         std::uint64_t notified_namespaces{ 0 };
         std::uint64_t cache_tracks{ 0 };

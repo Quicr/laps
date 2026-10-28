@@ -54,7 +54,8 @@ TEST_CASE("admin rpc json")
     identity.start_time_us = 1720000000000000;
 
     laps::AdminStateSizes sizes;
-    sizes.connections = 2;
+    sizes.accepted_connections = 2;
+    sizes.total_connections = 3;
     sizes.subscriptions = 4;
     sizes.publishes = 3;
     sizes.publish_namespaces = 1;
@@ -77,7 +78,8 @@ TEST_CASE("admin rpc json")
     CHECK(response.start_time == "2024-07-03 09:46:40");
     CHECK(encoded.find("\"api_version\":" + std::to_string(laps::kAdminApiVersion)) != std::string::npos);
     CHECK(response.result_json.find("\"relay_id\"") == std::string::npos);
-    CHECK(response.result_json.find("\"connections\":2") != std::string::npos);
+    CHECK(response.result_json.find("\"accepted_connections\":2") != std::string::npos);
+    CHECK(response.result_json.find("\"total_connections\":3") != std::string::npos);
     CHECK(response.result_json.find("\"subscribe_namespaces\":5") != std::string::npos);
 
     sizes.cache.enabled = true;
@@ -165,7 +167,8 @@ TEST_CASE("admin rpc json")
     CHECK(pretty->find("\n  \"id\": \"7\"") != std::string::npos);
     CHECK(pretty->find("\n  \"relay_id\": \"relay-b\"") != std::string::npos);
     CHECK(pretty->find("\n  \"node_id\": \"0.0:0.1001\"") != std::string::npos);
-    CHECK(pretty->find("\n    \"connections\": 2") != std::string::npos);
+    CHECK(pretty->find("\n    \"accepted_connections\": 2") != std::string::npos);
+    CHECK(pretty->find("\n    \"total_connections\": 3") != std::string::npos);
     CHECK(laps::ParseAdminMessage(*pretty).valid);
     CHECK(laps::PrettyPrintJson("{}") == "{}");
     CHECK(laps::PrettyPrintJson("[1,true]") == "[\n  1,\n  true\n]");
@@ -184,7 +187,7 @@ TEST_CASE("admin rpc json")
     CHECK(document.find("\"node_id\":\"0.0:0.1001\"") != std::string::npos);
     CHECK(document.find("\"start_time_us\":1720000000000000") != std::string::npos);
     CHECK(document.find("\"start_time\":\"2024-07-03 09:46:40\"") != std::string::npos);
-    CHECK(document.find("\"results\":{\"state\":{\"connections\":2") != std::string::npos);
+    CHECK(document.find("\"results\":{\"state\":{\"accepted_connections\":2") != std::string::npos);
     CHECK(document.find("\"peers\":{\"peers\":[") != std::string::npos);
     CHECK(document.find("\"add-peer#1\":{\"host\":\"192.0.2.10\",\"port\":33434}") != std::string::npos);
     CHECK(document.find("\"add-peer#2\":{\"error\":{\"message\":\"duplicate peer 192.0.2.10:33434\"}}") !=

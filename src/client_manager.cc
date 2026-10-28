@@ -788,7 +788,7 @@ namespace laps {
             sizes.subscribe_active = state_.subscribe_active_.size();
             sizes.publish_subscribes_by_request = state_.pub_subscribes_by_req_id.size();
             sizes.subscribe_alias_by_request = state_.subscribe_alias_req_id.size();
-            sizes.connection_metrics = state_.conn_state_metrics.size();
+            sizes.total_connections = state_.conn_state_metrics.size();
             sizes.fanout_namespaces = fanout_namespaces_.size();
             sizes.notified_namespaces = notified_namespaces_.size();
             sizes.cache_tracks = cache_.size();
@@ -851,7 +851,7 @@ namespace laps {
 
             {
                 std::lock_guard sessions_lock(sessions_mutex_);
-                sizes.connections = sessions_.size();
+                sizes.accepted_connections = sessions_.size();
             }
             {
                 std::lock_guard peering_lock(peering_interest_mutex_);
