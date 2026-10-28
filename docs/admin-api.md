@@ -8,7 +8,7 @@ The relay binary is `lapsRelay`. The admin client is `lapsAdmin`.
 
 MoQ allows one publisher for a given full namespace and track name. Several admin clients cannot publish the same `laps/admin` namespace with the name `rpc`. Each sender is encoded in the namespace, and the relay learns about those publishers with a subscribe-tracks interest on a prefix.
 
-The relay does not know admin client names ahead of time. It subscribes to a prefix built from a configurable base and its own endpoint id. Each client appends its own endpoint id when it publishes. The reply goes the other way: the client already knows the relay endpoint id, so it subscribes to one full track that only that relay publishes.
+The relay does not know admin client names ahead of time. It subscribes to a prefix built from a configurable base and its own endpoint id. Each client appends its own endpoint id when it publishes. The reply goes the other way: the client names the relay with `--target-endpoint`, or uses the SETUP endpoint id of the relay it connected to, and subscribes to one full track that only that relay publishes.
 
 ```text
 base prefix          laps/admin
@@ -44,6 +44,7 @@ sequenceDiagram
     Admin->>Relay: QUIC + SETUP
     Relay-->>Admin: SETUP endpoint id
     Admin->>Relay: SUBSCRIBE laps/admin/admin-client-xyz/relay-b name rpc
+    Admin->>Relay: PUBLISH_NAMESPACE laps/admin/relay-b/admin-client-xyz
     Admin->>Relay: PUBLISH laps/admin/relay-b/admin-client-xyz name rpc
     Note over Relay: Prefix laps/admin/relay-b matches.<br/>Publish is not paused.
     Admin->>Relay: object group 0, JSON request
@@ -51,13 +52,47 @@ sequenceDiagram
     Relay-->>Admin: object, JSON result or error
 ```
 
+## Reaching a peered relay
+
+`--target-endpoint` names the relay that should answer. That may be the relay at `--uri`, or another relay that one is peered with. The client publishes the request namespace and the request track. The connected relay announces both to its peers. It consumes the request only when the endpoint id in the namespace is its own. Otherwise it pauses the publish until the target relay subscribes.
+
+The target relay learns the full track name from that announce and subscribes to it, the same way a reader subscribes to a metrics track. That subscribe resumes the client's publish. The client then sends the request object, and the connected relay forwards the stream. The target consumes the object.
+
+The reply is a relay-local publish, like the metrics track. The client subscribed to it before it existed, so the target announces the reply after creating it. That announce attaches the peering subscribe that is already waiting. The reply object is encoded as a subgroup stream and sent on that subscribe, because a relay-local object has no publisher stream bytes and the object fan-out does not send to the peering subscriber. The connected relay delivers the object to the client.
+
+`relay_id` and `node_id` in the printed document are the target relay, not the relay at `--uri`.
+
+```mermaid
+sequenceDiagram
+    participant Admin as lapsAdmin
+    participant Ingress as relay-b
+    participant Target as relay-a
+
+    Admin->>Ingress: QUIC + SETUP
+    Note over Admin: --target-endpoint relay-a
+    Admin->>Ingress: SUBSCRIBE laps/admin/admin-client/relay-a name rpc
+    Ingress->>Target: peering subscribe for the reply
+    Admin->>Ingress: PUBLISH_NAMESPACE and PUBLISH request track
+    Note over Ingress: Not this relay's prefix.<br/>Announce, then pause.
+    Ingress->>Target: announce namespace and track
+    Target->>Ingress: peering subscribe for the request
+    Note over Ingress: Resume the publish.
+    Admin->>Ingress: JSON request
+    Ingress->>Target: request stream
+    Note over Target: Consume. Announce the reply.<br/>Encode the object as a subgroup stream.
+    Target->>Ingress: reply stream
+    Ingress-->>Admin: JSON result
+```
+
+If the target does not subscribe before `--timeout-ms`, the client reports that the request was not accepted. A reply that does not arrive is recorded under that method as `{"error":{"message":"timed out waiting for the admin response"}}`.
+
 ## Relay interest
 
 On startup the relay records a subscribe-tracks interest for `base + endpoint id`. The default base is `laps/admin`, so a relay whose `--endpoint_id` is `moq-server` listens on `laps/admin/moq-server`.
 
 libquicr sends `SUBSCRIBE_TRACKS` only from a server-mode session, and a client-mode session rejects that message. The admin interest is therefore stored locally in `state_.subscribe_tracks` under its namespace prefix. It is not sent on the wire to connected clients. Inside that prefix the handler is keyed by the maximum `uint64` connection handle, which is not a QUIC connection.
 
-When a publish arrives, the relay treats a subscribe-tracks prefix as a match only when the prefix is shorter than or equal to the published namespace (`TrackNamespace::IsPrefixOf`). A matching admin request is marked as having a subscriber, so the publisher is asked to forward. The local admin handler does not create a forwarding publish track and does not mirror the objects back out. Objects are consumed later on the transport thread.
+When a publish arrives, the relay treats a subscribe-tracks prefix as a match only when the prefix is shorter than or equal to the published namespace (`TrackNamespace::IsPrefixOf`). A matching admin request is marked as having a subscriber, so the publisher is asked to forward. The local admin handler does not create a forwarding publish track and does not mirror the objects back out.
 
 A publish whose name is `rpc` and whose namespace starts with the admin base, but not with this relay's endpoint id, is outside the interest. The relay does not consume it. It pauses the publish when nothing else is subscribed and logs that the request is outside its prefix. The ingress relay still announces that publish to its peers. The relay named in the namespace subscribes to the full track, which resumes the publish.
 
@@ -67,9 +102,9 @@ The interest is installed in `AdminService::Start()`, after metrics setup and be
 
 Both directions use stream track mode. One RPC message is one MoQ object. The payload is a single JSON value encoded as UTF-8. Payloads larger than 65536 bytes are rejected.
 
-`lapsAdmin` sends the request as group 0, object 0, subgroup 0. The relay sends each reply as a new group on that client's reply track, with object 0 and subgroup 0. The reply group id starts at 0 and increases by one for each response to that client.
+`lapsAdmin` sends one object per call. Call index N uses group N, object 0, and subgroup 0, so the first call is group 0. The relay sends each reply as a new group on that client's reply track, with object 0 and subgroup 0. The reply group id starts at 0 and increases by one for each response to that client.
 
-The reply track is registered the first time a request from that client is consumed. Registration uses the same local-publish path as metrics: connection handle 0, request id 0, and no session. The client subscribes to the reply before that publish exists, so the relay then announces the reply track. That announce attaches the peering subscribe that is already waiting, the same way a metrics reader attaches to a track the relay has published. The reply object is then encoded as a subgroup stream and sent on that peering subscribe. A client publisher's bytes are forwarded as they arrive. A relay-local object has no stream bytes, and the object fan-out does not send to the peering subscriber, so this encode-and-send is what carries the reply to the relay the admin client is connected to.
+The reply track is registered the first time a request from that client is consumed. Registration uses the same local-publish path as metrics: connection handle 0, request id 0, and no session. The client subscribes to the reply before that publish exists, so the relay then announces the reply track. That announce attaches a peering subscribe that is already waiting. The reply object is then encoded as a subgroup stream and sent on that subscribe. A client publisher's bytes are forwarded as they arrive. A relay-local object has no stream bytes, and the object fan-out skips the peering subscriber, so this encode-and-send is what carries the reply across a peer.
 
 Admin objects are taken in `SubscribeTrackHandler::ObjectReceived` before cache and fan-out. A consumed admin object is not forwarded as media. An object that arrived through peering is consumed when the track is this relay's admin request. A request aimed at a different relay is not consumed here; that relay consumes the peered copy.
 
@@ -77,11 +112,11 @@ A request from a client connected to this relay is consumed on the transport thr
 
 ## RPC messages
 
-Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as a decimal string of milliseconds since the Unix epoch. The relay copies the received `id` into the response. A response produced before an id is parsed uses an empty id.
+Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as `<milliseconds since the Unix epoch>-<call index>`. The relay copies the received `id` into the response. A response produced before an id is parsed uses an empty id.
 
 The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. The API has not been released, so every response reports version `1`. That number stays at 1 while the message shape is still changing. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
 
-`relay_id` is this relay's `--endpoint_id`. `node_id` is the peering node id of this relay, written as `high.high:low.low`. It is the same id a remote peer learns for this relay.
+`relay_id` is the answering relay's `--endpoint_id`. `node_id` is that relay's peering node id, written as `high.high:low.low`. With `--target-endpoint`, both name the target relay, which may not be the relay at `--uri`.
 
 One command may send several requests. Each request is one JSON object, and each reply on the track is one JSON object. `lapsAdmin` prints one document after its log lines. `api_version`, `relay_id`, and `node_id` are on that document. `results` holds one object per call, keyed by the method name. The per-reply `result` wrapper is not printed. A method called more than once is keyed `method#1`, `method#2`, and so on, in call order. A failed call is `{"error":{"message":"..."}}` under its key. `node_id` is omitted when a reply does not include it.
 
@@ -95,7 +130,7 @@ Request:
 }
 ```
 
-`params` is optional. When present it must be one JSON value. `state` parses `params` and does not use them.
+`params` is optional. When present it must be one JSON value. `state` and `peers` parse `params` and do not use them.
 
 Result on the wire:
 
@@ -140,8 +175,8 @@ Error on the wire:
 | Field | Description |
 | --- | --- |
 | `api_version` | Admin RPC version reported by the relay. |
-| `relay_id` | This relay's `--endpoint_id`. |
-| `node_id` | Peering node id of this relay, `high.high:low.low`. Omitted when the reply does not include it. |
+| `relay_id` | `--endpoint_id` of the relay that answered. With `--target-endpoint`, that is the target relay. |
+| `node_id` | Peering node id of that relay, `high.high:low.low`. Omitted when the reply does not include it. |
 | `results` | One object per call. The key is the method name. |
 | `results.<method>` | The object that was inside that reply's `result`. |
 | `results.<method>#N` | Used when that method was called more than once. `N` starts at 1. |
@@ -160,7 +195,7 @@ Error on the wire:
 
 Method name: `state`.
 
-The result is a snapshot taken while `state_.state_mutex` is held. Session and peering maps are counted under their own locks inside that hold. The object cache has no separate lock. The snapshot runs on the transport thread, which is also the thread that inserts cache entries.
+The map counts are taken while `state_.state_mutex` is held. The connection count is taken under `sessions_mutex_` and `peering_interests` under `peering_interest_mutex_` during that hold. The `peers` method is separate and does not hold `state_mutex`. The object cache has no separate lock. A request from a client connected to this relay runs on the transport thread, which is also the thread that inserts cache entries. A request that arrived through peering runs on the peering thread.
 
 `cache_tracks` remains the number of cached tracks. The same count is `cache.tracks`.
 
@@ -422,11 +457,11 @@ The relay consumes a request only when the namespace endpoint id is its own. `--
 
 | Piece | Role |
 | --- | --- |
-| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state` and `peers` encoding, pretty printer. |
-| `src/admin_service.h`, `src/admin_service.cc` | Local subscribe-tracks interest, request dispatch, reply publish. |
-| `src/admin_client.cc` | `lapsAdmin`. |
-| `src/client_manager.cc` | Installs the interest, keeps admin publishes unpaused, collects the snapshot, registers the local reply. |
-| `src/subscribe_handler.cc` | Delivers admin objects to the service before media forwarding. |
+| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state`, `peers`, and peer-command encoding, printed results document, pretty printer. |
+| `src/admin_service.h`, `src/admin_service.cc` | Local subscribe-tracks interest, request dispatch, reply publish and announce. |
+| `src/admin_client.cc` | `lapsAdmin`. Publishes the request namespace and track, including when `--target-endpoint` names another relay. |
+| `src/client_manager.cc` | Installs the interest, collects snapshots, registers and announces the local reply, and subscribes to a peered admin request. |
+| `src/subscribe_handler.cc` | Delivers admin objects to the service before media forwarding, and encodes a relay-local object onto the peering subscribe. |
 | `src/publish_namespace_handler.h` | `ForwardsPublishedTracks()` lets the admin interest skip outbound `PublishTrack`. |
 | `src/main.cc` | `--admin_namespace`. |
 | `test/admin_codec_test.cc` | Layout, JSON, cache encoding, and pretty-print checks. |
