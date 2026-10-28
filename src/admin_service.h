@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace laps {
@@ -42,6 +43,17 @@ namespace laps {
         bool InterestedIn(const quicr::FullTrackName& track) const;
 
         /**
+         * @brief Drop the reply track for an admin request that has ended
+         *
+         * @details The reply is a relay-local publish. It stays until the request publish goes away,
+         *      which is the client session closing or a peered request being withdrawn.
+         */
+        void ReleaseRequest(const quicr::FullTrackName& request_track);
+
+        /// Drop reply tracks whose admin client no longer has a request publish.
+        void ReleaseRepliesExcept(const std::unordered_set<std::string>& live_client_keys);
+
+        /**
          * @brief Warning when an rpc publish uses the admin base prefix but not this relay's endpoint
          *
          * @return Empty when the track is not an admin request aimed at a different relay endpoint
@@ -64,6 +76,7 @@ namespace laps {
             std::uint64_t next_group_id{ 0 };
         };
 
+        void ReleaseClient(const std::vector<std::string>& client_entries);
         ReplyTrack& EnsureReplyTrack(const std::string& client_key, const std::vector<std::string>& client_entries);
         void PublishReply(const std::string& client_key,
                           const std::vector<std::string>& client_entries,

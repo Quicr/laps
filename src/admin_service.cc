@@ -228,6 +228,55 @@ namespace laps {
         return true;
     }
 
+    void AdminService::ReleaseRequest(const quicr::FullTrackName& request_track)
+    {
+        const auto client_entries = AdminClientSuffix(request_track.name_space, subscribe_prefix_);
+        if (!client_entries.has_value()) {
+            return;
+        }
+        ReleaseClient(*client_entries);
+    }
+
+    void AdminService::ReleaseRepliesExcept(const std::unordered_set<std::string>& live_client_keys)
+    {
+        std::vector<std::string> stale;
+        {
+            std::lock_guard lock(reply_mutex_);
+            for (const auto& [client_key, _] : reply_tracks_) {
+                if (!live_client_keys.contains(client_key)) {
+                    stale.push_back(client_key);
+                }
+            }
+        }
+        for (const auto& client_key : stale) {
+            ReleaseClient(SplitTrackNamespace(client_key));
+        }
+    }
+
+    void AdminService::ReleaseClient(const std::vector<std::string>& client_entries)
+    {
+        const auto client_key = JoinTrackNamespace(client_entries);
+
+        bool remove = false;
+        {
+            std::lock_guard lock(reply_mutex_);
+            remove = reply_tracks_.erase(client_key) != 0;
+        }
+        if (!remove) {
+            return;
+        }
+
+        std::vector<std::string> entries = base_entries_;
+        entries.insert(entries.end(), client_entries.begin(), client_entries.end());
+        entries.insert(entries.end(), relay_entries_.begin(), relay_entries_.end());
+        const auto reply_track = AdminFullTrackName(entries);
+        server_.RemoveLocalPublish(reply_track, true);
+        SPDLOG_LOGGER_INFO(config_.logger_,
+                           "Admin reply track removed namespace: {} name {}",
+                           reply_track.NamespaceStr(),
+                           reply_track.NameStr());
+    }
+
     AdminService::ReplyTrack& AdminService::EnsureReplyTrack(const std::string& client_key,
                                                              const std::vector<std::string>& client_entries)
     {

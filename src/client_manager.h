@@ -155,6 +155,14 @@ namespace laps {
         void AnnounceLocalTrack(const quicr::FullTrackName& track_full_name);
 
         /**
+         * @brief Remove a relay-local publish
+         *
+         * @param track_full_name    Track registered with connection handle 0
+         * @param withdraw_announce  True when this relay announced the track and peers should drop it
+         */
+        void RemoveLocalPublish(const quicr::FullTrackName& track_full_name, bool withdraw_announce);
+
+        /**
          * @brief Record the relay's own subscribe-tracks interest
          *
          * @details Used for the admin control prefix. The handler does not forward publishes.
@@ -402,6 +410,24 @@ namespace laps {
           bool is_from_peer);
 
         void PurgePublishState(std::uint64_t connection_handle);
+
+        /// Remove every subscribe recorded for this connection, including when its session is already gone.
+        void PurgeSubscribeState(std::uint64_t connection_handle);
+
+        /// Caller holds state_.state_mutex. Drops one subscriber record and detaches it from publishers.
+        void EraseSubscribeLocked(std::uint64_t connection_handle,
+                                  std::uint64_t request_id,
+                                  const quicr::FullTrackName& track_full_name,
+                                  std::uint64_t track_alias);
+
+        /// Remove admin reply tracks whose request publish is on this connection.
+        void ReleaseAdminReplies(std::uint64_t connection_handle);
+
+        /// Drop publish and subscribe state for connections that are no longer in sessions_.
+        void PurgeClosedConnections();
+
+        /// Drop connection-0 admin replies whose request publish is gone.
+        void ReleaseOrphanAdminReplies();
 
         /**
          * @brief Drop handlers that call back into this relay
