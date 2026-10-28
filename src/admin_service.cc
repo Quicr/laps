@@ -141,6 +141,37 @@ namespace laps {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response = EncodeAdminResult(message.id, identity, server_.CollectAdminMetrics());
+                } else if (message.method == kAdminSubscriptionsMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message.id, identity, EncodeAdminTrackList("subscriptions", server_.CollectAdminSubscriptions()));
+                } else if (message.method == kAdminPublishesMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message.id, identity, EncodeAdminTrackList("publishes", server_.CollectAdminPublishes()));
+                } else if (message.method == kAdminPublishNamespacesMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(message.id,
+                                                 identity,
+                                                 EncodeAdminNamespaceList("publish_namespaces",
+                                                                          server_.CollectAdminPublishNamespaces()));
+                } else if (message.method == kAdminSubscribeNamespacesMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(message.id,
+                                                 identity,
+                                                 EncodeAdminNamespaceList("subscribe_namespaces",
+                                                                          server_.CollectAdminSubscribeNamespaces()));
+                } else if (message.method == kAdminSubscribeTracksMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message.id,
+                      identity,
+                      EncodeAdminNamespaceList("subscribe_tracks", server_.CollectAdminSubscribeTracks()));
                 } else if (message.method == kAdminAddPeerMethod || message.method == kAdminRemovePeerMethod ||
                            message.method == kAdminRestartPeerMethod) {
                     SPDLOG_LOGGER_INFO(

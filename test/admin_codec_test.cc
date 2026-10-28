@@ -255,3 +255,33 @@ TEST_CASE("admin metrics dump")
     CHECK(laps::EncodeAdminMetrics({}, {}) == R"({"connections":[],"tracks":[]})");
     CHECK(laps::PrettyPrintJson(dump).has_value());
 }
+
+TEST_CASE("admin track and namespace lists")
+{
+    const auto tracks = laps::EncodeAdminTrackList(
+      "subscriptions",
+      { { 11, "media/live", "video" }, { 10, "media/\"a\"", "name" } });
+    CHECK(tracks ==
+          R"({"subscriptions":[{"connection_handle":11,"track_namespace":"media/live","track_name":"video"},{"connection_handle":10,"track_namespace":"media/\"a\"","track_name":"name"}]})");
+    CHECK(laps::EncodeAdminTrackList("publishes", {}) == R"({"publishes":[]})");
+
+    laps::AdminNamespaceEntry announced;
+    announced.connection_handle = 10;
+    announced.track_namespace = "media/live";
+    announced.has_tracks = true;
+    announced.tracks.push_back({ 99, "video" });
+    announced.tracks.push_back({ 100, "" });
+    laps::AdminNamespaceEntry local;
+    local.connection_handle = laps::kLocalAdminSubscriberConnection;
+    local.track_namespace = "laps/admin/relay-b";
+    local.local = true;
+    const auto namespaces = laps::EncodeAdminNamespaceList("publish_namespaces", { announced });
+    CHECK(namespaces.find("\"tracks\":[{\"track_alias\":99,\"track_name\":\"video\"},{\"track_alias\":100,"
+                          "\"track_name\":\"\"}]") != std::string::npos);
+    const auto prefixes = laps::EncodeAdminNamespaceList("subscribe_tracks", { local });
+    CHECK(prefixes ==
+          R"({"subscribe_tracks":[{"connection_handle":18446744073709551615,"local":true,"track_namespace":"laps/admin/relay-b"}]})");
+    CHECK(laps::EncodeAdminNamespaceList("subscribe_namespaces", {}) == R"({"subscribe_namespaces":[]})");
+    CHECK(laps::PrettyPrintJson(tracks).has_value());
+    CHECK(laps::PrettyPrintJson(prefixes).has_value());
+}

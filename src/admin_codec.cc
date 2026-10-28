@@ -1009,6 +1009,53 @@ namespace laps {
         return out.str();
     }
 
+    std::string EncodeAdminTrackList(std::string_view field, const std::vector<AdminTrackBinding>& entries)
+    {
+        std::ostringstream out;
+        out << "{\"" << field << "\":[";
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            if (i != 0) {
+                out << ',';
+            }
+            const auto& entry = entries[i];
+            out << "{\"connection_handle\":" << entry.connection_handle << ",\"track_namespace\":\""
+                << JsonEscape(entry.track_namespace) << "\",\"track_name\":\"" << JsonEscape(entry.track_name) << "\"}";
+        }
+        out << "]}";
+        return out.str();
+    }
+
+    std::string EncodeAdminNamespaceList(std::string_view field, const std::vector<AdminNamespaceEntry>& entries)
+    {
+        std::ostringstream out;
+        out << "{\"" << field << "\":[";
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            if (i != 0) {
+                out << ',';
+            }
+            const auto& entry = entries[i];
+            out << "{\"connection_handle\":" << entry.connection_handle;
+            if (entry.local) {
+                out << ",\"local\":true";
+            }
+            out << ",\"track_namespace\":\"" << JsonEscape(entry.track_namespace) << '"';
+            if (entry.has_tracks) {
+                out << ",\"tracks\":[";
+                for (std::size_t track = 0; track < entry.tracks.size(); ++track) {
+                    if (track != 0) {
+                        out << ',';
+                    }
+                    out << "{\"track_alias\":" << entry.tracks[track].track_alias << ",\"track_name\":\""
+                        << JsonEscape(entry.tracks[track].track_name) << "\"}";
+                }
+                out << ']';
+            }
+            out << '}';
+        }
+        out << "]}";
+        return out.str();
+    }
+
     std::string EncodeAdminMetrics(const std::vector<std::string>& connections, const std::vector<std::string>& tracks)
     {
         std::ostringstream out;

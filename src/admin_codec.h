@@ -27,6 +27,21 @@ namespace laps {
     /// Latest connection and track metrics samples.
     inline constexpr std::string_view kAdminMetricsMethod = "metrics";
 
+    /// Subscriber tracks in `state_.subscribes`.
+    inline constexpr std::string_view kAdminSubscriptionsMethod = "subscriptions";
+
+    /// Publisher tracks in `state_.pub_subscribes`.
+    inline constexpr std::string_view kAdminPublishesMethod = "publishes";
+
+    /// Announced publish namespaces in `state_.pub_namespace_active`.
+    inline constexpr std::string_view kAdminPublishNamespacesMethod = "publish_namespaces";
+
+    /// `SUBSCRIBE_NAMESPACE` prefixes in `state_.subscribe_namespaces`.
+    inline constexpr std::string_view kAdminSubscribeNamespacesMethod = "subscribe_namespaces";
+
+    /// `SUBSCRIBE_TRACKS` prefixes in `state_.subscribe_tracks`.
+    inline constexpr std::string_view kAdminSubscribeTracksMethod = "subscribe_tracks";
+
     /// Dial a peer, or remember the address when that peer is already accepted.
     inline constexpr std::string_view kAdminAddPeerMethod = "add-peer";
 
@@ -146,6 +161,33 @@ namespace laps {
         std::vector<AdminPeer> peers;
     };
 
+    /// One subscriber or publisher track.
+    struct AdminTrackBinding
+    {
+        std::uint64_t connection_handle{ 0 };
+        std::string track_namespace;
+        std::string track_name;
+    };
+
+    /// One track announced inside a publish namespace.
+    struct AdminNamespaceTrack
+    {
+        std::uint64_t track_alias{ 0 };
+        std::string track_name;
+    };
+
+    /// One namespace prefix held by one connection.
+    struct AdminNamespaceEntry
+    {
+        std::uint64_t connection_handle{ 0 };
+        std::string track_namespace;
+        /// True for the relay's own subscribe-tracks interest. Not a QUIC connection.
+        bool local{ false };
+        /// True when `tracks` is part of this entry. Publish namespaces always set it.
+        bool has_tracks{ false };
+        std::vector<AdminNamespaceTrack> tracks;
+    };
+
     /// host:port argument of add-peer, remove-peer, and restart-peer.
     struct AdminPeerEndpoint
     {
@@ -244,6 +286,12 @@ namespace laps {
     std::string EncodeAdminStateSizes(const AdminStateSizes& sizes);
 
     std::string EncodeAdminPeers(const AdminPeers& peers);
+
+    /// `field` is the array name, such as `subscriptions` or `publishes`.
+    std::string EncodeAdminTrackList(std::string_view field, const std::vector<AdminTrackBinding>& entries);
+
+    /// `field` is the array name. `tracks` is written only when `has_tracks` is set.
+    std::string EncodeAdminNamespaceList(std::string_view field, const std::vector<AdminNamespaceEntry>& entries);
 
     /// `connections` and `tracks` are JSON objects already encoded, in dump order.
     std::string EncodeAdminMetrics(const std::vector<std::string>& connections,

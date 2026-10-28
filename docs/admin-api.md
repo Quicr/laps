@@ -1,6 +1,6 @@
 # LAPS Admin API
 
-LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `metrics` reports the latest connection and track metrics samples. `add-peer`, `remove-peer`, and `restart-peer` change those sessions.
+LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, and `subscribe_tracks` list the entries behind those counts. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `metrics` reports the latest connection and track metrics samples. `add-peer`, `remove-peer`, and `restart-peer` change those sessions.
 
 The relay binary is `lapsRelay`. The admin client is `lapsAdmin`.
 
@@ -130,7 +130,7 @@ Request:
 }
 ```
 
-`params` is optional. When present it must be one JSON value. `state`, `peers`, and `metrics` parse `params` and do not use them.
+`params` is optional. When present it must be one JSON value. `state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, and `subscribe_tracks` parse `params` and do not use them.
 
 Result on the wire:
 
@@ -301,6 +301,75 @@ Each entry:
 | `newest_group` | Largest group id still cached. Omitted when the track holds no groups. |
 
 Reading the cache advances its time buckets, so groups that have already expired are dropped before they are counted.
+
+## `subscriptions` and `publishes`
+
+Method names: `subscriptions` and `publishes`.
+
+Each result lists one entry for every track in the matching `state` count. `subscriptions` is `state_.subscribes`: a subscriber connection and the track it subscribed to. `publishes` is `state_.pub_subscribes`: a publisher connection and the track the relay subscribed to in order to receive it. Connection handle 0 is a relay-local publish, such as the metrics track or an admin reply.
+
+Entries are ordered by namespace, name, then connection handle. `lapsAdmin` prints the object at `results["subscriptions"]` or `results["publishes"]`:
+
+```json
+{
+  "subscriptions": [
+    {
+      "connection_handle": 11,
+      "track_namespace": "media/live",
+      "track_name": "video"
+    }
+  ]
+}
+```
+
+## `publish_namespaces`
+
+Method name: `publish_namespaces`.
+
+Each entry is one announced publish namespace on one connection, which is one key in `state_.pub_namespace_active`. `tracks` lists the track aliases stored with that namespace. `track_name` comes from the publisher track with the same alias and connection. It is empty when that publisher track is no longer in `publishes`.
+
+Entries are ordered by namespace, then connection handle. Tracks inside an entry are ordered by name, then alias.
+
+```json
+{
+  "publish_namespaces": [
+    {
+      "connection_handle": 10,
+      "track_namespace": "media/live",
+      "tracks": [
+        {
+          "track_alias": 99,
+          "track_name": "video"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## `subscribe_namespaces` and `subscribe_tracks`
+
+Method names: `subscribe_namespaces` and `subscribe_tracks`.
+
+These maps store a namespace prefix, not a track name. Each entry is one connection that holds that prefix. `subscribe_namespaces` is `state_.subscribe_namespaces`. `subscribe_tracks` is `state_.subscribe_tracks`, including the relay's own admin prefix. That relay interest uses connection handle `18446744073709551615` and sets `local` to true. It is not a QUIC connection.
+
+Entries are ordered by namespace, then connection handle.
+
+```json
+{
+  "subscribe_tracks": [
+    {
+      "connection_handle": 18446744073709551615,
+      "local": true,
+      "track_namespace": "laps/admin/relay-b"
+    },
+    {
+      "connection_handle": 11,
+      "track_namespace": "media"
+    }
+  ]
+}
+```
 
 ## `peers`
 
@@ -481,7 +550,7 @@ The client connects, reads the endpoint id from the relay SETUP, subscribes to t
 
 | Option | Default | Role |
 | --- | --- | --- |
-| positional methods | required | One or more of `state`, `peers`, `metrics`, `add-peer`, `remove-peer`, and `restart-peer`. Any other string is sent as the method so an unknown-method error can be observed. |
+| positional methods | required | One or more of `state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, `subscribe_tracks`, `add-peer`, `remove-peer`, and `restart-peer`. Any other string is sent as the method so an unknown-method error can be observed. |
 | method parameters | next argument | Required after `add-peer`, `remove-peer`, and `restart-peer`. Commas separate values. Each value is one call, as `host:port` or `[ipv6]:port`. |
 | `--uri` | `moq://127.0.0.1:33435` | Relay URI. `33435` is the `lapsRelay` default listen port. |
 | `--target-endpoint` | SETUP endpoint id | Target relay endpoint. It may differ from the relay at `--uri`. Omit it to use the SETUP endpoint id. |
@@ -511,17 +580,17 @@ lapsAdmin --uri moq://127.0.0.1:33435 \
 
 ## Authorization and scope
 
-The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes, cache summary, and metrics, and can add, remove, or restart peers.
+The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes, cache summary, track and namespace lists, and metrics, and can add, remove, or restart peers.
 
 The relay consumes a request only when the namespace endpoint id is its own. `--target-endpoint` selects that id and may name a different relay than the one at `--uri`. The client publishes the request so the connected relay can announce the full track name. The named relay subscribes to that track through peering and consumes the object when it arrives. Peering carries the full track name, not the subscribe-tracks prefix.
 
-`state`, `peers`, `metrics`, `add-peer`, `remove-peer`, and `restart-peer` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
+`state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, `subscribe_tracks`, `add-peer`, `remove-peer`, and `restart-peer` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
 
 ## Code
 
 | Piece | Role |
 | --- | --- |
-| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state`, `peers`, `metrics`, and peer-command encoding, printed results document, pretty printer. |
+| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state`, track and namespace lists, `peers`, `metrics`, and peer-command encoding, printed results document, pretty printer. |
 | `src/metrics_publisher.cc` | Publishes metrics samples and keeps the latest connection and track sample for `metrics`. |
 | `src/admin_service.h`, `src/admin_service.cc` | Local subscribe-tracks interest, request dispatch, reply publish and announce. |
 | `src/admin_client.cc` | `lapsAdmin`. Publishes the request namespace and track, including when `--target-endpoint` names another relay. |

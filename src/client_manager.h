@@ -167,6 +167,21 @@ namespace laps {
         /// Sizes of the relay maps, for the admin state RPC.
         AdminStateSizes CollectAdminStateSizes();
 
+        /// Subscriber tracks, for the admin subscriptions RPC.
+        std::vector<AdminTrackBinding> CollectAdminSubscriptions();
+
+        /// Publisher tracks, for the admin publishes RPC.
+        std::vector<AdminTrackBinding> CollectAdminPublishes();
+
+        /// Announced publish namespaces and the track names under each one.
+        std::vector<AdminNamespaceEntry> CollectAdminPublishNamespaces();
+
+        /// SUBSCRIBE_NAMESPACE prefixes, one entry per connection that holds the prefix.
+        std::vector<AdminNamespaceEntry> CollectAdminSubscribeNamespaces();
+
+        /// SUBSCRIBE_TRACKS prefixes, one entry per connection that holds the prefix.
+        std::vector<AdminNamespaceEntry> CollectAdminSubscribeTracks();
+
         /// Accepted and dialed peering sessions, for the admin peers RPC.
         AdminPeers CollectAdminPeers();
 

@@ -862,6 +862,129 @@ namespace laps {
         return sizes;
     }
 
+    namespace {
+        bool TrackBindingLess(const AdminTrackBinding& lhs, const AdminTrackBinding& rhs)
+        {
+            if (lhs.track_namespace != rhs.track_namespace) {
+                return lhs.track_namespace < rhs.track_namespace;
+            }
+            if (lhs.track_name != rhs.track_name) {
+                return lhs.track_name < rhs.track_name;
+            }
+            return lhs.connection_handle < rhs.connection_handle;
+        }
+
+        bool NamespaceEntryLess(const AdminNamespaceEntry& lhs, const AdminNamespaceEntry& rhs)
+        {
+            if (lhs.track_namespace != rhs.track_namespace) {
+                return lhs.track_namespace < rhs.track_namespace;
+            }
+            return lhs.connection_handle < rhs.connection_handle;
+        }
+    }
+
+    std::vector<AdminTrackBinding> ClientManager::CollectAdminSubscriptions()
+    {
+        std::vector<AdminTrackBinding> entries;
+        std::lock_guard state_lock(state_.state_mutex);
+        entries.reserve(state_.subscribes.size());
+        for (const auto& [key, info] : state_.subscribes) {
+            AdminTrackBinding entry;
+            entry.connection_handle = key.second;
+            entry.track_namespace = info.track_full_name.NamespaceStr();
+            entry.track_name = std::string(info.track_full_name.NameStr());
+            entries.push_back(std::move(entry));
+        }
+        std::sort(entries.begin(), entries.end(), TrackBindingLess);
+        return entries;
+    }
+
+    std::vector<AdminTrackBinding> ClientManager::CollectAdminPublishes()
+    {
+        std::vector<AdminTrackBinding> entries;
+        std::lock_guard state_lock(state_.state_mutex);
+        entries.reserve(state_.pub_subscribes.size());
+        for (const auto& [key, handler] : state_.pub_subscribes) {
+            AdminTrackBinding entry;
+            entry.connection_handle = key.second;
+            if (handler) {
+                const auto track_name = handler->GetFullTrackName();
+                entry.track_namespace = track_name.NamespaceStr();
+                entry.track_name = std::string(track_name.NameStr());
+            }
+            entries.push_back(std::move(entry));
+        }
+        std::sort(entries.begin(), entries.end(), TrackBindingLess);
+        return entries;
+    }
+
+    std::vector<AdminNamespaceEntry> ClientManager::CollectAdminPublishNamespaces()
+    {
+        std::vector<AdminNamespaceEntry> entries;
+        std::lock_guard state_lock(state_.state_mutex);
+        entries.reserve(state_.pub_namespace_active.size());
+        for (const auto& [key, aliases] : state_.pub_namespace_active) {
+            AdminNamespaceEntry entry;
+            entry.connection_handle = key.second;
+            entry.track_namespace = key.first.Str();
+            entry.has_tracks = true;
+            entry.tracks.reserve(aliases.size());
+            for (const auto alias : aliases) {
+                AdminNamespaceTrack track;
+                track.track_alias = alias;
+                const auto handler = state_.pub_subscribes.find({ alias, key.second });
+                if (handler != state_.pub_subscribes.end() && handler->second) {
+                    track.track_name = std::string(handler->second->GetFullTrackName().NameStr());
+                }
+                entry.tracks.push_back(std::move(track));
+            }
+            std::sort(entry.tracks.begin(),
+                      entry.tracks.end(),
+                      [](const AdminNamespaceTrack& lhs, const AdminNamespaceTrack& rhs) {
+                          if (lhs.track_name != rhs.track_name) {
+                              return lhs.track_name < rhs.track_name;
+                          }
+                          return lhs.track_alias < rhs.track_alias;
+                      });
+            entries.push_back(std::move(entry));
+        }
+        std::sort(entries.begin(), entries.end(), NamespaceEntryLess);
+        return entries;
+    }
+
+    std::vector<AdminNamespaceEntry> ClientManager::CollectAdminSubscribeNamespaces()
+    {
+        std::vector<AdminNamespaceEntry> entries;
+        std::lock_guard state_lock(state_.state_mutex);
+        for (const auto& [prefix, connections] : state_.subscribe_namespaces) {
+            for (const auto connection_handle : connections) {
+                AdminNamespaceEntry entry;
+                entry.connection_handle = connection_handle;
+                entry.track_namespace = prefix.Str();
+                entries.push_back(std::move(entry));
+            }
+        }
+        std::sort(entries.begin(), entries.end(), NamespaceEntryLess);
+        return entries;
+    }
+
+    std::vector<AdminNamespaceEntry> ClientManager::CollectAdminSubscribeTracks()
+    {
+        std::vector<AdminNamespaceEntry> entries;
+        std::lock_guard state_lock(state_.state_mutex);
+        for (const auto& [prefix, connections] : state_.subscribe_tracks) {
+            for (const auto& connection : connections) {
+                AdminNamespaceEntry entry;
+                entry.connection_handle = connection.first;
+                entry.local = connection.first == kLocalAdminSubscriberConnection;
+                entry.track_namespace = prefix.Str();
+                entries.push_back(std::move(entry));
+            }
+        }
+        std::sort(entries.begin(), entries.end(), NamespaceEntryLess);
+        return entries;
+    }
+
     AdminRelayIdentity ClientManager::CollectAdminRelayIdentity() const
     {
         AdminRelayIdentity identity;
