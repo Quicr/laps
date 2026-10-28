@@ -24,6 +24,9 @@ namespace laps {
     /// Peering sessions this relay has accepted or dialed, with RTT and forwarding counts.
     inline constexpr std::string_view kAdminPeersMethod = "peers";
 
+    /// Latest connection and track metrics samples.
+    inline constexpr std::string_view kAdminMetricsMethod = "metrics";
+
     /// Dial a peer, or remember the address when that peer is already accepted.
     inline constexpr std::string_view kAdminAddPeerMethod = "add-peer";
 
@@ -241,6 +244,10 @@ namespace laps {
     std::string EncodeAdminStateSizes(const AdminStateSizes& sizes);
 
     std::string EncodeAdminPeers(const AdminPeers& peers);
+
+    /// `connections` and `tracks` are JSON objects already encoded, in dump order.
+    std::string EncodeAdminMetrics(const std::vector<std::string>& connections,
+                                   const std::vector<std::string>& tracks);
 
     /// Split a comma-delimited parameter argument. Tokens are trimmed. Empty tokens are kept.
     std::vector<std::string> SplitAdminParams(std::string_view text);

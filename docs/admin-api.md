@@ -1,6 +1,6 @@
 # LAPS Admin API
 
-LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `add-peer`, `remove-peer`, and `restart-peer` change those sessions.
+LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `metrics` reports the latest connection and track metrics samples. `add-peer`, `remove-peer`, and `restart-peer` change those sessions.
 
 The relay binary is `lapsRelay`. The admin client is `lapsAdmin`.
 
@@ -130,7 +130,7 @@ Request:
 }
 ```
 
-`params` is optional. When present it must be one JSON value. `state` and `peers` parse `params` and do not use them.
+`params` is optional. When present it must be one JSON value. `state`, `peers`, and `metrics` parse `params` and do not use them.
 
 Result on the wire:
 
@@ -398,6 +398,62 @@ A successful result is printed at `results["add-peer"]`:
 
 `action` is `added`, `removed`, or `restarted`.
 
+## `metrics`
+
+Method name: `metrics`.
+
+The result is the latest sample of each connection and each track. These are the same JSON objects the relay publishes on the metrics track, held until the next sample replaces them. A connection or track that has not been sampled yet is omitted. Sampling follows the relay's metrics interval, which defaults to 5000 ms, so a dump immediately after a connection opens can be empty.
+
+`connections` is connection-level metrics, one object per connection, ordered by `connection_handle`. `tracks` is track-level metrics. A track the relay is sending to a subscriber has `type` `subscribe`. A track the relay is receiving from a publisher has `type` `publish`. Tracks are ordered by namespace, name, type, then connection handle. Field meanings are in [METRICS.md](METRICS.md).
+
+`lapsAdmin` prints this object at `results["metrics"]`:
+
+```json
+{
+  "connections": [
+    {
+      "type": "connection",
+      "relay_id": "relay-b",
+      "sample_time_us": 1720000000000000,
+      "connection_handle": 10,
+      "remote_endpoint_id": "client-42",
+      "remote_ip": "192.0.2.44",
+      "remote_port": 54431,
+      "publish_tracks": 1,
+      "subscribe_tracks": 1
+    }
+  ],
+  "tracks": [
+    {
+      "type": "publish",
+      "relay_id": "relay-b",
+      "sample_time_us": 1720000000000000,
+      "connection_handle": 10,
+      "remote_endpoint_id": "client-42",
+      "track_namespace": "media/live",
+      "track_name": "video",
+      "bytes": 8192,
+      "objects": 32,
+      "subscribers": 1
+    },
+    {
+      "type": "subscribe",
+      "relay_id": "relay-b",
+      "sample_time_us": 1720000000000000,
+      "connection_handle": 11,
+      "remote_endpoint_id": "player-7",
+      "track_namespace": "media/live",
+      "track_name": "video",
+      "bytes": 8192,
+      "objects": 32,
+      "objects_dropped_not_ok": 0
+    }
+  ]
+}
+```
+
+The example objects above omit the `quic` object that a real connection or subscribe sample includes. A real dump includes every field the metrics track publishes for that type.
+
 ## `lapsRelay`
 
 ```text
@@ -425,7 +481,7 @@ The client connects, reads the endpoint id from the relay SETUP, subscribes to t
 
 | Option | Default | Role |
 | --- | --- | --- |
-| positional methods | required | One or more of `state`, `peers`, `add-peer`, `remove-peer`, and `restart-peer`. Any other string is sent as the method so an unknown-method error can be observed. |
+| positional methods | required | One or more of `state`, `peers`, `metrics`, `add-peer`, `remove-peer`, and `restart-peer`. Any other string is sent as the method so an unknown-method error can be observed. |
 | method parameters | next argument | Required after `add-peer`, `remove-peer`, and `restart-peer`. Commas separate values. Each value is one call, as `host:port` or `[ipv6]:port`. |
 | `--uri` | `moq://127.0.0.1:33435` | Relay URI. `33435` is the `lapsRelay` default listen port. |
 | `--target-endpoint` | SETUP endpoint id | Target relay endpoint. It may differ from the relay at `--uri`. Omit it to use the SETUP endpoint id. |
@@ -455,17 +511,18 @@ lapsAdmin --uri moq://127.0.0.1:33435 \
 
 ## Authorization and scope
 
-The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes and cache summary, and can add, remove, or restart peers.
+The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes, cache summary, and metrics, and can add, remove, or restart peers.
 
 The relay consumes a request only when the namespace endpoint id is its own. `--target-endpoint` selects that id and may name a different relay than the one at `--uri`. The client publishes the request so the connected relay can announce the full track name. The named relay subscribes to that track through peering and consumes the object when it arrives. Peering carries the full track name, not the subscribe-tracks prefix.
 
-`state`, `peers`, `add-peer`, `remove-peer`, and `restart-peer` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
+`state`, `peers`, `metrics`, `add-peer`, `remove-peer`, and `restart-peer` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
 
 ## Code
 
 | Piece | Role |
 | --- | --- |
-| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state`, `peers`, and peer-command encoding, printed results document, pretty printer. |
+| `src/admin_codec.h`, `src/admin_codec.cc` | Namespace layout, JSON parse and encode, `state`, `peers`, `metrics`, and peer-command encoding, printed results document, pretty printer. |
+| `src/metrics_publisher.cc` | Publishes metrics samples and keeps the latest connection and track sample for `metrics`. |
 | `src/admin_service.h`, `src/admin_service.cc` | Local subscribe-tracks interest, request dispatch, reply publish and announce. |
 | `src/admin_client.cc` | `lapsAdmin`. Publishes the request namespace and track, including when `--target-endpoint` names another relay. |
 | `src/client_manager.cc` | Installs the interest, collects snapshots, registers and announces the local reply, and subscribes to a peered admin request. |

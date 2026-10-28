@@ -871,6 +871,11 @@ namespace laps {
         return identity;
     }
 
+    std::string ClientManager::CollectAdminMetrics() const
+    {
+        return metrics_publisher_.Dump();
+    }
+
     AdminPeers ClientManager::CollectAdminPeers()
     {
         AdminPeers result;

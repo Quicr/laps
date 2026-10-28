@@ -137,6 +137,10 @@ namespace laps {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response = EncodeAdminResult(message.id, identity, EncodeAdminPeers(server_.CollectAdminPeers()));
+                } else if (message.method == kAdminMetricsMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(message.id, identity, server_.CollectAdminMetrics());
                 } else if (message.method == kAdminAddPeerMethod || message.method == kAdminRemovePeerMethod ||
                            message.method == kAdminRestartPeerMethod) {
                     SPDLOG_LOGGER_INFO(

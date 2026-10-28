@@ -240,3 +240,15 @@ TEST_CASE("admin peer command params")
     identity.node_id = "0.0:0.1001";
     CHECK(laps::ParseAdminMessage(laps::EncodeAdminResult("9", identity, command_json)).valid);
 }
+
+TEST_CASE("admin metrics dump")
+{
+    const auto dump = laps::EncodeAdminMetrics(
+      { R"({"type":"connection","connection_handle":10})", R"({"type":"connection","connection_handle":2})" },
+      { R"({"type":"publish","track_namespace":"media/live","track_name":"video"})",
+        R"({"type":"subscribe","track_namespace":"media/live","track_name":"video"})" });
+    CHECK(dump ==
+          R"({"connections":[{"type":"connection","connection_handle":10},{"type":"connection","connection_handle":2}],"tracks":[{"type":"publish","track_namespace":"media/live","track_name":"video"},{"type":"subscribe","track_namespace":"media/live","track_name":"video"}]})");
+    CHECK(laps::EncodeAdminMetrics({}, {}) == R"({"connections":[],"tracks":[]})");
+    CHECK(laps::PrettyPrintJson(dump).has_value());
+}

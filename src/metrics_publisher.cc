@@ -261,6 +261,48 @@ namespace laps {
     {
         std::lock_guard<std::mutex> lock(tracks_mutex_);
         remote_by_connection_.erase(connection_handle);
+        connection_samples_.erase(connection_handle);
+        std::erase_if(track_samples_, [&](const auto& item) {
+            return item.first.connection_handle == connection_handle;
+        });
+    }
+
+    std::string MetricsPublisher::Dump() const
+    {
+        std::vector<std::string> connections;
+        std::vector<std::string> tracks;
+        {
+            std::lock_guard<std::mutex> lock(tracks_mutex_);
+            connections.reserve(connection_samples_.size());
+            for (const auto& [_, json] : connection_samples_) {
+                connections.push_back(json);
+            }
+            tracks.reserve(track_samples_.size());
+            for (const auto& [_, json] : track_samples_) {
+                tracks.push_back(json);
+            }
+        }
+        return EncodeAdminMetrics(connections, tracks);
+    }
+
+    void MetricsPublisher::RememberConnection(std::uint64_t connection_handle, const std::string& json_line)
+    {
+        auto json = json_line;
+        if (!json.empty() && json.back() == '\n') {
+            json.pop_back();
+        }
+        std::lock_guard<std::mutex> lock(tracks_mutex_);
+        connection_samples_[connection_handle] = std::move(json);
+    }
+
+    void MetricsPublisher::RememberTrack(TrackSampleKey key, const std::string& json_line)
+    {
+        auto json = json_line;
+        if (!json.empty() && json.back() == '\n') {
+            json.pop_back();
+        }
+        std::lock_guard<std::mutex> lock(tracks_mutex_);
+        track_samples_[std::move(key)] = std::move(json);
     }
 
     MetricsPublisher::RemoteInfo MetricsPublisher::LookupRemote(std::uint64_t connection_handle)
@@ -304,7 +346,9 @@ namespace laps {
         AppendRawField(out, first, "quic", SerializeConnectionQuic(metrics.quic));
         out << "}\n";
 
-        QueueSample({ out.str() });
+        const auto line = out.str();
+        RememberConnection(connection_handle, line);
+        QueueSample({ line });
     }
 
     void MetricsPublisher::QueuePublishMetrics(std::uint64_t connection_handle,
@@ -329,7 +373,10 @@ namespace laps {
         AppendRawField(out, first, "quic", SerializePublishQuic(metrics.quic));
         out << "}\n";
 
-        QueueSample({ out.str() });
+        const auto line = out.str();
+        RememberTrack(TrackSampleKey{ TypeName(MetricType::kSubscribe), track_namespace, std::string(name), connection_handle },
+                      line);
+        QueueSample({ line });
     }
 
     void MetricsPublisher::QueueSubscribeMetrics(std::uint64_t connection_handle,
@@ -354,7 +401,10 @@ namespace laps {
         AppendUintField(out, first, "subscribers", static_cast<std::uint64_t>(subscriber_count));
         out << "}\n";
 
-        QueueSample({ out.str() });
+        const auto line = out.str();
+        RememberTrack(TrackSampleKey{ TypeName(MetricType::kPublish), track_namespace, std::string(name), connection_handle },
+                      line);
+        QueueSample({ line });
     }
 
     bool MetricsPublisher::QueueSample(MetricsSample sample)

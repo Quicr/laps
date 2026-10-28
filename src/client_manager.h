@@ -170,6 +170,9 @@ namespace laps {
         /// Accepted and dialed peering sessions, for the admin peers RPC.
         AdminPeers CollectAdminPeers();
 
+        /// Latest connection and track metrics samples, for the admin metrics RPC.
+        std::string CollectAdminMetrics() const;
+
         /// Endpoint id and the peering node id, copied onto every admin reply.
         AdminRelayIdentity CollectAdminRelayIdentity() const;
 

@@ -113,6 +113,7 @@ namespace {
             << "Methods:\n"
             << "  state                           JSON sizes of the relay's internal maps\n"
             << "  peers                           JSON list of accepted and dialed peers\n"
+            << "  metrics                         Latest connection and track metrics\n"
             << "  add-peer <host>:<port>          Dial a peer, or remember an accepted one\n"
             << "  remove-peer <host>:<port>       Disconnect a peer and drop its state\n"
             << "  restart-peer <host>:<port>      Drop a peer's state. Dialed peers reconnect\n"

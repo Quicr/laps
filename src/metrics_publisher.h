@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "admin_codec.h"
 #include "config.h"
 
 #include <quicr/containers/safe_queue.h>
@@ -58,6 +59,9 @@ namespace laps {
         void AddConnection(std::uint64_t connection_handle, const quicr::Session::ConnectionRemoteInfo& remote);
         void SetConnectionEndpointId(std::uint64_t connection_handle, const std::string& endpoint_id);
         void RemoveConnection(std::uint64_t connection_handle);
+
+        /// Latest sample of each connection and each track, as the admin `metrics` result body.
+        std::string Dump() const;
 
         void QueueConnectionMetrics(std::uint64_t connection_handle,
                                     std::size_t publish_track_count,
@@ -126,7 +130,31 @@ namespace laps {
         std::string MetricsNamespaceStr() const;
         static const char* TypeName(MetricType type);
 
+        struct TrackSampleKey
+        {
+            std::string type;
+            std::string track_namespace;
+            std::string track_name;
+            std::uint64_t connection_handle{ 0 };
+
+            bool operator<(const TrackSampleKey& other) const
+            {
+                if (track_namespace != other.track_namespace) {
+                    return track_namespace < other.track_namespace;
+                }
+                if (track_name != other.track_name) {
+                    return track_name < other.track_name;
+                }
+                if (type != other.type) {
+                    return type < other.type;
+                }
+                return connection_handle < other.connection_handle;
+            }
+        };
+
         RemoteInfo LookupRemote(std::uint64_t connection_handle);
+        void RememberConnection(std::uint64_t connection_handle, const std::string& json_line);
+        void RememberTrack(TrackSampleKey key, const std::string& json_line);
 
         bool QueueSample(MetricsSample sample);
 
@@ -147,8 +175,12 @@ namespace laps {
         std::mutex pending_batch_mutex_;
         std::optional<MetricsSample> pending_batch_;
 
-        std::mutex tracks_mutex_;
+        mutable std::mutex tracks_mutex_;
         std::optional<TrackState> metrics_track_;
         std::map<std::uint64_t, RemoteInfo> remote_by_connection_;
+        /// Latest metrics-track object for each connection, without the trailing newline.
+        std::map<std::uint64_t, std::string> connection_samples_;
+        /// Latest metrics-track object for each track, keyed so a dump is ordered by namespace and name.
+        std::map<TrackSampleKey, std::string> track_samples_;
     };
 } // namespace laps

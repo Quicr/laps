@@ -1009,6 +1009,27 @@ namespace laps {
         return out.str();
     }
 
+    std::string EncodeAdminMetrics(const std::vector<std::string>& connections, const std::vector<std::string>& tracks)
+    {
+        std::ostringstream out;
+        out << "{\"connections\":[";
+        for (std::size_t i = 0; i < connections.size(); ++i) {
+            if (i != 0) {
+                out << ',';
+            }
+            out << connections[i];
+        }
+        out << "],\"tracks\":[";
+        for (std::size_t i = 0; i < tracks.size(); ++i) {
+            if (i != 0) {
+                out << ',';
+            }
+            out << tracks[i];
+        }
+        out << "]}";
+        return out.str();
+    }
+
     std::vector<std::string> SplitAdminParams(std::string_view text)
     {
         std::vector<std::string> parts;
