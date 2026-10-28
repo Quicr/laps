@@ -98,7 +98,7 @@ namespace laps {
 
         return "Admin request " + track.NamespaceStr() + " (" + std::string(track.NameStr()) +
                ") is outside subscribe prefix " + JoinTrackNamespace(subscribe_prefix_) +
-               "; --relay-endpoint must be this relay's --endpoint_id";
+               "; this relay did not consume it";
     }
 
     bool AdminService::Consume(const quicr::FullTrackName& track, quicr::BytesSpan data)

@@ -59,7 +59,7 @@ libquicr sends `SUBSCRIBE_TRACKS` only from a server-mode session, and a client-
 
 When a publish arrives, the relay treats a subscribe-tracks prefix as a match only when the prefix is shorter than or equal to the published namespace (`TrackNamespace::IsPrefixOf`). A matching admin request is marked as having a subscriber, so the publisher is asked to forward. The local admin handler does not create a forwarding publish track and does not mirror the objects back out. Objects are consumed later on the transport thread.
 
-A publish whose name is `rpc` and whose namespace starts with the admin base, but not with this relay's endpoint id, is outside the interest. The relay pauses that publish and logs that `--relay-endpoint` must be this relay's `--endpoint_id`.
+A publish whose name is `rpc` and whose namespace starts with the admin base, but not with this relay's endpoint id, is outside the interest. The relay does not consume it. It pauses the publish when nothing else is subscribed and logs that the request is outside its prefix.
 
 The interest is installed in `AdminService::Start()`, after metrics setup and before the relay listens. `AdminService::Stop()` removes it.
 
@@ -154,7 +154,7 @@ Error on the wire:
 | `method` is not implemented | `unknown method` |
 | Handling the request throws | The exception text |
 
-`lapsAdmin` prints that document on stdout, indented with two spaces. Empty objects and arrays stay on one line. The process exits 0 when every reply parses as a result and has no `error`. Otherwise it exits 1 and, when an error object contains `message`, prints that message on stderr before the document.
+`lapsAdmin` prints that document on stdout, indented with two spaces. Empty objects and arrays stay on one line. `--out FILE` writes that same document to `FILE` and does not print it on stdout. The process exits 0 when every reply parses as a result and has no `error`. Otherwise it exits 1 and, when an error object contains `message`, prints that message on stderr before the document.
 
 ## `state`
 
@@ -385,13 +385,14 @@ The client connects, reads the endpoint id from the relay SETUP, subscribes to t
 | positional methods | required | One or more of `state`, `peers`, `add-peer`, `remove-peer`, and `restart-peer`. Any other string is sent as the method so an unknown-method error can be observed. |
 | method parameters | next argument | Required after `add-peer`, `remove-peer`, and `restart-peer`. Commas separate values. Each value is one call, as `host:port` or `[ipv6]:port`. |
 | `--uri` | `moq://127.0.0.1:33435` | Relay URI. `33435` is the `lapsRelay` default listen port. |
-| `--relay-endpoint` | SETUP endpoint id | Must equal the endpoint id in the relay SETUP. Omit it to use that id. |
+| `--relay-endpoint` | SETUP endpoint id | Endpoint id used in the admin namespace. It may differ from the relay at `--uri`. Omit it to use the SETUP endpoint id. |
 | `--endpoint-id` | `admin-<pid>` | This client's endpoint id, appended to the request namespace and placed before the relay id in the reply namespace. |
 | `--admin-namespace` | `laps/admin` | Same base prefix the relay was given. |
 | `--timeout-ms` | `5000` | Time allowed to connect, to be allowed to publish, and to receive each reply. The QUIC idle timeout is twice this value. |
+| `--out` | stdout | Write the JSON document to this file instead of stdout. |
 | `--debug` | off | Debug logging. |
 
-When `--relay-endpoint` is set and differs from SETUP, the client disconnects before publishing and prints the endpoint id to use. When the relay pauses the request track, the client reports the subscribe prefix it expected (`<admin-namespace>/<relay endpoint id>`).
+When `--relay-endpoint` differs from the connected relay, the client still publishes and subscribes in that other relay's admin namespace. The connected relay consumes a request only when the id is its own. When the relay pauses the request track, the client reports that nothing subscribed to that namespace.
 
 Example against a relay that advertises `relay-b`:
 
@@ -399,7 +400,7 @@ Example against a relay that advertises `relay-b`:
 lapsAdmin --uri moq://127.0.0.1:33435 --endpoint-id admin-client-xyz state peers
 ```
 
-Example that also checks the endpoint id:
+Example that addresses a different relay than the one at `--uri`:
 
 ```text
 lapsAdmin --uri moq://127.0.0.1:33435 \
@@ -413,7 +414,7 @@ lapsAdmin --uri moq://127.0.0.1:33435 \
 
 The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes and cache summary, and can add, remove, or restart peers.
 
-The API is local to the relay that receives the publish. Peering subscribes are for a full track name, not a prefix, and the relay does not register an admin reply for an object that arrived from a peer. An admin client talks to the relay it connected to.
+The relay consumes a request only when the namespace endpoint id is its own. `--relay-endpoint` selects that id and may name a different relay than the one at `--uri`. Peering subscribes are for a full track name, not a prefix, and the relay does not register an admin reply for an object that arrived from a peer.
 
 `state`, `peers`, `add-peer`, `remove-peer`, and `restart-peer` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
 

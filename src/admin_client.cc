@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -46,6 +47,8 @@ namespace {
         };
         std::vector<Call> calls;
         std::chrono::milliseconds timeout{ 5000 };
+        /// Unset writes the JSON document to stdout.
+        std::optional<std::string> out_path;
         bool debug{ false };
     };
 
@@ -115,10 +118,11 @@ namespace {
             << "\n"
             << "Options:\n"
             << "  --uri URI                  Relay URI (default moq://127.0.0.1:33435)\n"
-            << "  --relay-endpoint ID        Relay --endpoint_id (default: the id from relay SETUP)\n"
+            << "  --relay-endpoint ID        Admin namespace endpoint id (default: the id from relay SETUP)\n"
             << "  --endpoint-id ID           This admin client endpoint id (default admin-<pid>)\n"
             << "  --admin-namespace PREFIX   Slash-delimited base prefix (default laps/admin)\n"
             << "  --timeout-ms MS            How long to wait for each response (default 5000)\n"
+            << "  --out FILE                 Write the JSON document to FILE instead of stdout\n"
             << "  --debug\n"
             << "  -h, --help\n";
     }
@@ -165,6 +169,11 @@ namespace {
                     throw std::runtime_error("timeout must be an integer number of milliseconds");
                 }
                 options.timeout = std::chrono::milliseconds(parsed);
+            } else if (arg == "--out") {
+                options.out_path = RequireValue(argc, argv, i, arg);
+                if (options.out_path->empty()) {
+                    throw std::runtime_error("--out requires a file path");
+                }
             } else if (arg == "--debug") {
                 options.debug = true;
             } else if (!arg.empty() && arg.front() == '-') {
@@ -318,17 +327,25 @@ main(int argc, char* argv[])
                 throw std::runtime_error("connected to " + options.uri + " without a relay SETUP endpoint id");
             }
 
-            relay_endpoint = setup_endpoint.get();
-            if (relay_endpoint.empty()) {
+            const auto connected_endpoint = setup_endpoint.get();
+            if (connected_endpoint.empty()) {
                 session->Disconnect();
                 throw std::runtime_error("relay SETUP did not include an endpoint id");
             }
-            if (options.relay_endpoint.has_value() && *options.relay_endpoint != relay_endpoint) {
-                session->Disconnect();
-                throw std::runtime_error("relay at " + options.uri + " identified itself as '" + relay_endpoint +
-                                         "', but --relay-endpoint is '" + *options.relay_endpoint +
-                                         "'. This relay subscribes to " + options.admin_namespace + "/" +
-                                         relay_endpoint + ". Retry with --relay-endpoint " + relay_endpoint);
+            if (options.relay_endpoint.has_value()) {
+                if (options.relay_endpoint->empty()) {
+                    session->Disconnect();
+                    throw std::runtime_error("--relay-endpoint requires an endpoint id");
+                }
+                relay_endpoint = *options.relay_endpoint;
+                if (relay_endpoint != connected_endpoint) {
+                    SPDLOG_LOGGER_INFO(logger,
+                                       "Connected to relay {}; admin namespace uses {}",
+                                       connected_endpoint,
+                                       relay_endpoint);
+                }
+            } else {
+                relay_endpoint = connected_endpoint;
             }
 
             std::string layout_error;
@@ -371,10 +388,9 @@ main(int argc, char* argv[])
                 const auto request_ns = laps::JoinTrackNamespace(layout->request);
                 if (status == quicr::PublishTrackHandler::Status::kPaused ||
                     status == quicr::PublishTrackHandler::Status::kNoSubscribers) {
-                    throw std::runtime_error("relay paused " + request_ns + " (rpc). It subscribes to " +
-                                             options.admin_namespace + "/" + relay_endpoint +
-                                             ", so --relay-endpoint must be that endpoint id (publish status " +
-                                             PublishStatusName(status) + ")");
+                    throw std::runtime_error("relay paused " + request_ns +
+                                             " (rpc). Nothing subscribed to that admin namespace (publish status " +
+                                             std::string(PublishStatusName(status)) + ")");
                 }
                 throw std::runtime_error("admin request track was not ready before timeout (publish status " +
                                          std::string(PublishStatusName(status)) + ")");
@@ -461,12 +477,23 @@ main(int argc, char* argv[])
         if (!replies.empty()) {
             const auto document = laps::EncodeAdminResultsDocument(replies, relay_endpoint);
             const auto pretty = laps::PrettyPrintJson(document);
-            const auto& printed = pretty.has_value() ? *pretty : document;
-            std::cout << printed;
+            auto printed = pretty.has_value() ? *pretty : document;
             if (printed.empty() || printed.back() != '\n') {
-                std::cout << '\n';
+                printed.push_back('\n');
             }
-            std::cout.flush();
+            if (options.out_path.has_value()) {
+                std::ofstream file(*options.out_path, std::ios::out | std::ios::trunc);
+                if (!file) {
+                    throw std::runtime_error("failed to open " + *options.out_path);
+                }
+                file << printed;
+                if (!file) {
+                    throw std::runtime_error("failed to write " + *options.out_path);
+                }
+            } else {
+                std::cout << printed;
+                std::cout.flush();
+            }
         }
 
         if (failed || replies.empty()) {
