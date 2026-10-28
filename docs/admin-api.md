@@ -114,7 +114,7 @@ A request from a client connected to this relay is consumed on the transport thr
 
 Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as `<milliseconds since the Unix epoch>-<call index>`. The relay copies the received `id` into the response. A response produced before an id is parsed uses an empty id.
 
-The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. The API has not been released, so every response reports version `1`. That number stays at 1 while the message shape is still changing. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
+The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. The api_version changes only when there is a schema change. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
 
 `relay_id` is the answering relay's `--endpoint_id`. `node_id` is that relay's peering node id, written as `high.high:low.low`. With `--target-endpoint`, both name the target relay, which may not be the relay at `--uri`.
 
