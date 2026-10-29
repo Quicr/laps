@@ -468,42 +468,96 @@ namespace laps {
             return extracted.empty() ? raw : extracted;
         }
 
+        void AppendJsonHexByte(std::string& escaped, unsigned char byte)
+        {
+            constexpr char kHex[] = "0123456789abcdef";
+            escaped += "\\u00";
+            escaped.push_back(kHex[(byte >> 4) & 0x0F]);
+            escaped.push_back(kHex[byte & 0x0F]);
+        }
+
+        bool IsUtf8Continuation(unsigned char byte)
+        {
+            return byte >= 0x80 && byte <= 0xBF;
+        }
+
+        /// Bytes of one UTF-8 code point starting at index, or 0 when the sequence is invalid.
+        std::size_t Utf8SequenceLength(std::string_view value, std::size_t index)
+        {
+            const auto lead = static_cast<unsigned char>(value[index]);
+            std::size_t need = 0;
+            if (lead >= 0xC2 && lead <= 0xDF) {
+                need = 2;
+            } else if (lead >= 0xE0 && lead <= 0xEF) {
+                need = 3;
+            } else if (lead >= 0xF0 && lead <= 0xF4) {
+                need = 4;
+            } else {
+                return 0;
+            }
+            if (index + need > value.size()) {
+                return 0;
+            }
+            for (std::size_t i = 1; i < need; ++i) {
+                if (!IsUtf8Continuation(static_cast<unsigned char>(value[index + i]))) {
+                    return 0;
+                }
+            }
+            const auto second = static_cast<unsigned char>(value[index + 1]);
+            if ((lead == 0xE0 && second < 0xA0) || (lead == 0xED && second > 0x9F) || (lead == 0xF0 && second < 0x90) ||
+                (lead == 0xF4 && second > 0x8F)) {
+                return 0;
+            }
+            return need;
+        }
+
         std::string JsonEscape(std::string_view value)
         {
             std::string escaped;
             escaped.reserve(value.size());
-            constexpr char kHex[] = "0123456789abcdef";
-            for (const auto ch : value) {
-                const auto c = static_cast<unsigned char>(ch);
+            for (std::size_t index = 0; index < value.size();) {
+                const auto c = static_cast<unsigned char>(value[index]);
                 switch (c) {
                     case '"':
                         escaped += "\\\"";
+                        ++index;
                         break;
                     case '\\':
                         escaped += "\\\\";
+                        ++index;
                         break;
                     case '\b':
                         escaped += "\\b";
+                        ++index;
                         break;
                     case '\f':
                         escaped += "\\f";
+                        ++index;
                         break;
                     case '\n':
                         escaped += "\\n";
+                        ++index;
                         break;
                     case '\r':
                         escaped += "\\r";
+                        ++index;
                         break;
                     case '\t':
                         escaped += "\\t";
+                        ++index;
                         break;
                     default:
-                        if (c < 0x20) {
-                            escaped += "\\u00";
-                            escaped.push_back(kHex[(c >> 4) & 0x0F]);
-                            escaped.push_back(kHex[c & 0x0F]);
+                        if (c < 0x20 || c >= 0x80) {
+                            if (const auto length = c < 0x80 ? 0 : Utf8SequenceLength(value, index); length > 0) {
+                                escaped.append(value.substr(index, length));
+                                index += length;
+                            } else {
+                                AppendJsonHexByte(escaped, c);
+                                ++index;
+                            }
                         } else {
                             escaped.push_back(static_cast<char>(c));
+                            ++index;
                         }
                         break;
                 }

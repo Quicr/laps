@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <set>
 #include <unordered_set>
 
 namespace laps {
@@ -1002,7 +1003,7 @@ namespace laps {
 
     void ClientManager::ReleaseOrphanAdminReplies()
     {
-        std::unordered_set<std::string> live_clients;
+        std::set<std::vector<std::string>> live_clients;
         {
             std::lock_guard lock(state_.state_mutex);
             for (const auto& [_, handler] : state_.pub_subscribes) {
@@ -1014,7 +1015,7 @@ namespace laps {
                     continue;
                 }
                 if (const auto suffix = AdminClientSuffix(track_name.name_space, admin_service_.SubscribePrefix())) {
-                    live_clients.insert(JoinTrackNamespace(*suffix));
+                    live_clients.insert(*suffix);
                 }
             }
         }

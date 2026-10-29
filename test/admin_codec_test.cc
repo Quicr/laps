@@ -315,4 +315,16 @@ TEST_CASE("admin track and namespace lists")
     CHECK(laps::EncodeAdminNamespaceList("subscribe_namespaces", {}) == R"({"subscribe_namespaces":[]})");
     CHECK(laps::PrettyPrintJson(tracks).has_value());
     CHECK(laps::PrettyPrintJson(prefixes).has_value());
+
+    std::string raw_namespace = "media/";
+    raw_namespace.push_back(static_cast<char>(0xFF));
+    const std::string raw_name(1, static_cast<char>(0x80));
+    const auto raw_bytes = laps::EncodeAdminTrackList("publishes", { { 1, raw_namespace, raw_name } });
+    CHECK(raw_bytes.find("\\u00ff") != std::string::npos);
+    CHECK(raw_bytes.find("\\u0080") != std::string::npos);
+    CHECK(laps::PrettyPrintJson(raw_bytes).has_value());
+
+    const auto utf8 = laps::EncodeAdminTrackList("publishes", { { 1, "ns", "vid\xc3\xa9o" } });
+    CHECK(utf8.find("vid\xc3\xa9o") != std::string::npos);
+    CHECK(laps::PrettyPrintJson(utf8).has_value());
 }

@@ -8,11 +8,11 @@
 #include <quicr/utilities/bytes.h>
 
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace laps {
@@ -51,7 +51,7 @@ namespace laps {
         void ReleaseRequest(const quicr::FullTrackName& request_track);
 
         /// Drop reply tracks whose admin client no longer has a request publish.
-        void ReleaseRepliesExcept(const std::unordered_set<std::string>& live_client_keys);
+        void ReleaseRepliesExcept(const std::set<std::vector<std::string>>& live_client_keys);
 
         /**
          * @brief Warning when an rpc publish uses the admin base prefix but not this relay's endpoint
@@ -77,10 +77,8 @@ namespace laps {
         };
 
         void ReleaseClient(const std::vector<std::string>& client_entries);
-        ReplyTrack& EnsureReplyTrack(const std::string& client_key, const std::vector<std::string>& client_entries);
-        void PublishReply(const std::string& client_key,
-                          const std::vector<std::string>& client_entries,
-                          const std::string& json);
+        ReplyTrack& EnsureReplyTrack(const std::vector<std::string>& client_entries);
+        void PublishReply(const std::vector<std::string>& client_entries, const std::string& json);
 
         ClientManager& server_;
         const Config& config_;
@@ -90,9 +88,10 @@ namespace laps {
         quicr::TrackNamespace local_prefix_;
         bool started_{ false };
 
-        /// Keyed by the client namespace suffix. A local request is consumed on the transport thread and a
-        /// peered request on the peering thread, so the map is guarded.
+        /// Keyed by the client namespace tuples. A slash inside one tuple must not collide with a suffix
+        /// that is several tuples. A local request is consumed on the transport thread and a peered request
+        /// on the peering thread, so the map is guarded.
         std::mutex reply_mutex_;
-        std::unordered_map<std::string, ReplyTrack> reply_tracks_;
+        std::map<std::vector<std::string>, ReplyTrack> reply_tracks_;
     };
 } // namespace laps

@@ -115,7 +115,8 @@ namespace laps {
             return false;
         }
         const auto client_key = JoinTrackNamespace(*client_entries);
-        if (AdminReplyOverlapsSubscribePrefix(*client_entries, relay_entries_)) {
+        const auto& client_entries_ref = *client_entries;
+        if (AdminReplyOverlapsSubscribePrefix(client_entries_ref, relay_entries_)) {
             SPDLOG_LOGGER_WARN(config_.logger_,
                                "Admin request {} ({}) was not answered; its reply namespace is under the subscribe "
                                "prefix {}",
@@ -224,11 +225,11 @@ namespace laps {
                 }
             }
 
-            PublishReply(client_key, *client_entries, response);
+            PublishReply(client_entries_ref, response);
         } catch (const std::exception& ex) {
             SPDLOG_LOGGER_WARN(config_.logger_, "Admin RPC failed for {}: {}", client_key, ex.what());
             try {
-                PublishReply(client_key, *client_entries, EncodeAdminError("", identity, ex.what()));
+                PublishReply(client_entries_ref, EncodeAdminError("", identity, ex.what()));
             } catch (const std::exception& publish_error) {
                 SPDLOG_LOGGER_WARN(config_.logger_, "Admin RPC error response failed: {}", publish_error.what());
             }
@@ -246,9 +247,9 @@ namespace laps {
         ReleaseClient(*client_entries);
     }
 
-    void AdminService::ReleaseRepliesExcept(const std::unordered_set<std::string>& live_client_keys)
+    void AdminService::ReleaseRepliesExcept(const std::set<std::vector<std::string>>& live_client_keys)
     {
-        std::vector<std::string> stale;
+        std::vector<std::vector<std::string>> stale;
         {
             std::lock_guard lock(reply_mutex_);
             for (const auto& [client_key, _] : reply_tracks_) {
@@ -258,18 +259,16 @@ namespace laps {
             }
         }
         for (const auto& client_key : stale) {
-            ReleaseClient(SplitTrackNamespace(client_key));
+            ReleaseClient(client_key);
         }
     }
 
     void AdminService::ReleaseClient(const std::vector<std::string>& client_entries)
     {
-        const auto client_key = JoinTrackNamespace(client_entries);
-
         bool remove = false;
         {
             std::lock_guard lock(reply_mutex_);
-            remove = reply_tracks_.erase(client_key) != 0;
+            remove = reply_tracks_.erase(client_entries) != 0;
         }
         if (!remove) {
             return;
@@ -286,11 +285,10 @@ namespace laps {
                            reply_track.NameStr());
     }
 
-    AdminService::ReplyTrack& AdminService::EnsureReplyTrack(const std::string& client_key,
-                                                             const std::vector<std::string>& client_entries)
+    AdminService::ReplyTrack& AdminService::EnsureReplyTrack(const std::vector<std::string>& client_entries)
     {
         // Caller holds reply_mutex_.
-        if (const auto it = reply_tracks_.find(client_key); it != reply_tracks_.end()) {
+        if (const auto it = reply_tracks_.find(client_entries); it != reply_tracks_.end()) {
             return it->second;
         }
         if (AdminReplyOverlapsSubscribePrefix(client_entries, relay_entries_)) {
@@ -325,19 +323,17 @@ namespace laps {
                            full_track_name.NamespaceStr(),
                            full_track_name.NameStr());
 
-        const auto [it, _] = reply_tracks_.emplace(client_key, ReplyTrack{ track_hash.track_fullname_hash, 0 });
+        const auto [it, _] = reply_tracks_.emplace(client_entries, ReplyTrack{ track_hash.track_fullname_hash, 0 });
         return it->second;
     }
 
-    void AdminService::PublishReply(const std::string& client_key,
-                                    const std::vector<std::string>& client_entries,
-                                    const std::string& json)
+    void AdminService::PublishReply(const std::vector<std::string>& client_entries, const std::string& json)
     {
         std::uint64_t track_hash = 0;
         std::uint64_t group_id = 0;
         {
             std::lock_guard lock(reply_mutex_);
-            auto& track = EnsureReplyTrack(client_key, client_entries);
+            auto& track = EnsureReplyTrack(client_entries);
             track_hash = track.track_fullname_hash;
             group_id = track.next_group_id++;
         }
@@ -358,7 +354,8 @@ namespace laps {
                                             .immutable_extensions = std::nullopt };
 
         if (!server_.PublishLocalObject(track_hash, headers, payload)) {
-            SPDLOG_LOGGER_WARN(config_.logger_, "Admin reply track is not registered for {}", client_key);
+            SPDLOG_LOGGER_WARN(
+              config_.logger_, "Admin reply track is not registered for {}", JoinTrackNamespace(client_entries));
         }
     }
 } // namespace laps
