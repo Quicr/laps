@@ -115,6 +115,15 @@ namespace laps {
             return false;
         }
         const auto client_key = JoinTrackNamespace(*client_entries);
+        if (AdminReplyOverlapsSubscribePrefix(*client_entries, relay_entries_)) {
+            SPDLOG_LOGGER_WARN(config_.logger_,
+                               "Admin request {} ({}) was not answered; its reply namespace is under the subscribe "
+                               "prefix {}",
+                               track.NamespaceStr(),
+                               track.NameStr(),
+                               JoinTrackNamespace(subscribe_prefix_));
+            return true;
+        }
 
         AdminRelayIdentity identity;
         try {
@@ -154,17 +163,17 @@ namespace laps {
                 } else if (message.method == kAdminPublishNamespacesMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
-                    response = EncodeAdminResult(message.id,
-                                                 identity,
-                                                 EncodeAdminNamespaceList("publish_namespaces",
-                                                                          server_.CollectAdminPublishNamespaces()));
+                    response = EncodeAdminResult(
+                      message.id,
+                      identity,
+                      EncodeAdminNamespaceList("publish_namespaces", server_.CollectAdminPublishNamespaces()));
                 } else if (message.method == kAdminSubscribeNamespacesMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
-                    response = EncodeAdminResult(message.id,
-                                                 identity,
-                                                 EncodeAdminNamespaceList("subscribe_namespaces",
-                                                                          server_.CollectAdminSubscribeNamespaces()));
+                    response = EncodeAdminResult(
+                      message.id,
+                      identity,
+                      EncodeAdminNamespaceList("subscribe_namespaces", server_.CollectAdminSubscribeNamespaces()));
                 } else if (message.method == kAdminSubscribeTracksMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
@@ -283,6 +292,9 @@ namespace laps {
         // Caller holds reply_mutex_.
         if (const auto it = reply_tracks_.find(client_key); it != reply_tracks_.end()) {
             return it->second;
+        }
+        if (AdminReplyOverlapsSubscribePrefix(client_entries, relay_entries_)) {
+            throw std::invalid_argument("admin reply namespace overlaps the subscribe prefix");
         }
 
         std::vector<std::string> entries = base_entries_;

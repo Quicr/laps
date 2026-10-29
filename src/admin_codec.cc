@@ -676,12 +676,32 @@ namespace laps {
         layout.reply.insert(layout.reply.end(), client.begin(), client.end());
         layout.reply.insert(layout.reply.end(), relay.begin(), relay.end());
 
+        if (AdminReplyOverlapsSubscribePrefix(client, relay)) {
+            error = "client endpoint must not begin with the target relay endpoint; the reply namespace would be "
+                    "consumed as another admin request";
+            return std::nullopt;
+        }
+
         if (layout.request.size() > kMaxNamespaceEntries || layout.reply.size() > kMaxNamespaceEntries) {
             error = "admin namespace exceeds 32 tuple entries";
             return std::nullopt;
         }
 
         return layout;
+    }
+
+    bool AdminReplyOverlapsSubscribePrefix(const std::vector<std::string>& client_entries,
+                                           const std::vector<std::string>& relay_entries)
+    {
+        if (relay_entries.empty() || client_entries.size() < relay_entries.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < relay_entries.size(); ++i) {
+            if (client_entries[i] != relay_entries[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     std::optional<std::vector<std::string>> AdminClientSuffix(const quicr::TrackNamespace& track_namespace,
@@ -828,9 +848,7 @@ namespace laps {
         return out.str();
     }
 
-    std::string EncodeAdminResult(std::string_view id,
-                                  const AdminRelayIdentity& identity,
-                                  std::string_view result_json)
+    std::string EncodeAdminResult(std::string_view id, const AdminRelayIdentity& identity, std::string_view result_json)
     {
         std::ostringstream out;
         out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\""
@@ -1083,7 +1101,8 @@ namespace laps {
         std::size_t start = 0;
         while (start <= text.size()) {
             const auto comma = text.find(',', start);
-            const auto token = text.substr(start, comma == std::string_view::npos ? std::string_view::npos : comma - start);
+            const auto token =
+              text.substr(start, comma == std::string_view::npos ? std::string_view::npos : comma - start);
             std::size_t left = 0;
             std::size_t right = token.size();
             while (left < right && std::isspace(static_cast<unsigned char>(token[left]))) {

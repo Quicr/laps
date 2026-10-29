@@ -29,6 +29,23 @@ TEST_CASE("admin namespace layout")
     CHECK(split_ids->subscribe_prefix == std::vector<std::string>{ "laps", "admin", "relay", "b" });
     CHECK(split_ids->request == std::vector<std::string>{ "laps", "admin", "relay", "b", "admin", "client" });
     CHECK(split_ids->reply == std::vector<std::string>{ "laps", "admin", "admin", "client", "relay", "b" });
+
+    const auto same_endpoint = laps::MakeAdminTrackLayout("laps/admin", "relay-b", "relay-b", error);
+    CHECK_FALSE(same_endpoint.has_value());
+    CHECK(error.find("begin with the target relay endpoint") != std::string::npos);
+
+    const auto client_extends_relay = laps::MakeAdminTrackLayout("laps/admin", "relay-b", "relay-b/extra", error);
+    CHECK_FALSE(client_extends_relay.has_value());
+
+    const auto string_prefix = laps::MakeAdminTrackLayout("laps/admin", "relay-b", "relay-b-extra", error);
+    REQUIRE(string_prefix.has_value());
+    CHECK_FALSE(laps::AdminClientSuffix(quicr::TrackNamespace(string_prefix->reply), string_prefix->subscribe_prefix)
+                  .has_value());
+
+    const auto partial_tuple = laps::MakeAdminTrackLayout("laps/admin", "relay/b", "relay/extra", error);
+    REQUIRE(partial_tuple.has_value());
+    CHECK_FALSE(laps::AdminClientSuffix(quicr::TrackNamespace(partial_tuple->reply), partial_tuple->subscribe_prefix)
+                  .has_value());
 }
 
 TEST_CASE("admin rpc json")
@@ -138,11 +155,10 @@ TEST_CASE("admin rpc json")
     CHECK(peer_json.find("\"contact\":\"relay-a\"") != std::string::npos);
     CHECK(peer_json.find("\"node_type\":\"edge\"") != std::string::npos);
     CHECK(peer_json.find("\"metrics\":{\"srtt_us\":1500,\"connect_time_us\":1720000000000000,"
-                          "\"connect_time\":\"2024-07-03 09:46:40\",\"subscribe_tracks\":4,\"publishes\":2}") !=
+                         "\"connect_time\":\"2024-07-03 09:46:40\",\"subscribe_tracks\":4,\"publishes\":2}") !=
           std::string::npos);
-    CHECK(peer_json.find(
-            "\"metrics\":{\"srtt_us\":0,\"connect_time_us\":0,\"connect_time\":\"\",\"subscribe_tracks\":0,\"publishes\":0}") !=
-          std::string::npos);
+    CHECK(peer_json.find("\"metrics\":{\"srtt_us\":0,\"connect_time_us\":0,\"connect_time\":\"\",\"subscribe_tracks\":"
+                         "0,\"publishes\":0}") != std::string::npos);
     CHECK(peer_json.find("192.0.2.20") != std::string::npos);
     CHECK(peer_json.find("\"node_id\":\"0.0:0.42\"") != std::string::npos);
     const auto dialed_pos = peer_json.find("\"role\":\"dialed\"");
@@ -178,9 +194,9 @@ TEST_CASE("admin rpc json")
     std::vector<laps::AdminResultCall> calls;
     calls.push_back({ "state", encoded });
     calls.push_back({ "peers", laps::EncodeAdminResult("9", identity, peer_json) });
-    calls.push_back({ "add-peer", laps::EncodeAdminResult("10", identity, "{\"host\":\"192.0.2.10\",\"port\":33434}") });
     calls.push_back(
-      { "add-peer", laps::EncodeAdminError("11", identity, "duplicate peer 192.0.2.10:33434") });
+      { "add-peer", laps::EncodeAdminResult("10", identity, "{\"host\":\"192.0.2.10\",\"port\":33434}") });
+    calls.push_back({ "add-peer", laps::EncodeAdminError("11", identity, "duplicate peer 192.0.2.10:33434") });
     const auto document = laps::EncodeAdminResultsDocument(calls, "fallback");
     CHECK(document.find("\"api_version\":" + std::to_string(laps::kAdminApiVersion)) != std::string::npos);
     CHECK(document.find("\"relay_id\":\"relay-b\"") != std::string::npos);
@@ -250,19 +266,20 @@ TEST_CASE("admin metrics dump")
       { R"({"type":"connection","connection_handle":10})", R"({"type":"connection","connection_handle":2})" },
       { R"({"type":"publish","track_namespace":"media/live","track_name":"video"})",
         R"({"type":"subscribe","track_namespace":"media/live","track_name":"video"})" });
-    CHECK(dump ==
-          R"({"connections":[{"type":"connection","connection_handle":10},{"type":"connection","connection_handle":2}],"tracks":[{"type":"publish","track_namespace":"media/live","track_name":"video"},{"type":"subscribe","track_namespace":"media/live","track_name":"video"}]})");
+    CHECK(
+      dump ==
+      R"({"connections":[{"type":"connection","connection_handle":10},{"type":"connection","connection_handle":2}],"tracks":[{"type":"publish","track_namespace":"media/live","track_name":"video"},{"type":"subscribe","track_namespace":"media/live","track_name":"video"}]})");
     CHECK(laps::EncodeAdminMetrics({}, {}) == R"({"connections":[],"tracks":[]})");
     CHECK(laps::PrettyPrintJson(dump).has_value());
 }
 
 TEST_CASE("admin track and namespace lists")
 {
-    const auto tracks = laps::EncodeAdminTrackList(
-      "subscriptions",
-      { { 11, "media/live", "video" }, { 10, "media/\"a\"", "name" } });
-    CHECK(tracks ==
-          R"({"subscriptions":[{"connection_handle":11,"track_namespace":"media/live","track_name":"video"},{"connection_handle":10,"track_namespace":"media/\"a\"","track_name":"name"}]})");
+    const auto tracks =
+      laps::EncodeAdminTrackList("subscriptions", { { 11, "media/live", "video" }, { 10, "media/\"a\"", "name" } });
+    CHECK(
+      tracks ==
+      R"({"subscriptions":[{"connection_handle":11,"track_namespace":"media/live","track_name":"video"},{"connection_handle":10,"track_namespace":"media/\"a\"","track_name":"name"}]})");
     CHECK(laps::EncodeAdminTrackList("publishes", {}) == R"({"publishes":[]})");
 
     laps::AdminNamespaceEntry announced;
@@ -279,8 +296,9 @@ TEST_CASE("admin track and namespace lists")
     CHECK(namespaces.find("\"tracks\":[{\"track_alias\":99,\"track_name\":\"video\"},{\"track_alias\":100,"
                           "\"track_name\":\"\"}]") != std::string::npos);
     const auto prefixes = laps::EncodeAdminNamespaceList("subscribe_tracks", { local });
-    CHECK(prefixes ==
-          R"({"subscribe_tracks":[{"connection_handle":18446744073709551615,"local":true,"track_namespace":"laps/admin/relay-b"}]})");
+    CHECK(
+      prefixes ==
+      R"({"subscribe_tracks":[{"connection_handle":18446744073709551615,"local":true,"track_namespace":"laps/admin/relay-b"}]})");
     CHECK(laps::EncodeAdminNamespaceList("subscribe_namespaces", {}) == R"({"subscribe_namespaces":[]})");
     CHECK(laps::PrettyPrintJson(tracks).has_value());
     CHECK(laps::PrettyPrintJson(prefixes).has_value());

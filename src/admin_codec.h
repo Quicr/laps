@@ -241,12 +241,23 @@ namespace laps {
      * @param base_prefix     Slash-delimited base, such as laps/admin
      * @param relay_endpoint  Relay endpoint id. A slash is a tuple delimiter
      * @param client_endpoint Admin client endpoint id. A slash is a tuple delimiter
-     * @param error           Set when the names are empty or the namespace would exceed 32 entries
+     * @param error           Set when the names are empty, the namespace would exceed 32 entries, or the
+     *                        client endpoint begins with the relay endpoint
      */
     std::optional<AdminTrackLayout> MakeAdminTrackLayout(std::string_view base_prefix,
                                                          std::string_view relay_endpoint,
                                                          std::string_view client_endpoint,
                                                          std::string& error);
+
+    /**
+     * @brief True when a reply namespace would match this relay's admin subscribe prefix
+     *
+     * @details The reply is `base/client/relay` and the prefix is `base/relay`. That reply is still
+     *      under the prefix when the client tuples begin with the relay tuples, including when the
+     *      two endpoint ids are the same. Publishing that reply would be consumed as another request.
+     */
+    bool AdminReplyOverlapsSubscribePrefix(const std::vector<std::string>& client_entries,
+                                           const std::vector<std::string>& relay_entries);
 
     /// Entries after subscribe_prefix, when the namespace is a longer match. Empty when it is not.
     std::optional<std::vector<std::string>> AdminClientSuffix(const quicr::TrackNamespace& track_namespace,
@@ -294,8 +305,7 @@ namespace laps {
     std::string EncodeAdminNamespaceList(std::string_view field, const std::vector<AdminNamespaceEntry>& entries);
 
     /// `connections` and `tracks` are JSON objects already encoded, in dump order.
-    std::string EncodeAdminMetrics(const std::vector<std::string>& connections,
-                                   const std::vector<std::string>& tracks);
+    std::string EncodeAdminMetrics(const std::vector<std::string>& connections, const std::vector<std::string>& tracks);
 
     /// Split a comma-delimited parameter argument. Tokens are trimmed. Empty tokens are kept.
     std::vector<std::string> SplitAdminParams(std::string_view text);

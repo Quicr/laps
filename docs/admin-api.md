@@ -36,6 +36,8 @@ reply    laps/admin/admin/client/relay/b
 
 A namespace may contain at most 32 tuple entries. The relay refuses to start when the subscribe prefix would exceed that limit, and `lapsAdmin` refuses to connect when the request or reply namespace would.
 
+The client endpoint must not begin with the target relay endpoint as namespace tuples. Otherwise `laps/admin/<client>/<relay>` is still under the subscribe prefix `laps/admin/<relay>`, and the relay would consume its own reply as another request. The same endpoint id is the direct case: request and reply are the same track. `lapsAdmin` refuses that layout. The relay also consumes the request and does not publish a reply. A client id that only shares a string prefix, such as `relay-b-extra` against `relay-b`, is a different tuple and is allowed.
+
 ```mermaid
 sequenceDiagram
     participant Admin as lapsAdmin
@@ -554,7 +556,7 @@ The client connects, reads the endpoint id from the relay SETUP, subscribes to t
 | method parameters | next argument | Required after `add-peer`, `remove-peer`, and `restart-peer`. Commas separate values. Each value is one call, as `host:port` or `[ipv6]:port`. |
 | `--uri` | `moq://127.0.0.1:33435` | Relay URI. `33435` is the `lapsRelay` default listen port. |
 | `--target-endpoint` | SETUP endpoint id | Target relay endpoint. It may differ from the relay at `--uri`. Omit it to use the SETUP endpoint id. |
-| `--endpoint-id` | `admin-<pid>` | This client's endpoint id, appended to the request namespace and placed before the relay id in the reply namespace. |
+| `--endpoint-id` | `admin-<pid>` | This client's endpoint id, appended to the request namespace and placed before the relay id in the reply namespace. It must not begin with the target relay endpoint. |
 | `--admin-namespace` | `laps/admin` | Same base prefix the relay was given. |
 | `--timeout-ms` | `5000` | Time allowed to connect, to be allowed to publish, and to receive each reply. The QUIC idle timeout is twice this value. |
 | `--out` | stdout | Write the JSON document to this file instead of stdout. |
