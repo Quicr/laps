@@ -43,6 +43,17 @@ namespace laps {
             return entries;
         }
 
+        std::vector<std::string> NamespaceEntries(const quicr::TrackNamespace& name_space)
+        {
+            std::vector<std::string> entries;
+            const auto& raw = name_space.GetEntries();
+            entries.reserve(raw.size());
+            for (const auto& entry : raw) {
+                entries.emplace_back(reinterpret_cast<const char*>(entry.data()), entry.size());
+            }
+            return entries;
+        }
+
         std::vector<std::uint8_t> BytesFromString(std::string_view value)
         {
             return { value.begin(), value.end() };
@@ -280,7 +291,9 @@ namespace laps {
                                              std::uint64_t connection_handle,
                                              const quicr::FullTrackName& track_name)
     {
-        TrackSampleKey key{ type, track_name.NamespaceStr(), std::string(track_name.NameStr()), connection_handle };
+        TrackSampleKey key{
+            type, NamespaceEntries(track_name.name_space), std::string(track_name.NameStr()), connection_handle
+        };
         std::lock_guard<std::mutex> lock(tracks_mutex_);
         track_samples_.erase(key);
     }
@@ -392,9 +405,11 @@ namespace laps {
         out << "}\n";
 
         const auto line = out.str();
-        RememberTrack(
-          TrackSampleKey{ TypeName(MetricType::kSubscribe), track_namespace, std::string(name), connection_handle },
-          line);
+        RememberTrack(TrackSampleKey{ TypeName(MetricType::kSubscribe),
+                                      NamespaceEntries(track_name.name_space),
+                                      std::string(name),
+                                      connection_handle },
+                      line);
         QueueSample({ line });
     }
 
@@ -421,9 +436,11 @@ namespace laps {
         out << "}\n";
 
         const auto line = out.str();
-        RememberTrack(
-          TrackSampleKey{ TypeName(MetricType::kPublish), track_namespace, std::string(name), connection_handle },
-          line);
+        RememberTrack(TrackSampleKey{ TypeName(MetricType::kPublish),
+                                      NamespaceEntries(track_name.name_space),
+                                      std::string(name),
+                                      connection_handle },
+                      line);
         QueueSample({ line });
     }
 

@@ -479,7 +479,7 @@ Method name: `metrics`.
 
 The result is the latest sample of each connection and each track that is still active. These are the same JSON objects the relay publishes on the metrics track, held until the next sample replaces them. A track sample is dropped when that track's handler is destroyed, including a relay-local or peered track on connection handle 0. Closing a connection drops that connection's samples too. A connection or track that has not been sampled yet is omitted. Sampling follows the relay's metrics interval, which defaults to 5000 ms, so a dump immediately after a connection opens can be empty.
 
-`connections` is connection-level metrics, one object per connection, ordered by `connection_handle`. `tracks` is track-level metrics. A track the relay is sending to a subscriber has `type` `subscribe`. A track the relay is receiving from a publisher has `type` `publish`. Tracks are ordered by namespace, name, type, then connection handle. Field meanings are in [METRICS.md](METRICS.md).
+`connections` is connection-level metrics, one object per connection, ordered by `connection_handle`. `tracks` is track-level metrics. A track the relay is sending to a subscriber has `type` `subscribe`. A track the relay is receiving from a publisher has `type` `publish`. Each sample is kept by the track's namespace tuples, so a slash inside one tuple does not replace a sample whose tuples are separate. `track_namespace` in the object still joins those tuples with `/`. Tracks are ordered by those tuples, then name, type, and connection handle. Field meanings are in [METRICS.md](METRICS.md).
 
 `lapsAdmin` prints this object at `results["metrics"]`:
 

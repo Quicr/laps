@@ -139,14 +139,15 @@ namespace laps {
         struct TrackSampleKey
         {
             std::string type;
-            std::string track_namespace;
+            /// Namespace tuples. A slash inside one tuple must not collide with several tuples.
+            std::vector<std::string> namespace_entries;
             std::string track_name;
             std::uint64_t connection_handle{ 0 };
 
             bool operator<(const TrackSampleKey& other) const
             {
-                if (track_namespace != other.track_namespace) {
-                    return track_namespace < other.track_namespace;
+                if (namespace_entries != other.namespace_entries) {
+                    return namespace_entries < other.namespace_entries;
                 }
                 if (track_name != other.track_name) {
                     return track_name < other.track_name;
@@ -189,7 +190,8 @@ namespace laps {
         std::map<std::uint64_t, RemoteInfo> remote_by_connection_;
         /// Latest metrics-track object for each connection, without the trailing newline.
         std::map<std::uint64_t, std::string> connection_samples_;
-        /// Latest metrics-track object for each track, keyed so a dump is ordered by namespace and name.
+        /// Latest metrics-track object for each track, keyed by its namespace tuples so a dump is ordered
+        /// by those tuples, then name.
         std::map<TrackSampleKey, std::string> track_samples_;
     };
 } // namespace laps

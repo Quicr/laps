@@ -53,7 +53,7 @@ name: laps.metrics.openapi.v1
 
 The OpenAPI 3.1 schema is published in [`docs/metrics.openapi.yaml`](metrics.openapi.yaml). It defines a `MetricsSample` schema with a `type` discriminator over `connection`, `subscribe`, and `publish` payloads.
 
-`lapsAdmin metrics` returns the latest sample of each connection and each track that is still active. `connections` holds the connection-level samples. `tracks` holds the track-level samples, both `subscribe` and `publish`. A connection or track appears after its first sample and leaves when that connection closes or that track's handler is destroyed. See [admin-api.md](admin-api.md).
+`lapsAdmin metrics` returns the latest sample of each connection and each track that is still active. `connections` holds the connection-level samples. `tracks` holds the track-level samples, both `subscribe` and `publish`. A track sample is kept by its namespace tuples. A slash inside one tuple does not replace a sample whose tuples are separate, even when joining the tuples with `/` prints the same `track_namespace`. A connection or track appears after its first sample and leaves when that connection closes or that track's handler is destroyed. See [admin-api.md](admin-api.md).
 
 ## Common Fields
 
@@ -162,7 +162,7 @@ Subscribe-specific fields:
 | Field | Description |
 | --- | --- |
 | `remote_endpoint_id` | Remote endpoint ID from the subscribing client's `CLIENT_SETUP`. Empty until setup is received. |
-| `track_namespace` | Namespace of the content track. |
+| `track_namespace` | Namespace of the content track, with `/` between tuple entries. |
 | `track_name` | Name of the content track. |
 | `bytes` | Payload bytes sent to the subscriber during the sample period. |
 | `objects` | Objects sent to the subscriber during the sample period. |
@@ -199,7 +199,7 @@ Publish-specific fields:
 | Field | Description |
 | --- | --- |
 | `remote_endpoint_id` | Remote endpoint ID from the publishing client's `CLIENT_SETUP`. Empty until setup is received. |
-| `track_namespace` | Namespace of the content track. |
+| `track_namespace` | Namespace of the content track, with `/` between tuple entries. |
 | `track_name` | Name of the content track. |
 | `bytes` | Payload bytes received from the publisher during the sample period. |
 | `objects` | Objects received from the publisher during the sample period. |
