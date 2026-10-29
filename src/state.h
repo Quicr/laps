@@ -12,7 +12,9 @@ namespace laps {
 
     struct State
     {
-        std::mutex state_mutex;
+        /// Guards the maps below. Recursive because a transport callback and a peered admin snapshot,
+        /// or a callback already holding the lock, can enter another callback on the same thread.
+        std::recursive_mutex state_mutex;
 
         /**
          * Request Transaction struct to state track the active request

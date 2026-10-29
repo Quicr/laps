@@ -206,7 +206,7 @@ Error on the wire:
 
 Method name: `state`.
 
-The map counts are taken while `state_.state_mutex` is held. `accepted_connections` is taken under `sessions_mutex_` and `peering_interests` under `peering_interest_mutex_` during that hold. The `peers` method is separate and does not hold `state_mutex`. The object cache has its own lock, taken by object insertion, fetch, largest-object lookup, and this snapshot. A request from a client connected to this relay runs on the transport thread, which is also the thread that inserts cache entries. A request that arrived through peering runs on the peering thread and can read the cache while that insert is in progress.
+The map counts are taken while `state_.state_mutex` is held. The same lock covers every read and write of those maps, including the transport callbacks that insert them and a peered admin snapshot. `accepted_connections` is taken under `sessions_mutex_` and `peering_interests` under `peering_interest_mutex_` during that hold. The `peers` method is separate and does not hold `state_mutex`. The object cache has its own lock, taken by object insertion, fetch, largest-object lookup, and this snapshot. A request from a client connected to this relay runs on the transport thread. A request that arrived through peering runs on the peering thread.
 
 `cache_tracks` remains the number of cached tracks. The same count is `cache.tracks`.
 

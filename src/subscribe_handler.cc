@@ -770,6 +770,7 @@ namespace laps {
                 case Status::kError:
                     reason = "subscribe error";
                     if (GetTrackAlias().has_value()) {
+                        std::lock_guard state_lock(server_.state_.state_mutex);
                         auto& anno_tracks =
                           server_.state_.pub_namespace_active[{ GetFullTrackName().name_space, GetConnectionId() }];
                         anno_tracks.erase(GetTrackAlias().value());

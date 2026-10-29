@@ -95,7 +95,7 @@ namespace laps {
         std::vector<std::shared_ptr<PublishNamespaceHandler>> namespace_handlers;
 
         {
-            std::lock_guard<std::mutex> _(state_.state_mutex);
+            std::lock_guard _(state_.state_mutex);
 
             for (auto& [_, handler] : state_.pub_subscribes) {
                 if (handler) {
@@ -180,10 +180,13 @@ namespace laps {
 
         // Remove all subscribe announces for this connection handle
         std::vector<quicr::TrackNamespace> remove_ns;
-        for (auto& [ns, conns] : state_.subscribe_tracks) {
-            auto it = conns.find(connection_handle);
-            if (it != conns.end()) {
-                remove_ns.emplace_back(ns);
+        {
+            std::lock_guard state_lock(state_.state_mutex);
+            for (auto& [ns, conns] : state_.subscribe_tracks) {
+                auto it = conns.find(connection_handle);
+                if (it != conns.end()) {
+                    remove_ns.emplace_back(ns);
+                }
             }
         }
 
@@ -192,9 +195,12 @@ namespace laps {
         }
 
         std::vector<quicr::TrackNamespace> remove_sub_ns;
-        for (const auto& [ns, conns] : state_.subscribe_namespaces) {
-            if (conns.find(connection_handle) != conns.end()) {
-                remove_sub_ns.push_back(ns);
+        {
+            std::lock_guard state_lock(state_.state_mutex);
+            for (const auto& [ns, conns] : state_.subscribe_namespaces) {
+                if (conns.find(connection_handle) != conns.end()) {
+                    remove_sub_ns.push_back(ns);
+                }
             }
         }
         for (const auto& ns : remove_sub_ns) {
@@ -227,6 +233,7 @@ namespace laps {
         }
 
         // Drop any namespaces that were fanned out to this connection
+        std::lock_guard state_lock(state_.state_mutex);
         for (auto it = fanout_namespaces_.begin(); it != fanout_namespaces_.end();) {
             it = it->first.second == connection_handle ? fanout_namespaces_.erase(it) : std::next(it);
         }
@@ -362,6 +369,7 @@ namespace laps {
         NotifyPeeringSubscribe(track_full_name, update_attrs);
 
         // Notify all publishers that there is a new group request
+        std::lock_guard state_lock(state_.state_mutex);
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
              it != state_.pub_subscribes.end();
              ++it) {
@@ -387,6 +395,7 @@ namespace laps {
     void ClientManager::FanoutPublishNamespace(const quicr::TrackNamespace& track_namespace,
                                                std::uint64_t exclude_connection)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         // TODO: Fix O(prefix namespaces) matching
         for (const auto& [prefix, conns] : state_.subscribe_tracks) {
             if (!prefix.HasSamePrefix(track_namespace)) {
@@ -422,6 +431,7 @@ namespace laps {
 
     void ClientManager::FanoutPublishNamespaceDone(const quicr::TrackNamespace& track_namespace)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         for (auto it = fanout_namespaces_.lower_bound({ track_namespace, 0 }); it != fanout_namespaces_.end();) {
             if (it->first.first != track_namespace) {
                 break;
@@ -439,6 +449,7 @@ namespace laps {
                                                   std::uint64_t exclude_connection,
                                                   bool done)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         for (const auto& [prefix, connections] : state_.subscribe_namespaces) {
             const auto match = prefix.IsPrefixOf(track_namespace);
             if (match == std::partial_ordering::unordered || match == std::partial_ordering::greater) {
@@ -484,6 +495,7 @@ namespace laps {
 
     bool ClientManager::NamespaceStillPublished(const quicr::TrackNamespace& track_namespace) const
     {
+        std::lock_guard state_lock(state_.state_mutex);
         for (const auto& [key, _] : state_.pub_namespace_active) {
             if (key.first == track_namespace) {
                 return true;
@@ -501,6 +513,7 @@ namespace laps {
 
     void ClientManager::DropSubscribeNamespace(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         const auto it = state_.subscribe_namespaces.find(prefix);
         if (it == state_.subscribe_namespaces.end() || it->second.erase(connection_handle) == 0) {
             return;
@@ -524,6 +537,7 @@ namespace laps {
     void ClientManager::PublishNamespaceDoneReceived(const std::shared_ptr<quicr::Session>& session,
                                                      std::uint64_t request_id)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         const auto connection_handle = ConnectionHandle(session);
 
         auto it = state_.requests.find({ connection_handle, request_id });
@@ -581,7 +595,7 @@ namespace laps {
         std::vector<std::shared_ptr<SubscribeTrackHandler>> top_n_removal;
 
         {
-            std::lock_guard<std::mutex> _(state_.state_mutex);
+            std::lock_guard _(state_.state_mutex);
 
             // Collect publisher subscriptions for this connection.
             std::vector<std::pair<std::uint64_t, std::uint64_t>> pub_subs;
@@ -640,6 +654,7 @@ namespace laps {
       const quicr::TrackNamespace& track_namespace,
       const quicr::PublishNamespaceAttributes& attrs)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         const auto connection_handle = ConnectionHandle(session);
 
         auto [req_it, _] = state_.requests.try_emplace({ connection_handle, attrs.request_id },
@@ -1575,7 +1590,7 @@ namespace laps {
       const quicr::TrackNamespace& prefix_namespace,
       [[maybe_unused]] const quicr::SubscribeNamespaceAttributes& attributes)
     {
-
+        std::lock_guard state_lock(state_.state_mutex);
         const auto connection_handle = ConnectionHandle(session);
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
@@ -1665,6 +1680,7 @@ namespace laps {
       const quicr::TrackNamespace& prefix_namespace,
       const quicr::SubscribeNamespaceAttributes& attributes)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         const auto connection_handle = ConnectionHandle(session);
         auto th = quicr::TrackHash({ prefix_namespace, {} });
 
@@ -1764,6 +1780,7 @@ namespace laps {
     void ClientManager::UnsubscribeNamespaceReceived(const std::shared_ptr<quicr::Session>& session,
                                                      const quicr::TrackNamespace& prefix_namespace)
     {
+        std::lock_guard state_lock(state_.state_mutex);
         const auto connection_handle = ConnectionHandle(session);
         DropSubscribeNamespace(connection_handle, prefix_namespace);
 
@@ -1828,29 +1845,32 @@ namespace laps {
         SPDLOG_LOGGER_INFO(
           LOGGER, "Publish Done connection handle: {0} request_id: {1}", connection_handle, request_id);
 
-        const auto s_it = state_.pub_subscribes_by_req_id.find({ request_id, connection_handle });
-        if (s_it == state_.pub_subscribes_by_req_id.end()) {
-            SPDLOG_LOGGER_WARN(LOGGER,
-                               "Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
-                               connection_handle,
-                               request_id);
-            return;
+        std::shared_ptr<SubscribeTrackHandler> publisher_handler;
+        {
+            std::lock_guard lookup(state_.state_mutex);
+            const auto s_it = state_.pub_subscribes_by_req_id.find({ request_id, connection_handle });
+            if (s_it == state_.pub_subscribes_by_req_id.end()) {
+                SPDLOG_LOGGER_WARN(LOGGER,
+                                   "Unable to find subscribe by request id for connection handle: {0} request_id: {1}",
+                                   connection_handle,
+                                   request_id);
+                return;
+            }
+            publisher_handler = s_it->second;
         }
 
-        const auto finished_track = s_it->second->GetFullTrackName();
+        const auto finished_track = publisher_handler->GetFullTrackName();
         if (admin_service_.InterestedIn(finished_track)) {
             admin_service_.ReleaseRequest(finished_track);
         }
 
         if (connection_handle)
-            peer_manager_.Withdraw(ToPeeringTrack(s_it->second->GetFullTrackName()),
+            peer_manager_.Withdraw(ToPeeringTrack(publisher_handler->GetFullTrackName()),
                                    moq::peering::Announcement::kTrack);
 
-        const auto publisher_handler = s_it->second;
+        std::unique_lock lock(state_.state_mutex);
 
-        std::unique_lock<std::mutex> lock(state_.state_mutex);
-
-        auto th = quicr::TrackHash(s_it->second->GetFullTrackName());
+        auto th = quicr::TrackHash(publisher_handler->GetFullTrackName());
 
         state_.pub_subscribes.erase({ th.track_fullname_hash, connection_handle });
 
@@ -1926,7 +1946,7 @@ namespace laps {
             }
         }
 
-        state_.pub_subscribes_by_req_id.erase(s_it);
+        state_.pub_subscribes_by_req_id.erase({ request_id, connection_handle });
         lock.unlock();
 
         if (!have_publishers) {
@@ -1950,7 +1970,7 @@ namespace laps {
             return;
         }
 
-        std::lock_guard<std::mutex> _(state_.state_mutex);
+        std::lock_guard _(state_.state_mutex);
 
         auto track_alias = ta_it->second;
 
@@ -2070,6 +2090,7 @@ namespace laps {
 
         const auto largest = GetLargestAvailable(track_full_name);
 
+        std::lock_guard state_lock(state_.state_mutex);
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
              it != state_.pub_subscribes.end();
              ++it) {
@@ -2097,6 +2118,7 @@ namespace laps {
     {
         const auto connection_handle = ConnectionHandle(session);
         auto th = quicr::TrackHash(track_full_name);
+        std::lock_guard state_lock(state_.state_mutex);
 
         auto it = state_.subscribes.find({ th.track_fullname_hash, connection_handle });
         if (it != state_.subscribes.end()) {
@@ -2800,13 +2822,18 @@ namespace laps {
                                            const quicr::ObjectHeaders& object_headers,
                                            quicr::BytesSpan data)
     {
-        const auto it = state_.pub_subscribes.find({ track_fullname_hash, 0 });
-        if (it == state_.pub_subscribes.end() || !it->second) {
-            return false;
+        std::shared_ptr<SubscribeTrackHandler> handler;
+        {
+            std::lock_guard state_lock(state_.state_mutex);
+            const auto it = state_.pub_subscribes.find({ track_fullname_hash, 0 });
+            if (it == state_.pub_subscribes.end() || !it->second) {
+                return false;
+            }
+            handler = it->second;
         }
 
-        it->second->ObjectReceived(object_headers, data);
-        it->second->ForwardLocalObject(object_headers, data);
+        handler->ObjectReceived(object_headers, data);
+        handler->ForwardLocalObject(object_headers, data);
         return true;
     }
 
@@ -2815,26 +2842,36 @@ namespace laps {
                                          std::optional<uint64_t> stream_id,
                                          std::shared_ptr<const std::vector<uint8_t>> data)
     {
-        const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
-        if (it == state_.pub_subscribes.end()) {
-            return;
+        std::shared_ptr<SubscribeTrackHandler> handler;
+        {
+            std::lock_guard state_lock(state_.state_mutex);
+            const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
+            if (it == state_.pub_subscribes.end()) {
+                return;
+            }
+            handler = it->second;
         }
 
         if (stream_id.has_value()) {
-            it->second->PeerStreamDataReceived(*stream_id, std::move(data), is_new_stream);
+            handler->PeerStreamDataReceived(*stream_id, std::move(data), is_new_stream);
         } else {
-            it->second->DgramDataRecv(std::move(data));
+            handler->DgramDataRecv(std::move(data));
         }
     }
 
     void ClientManager::PeerStreamClosed(std::uint64_t track_full_name_hash, uint64_t stream_id, bool reset)
     {
-        const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
-        if (it == state_.pub_subscribes.end()) {
-            return;
+        std::shared_ptr<SubscribeTrackHandler> handler;
+        {
+            std::lock_guard state_lock(state_.state_mutex);
+            const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
+            if (it == state_.pub_subscribes.end()) {
+                return;
+            }
+            handler = it->second;
         }
 
-        it->second->PeerStreamClosedReceived(stream_id, reset);
+        handler->PeerStreamClosedReceived(stream_id, reset);
     }
 
     void ClientManager::MetricsSampled(const std::shared_ptr<quicr::Session>& session,
