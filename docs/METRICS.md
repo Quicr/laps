@@ -53,7 +53,7 @@ name: laps.metrics.openapi.v1
 
 The OpenAPI 3.1 schema is published in [`docs/metrics.openapi.yaml`](metrics.openapi.yaml). It defines a `MetricsSample` schema with a `type` discriminator over `connection`, `subscribe`, and `publish` payloads.
 
-`lapsAdmin metrics` returns the latest sample of each connection and each track through the admin API. `connections` holds the connection-level samples. `tracks` holds the track-level samples, both `subscribe` and `publish`. A connection or track appears after its first sample. See [admin-api.md](admin-api.md).
+`lapsAdmin metrics` returns the latest sample of each connection and each track that is still active. `connections` holds the connection-level samples. `tracks` holds the track-level samples, both `subscribe` and `publish`. A connection or track appears after its first sample and leaves when that connection closes or that track's handler is destroyed. See [admin-api.md](admin-api.md).
 
 ## Common Fields
 

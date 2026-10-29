@@ -31,6 +31,7 @@ namespace laps {
 
     SubscribeTrackHandler::~SubscribeTrackHandler()
     {
+        server_.metrics_publisher_.RemoveSubscribeTrack(GetConnectionId(), GetFullTrackName());
         for (auto& [conn_handle, handler] : subscribers_) {
             server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), handler);
         }

@@ -19,6 +19,8 @@ namespace laps {
                             ClientManager& server,
                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt);
 
+        ~PublishTrackHandler();
+
         void StatusChanged(Status status) override;
         void MetricsSampled(const quicr::PublishTrackMetrics& metrics) override;
 

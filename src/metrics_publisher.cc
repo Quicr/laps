@@ -262,9 +262,27 @@ namespace laps {
         std::lock_guard<std::mutex> lock(tracks_mutex_);
         remote_by_connection_.erase(connection_handle);
         connection_samples_.erase(connection_handle);
-        std::erase_if(track_samples_, [&](const auto& item) {
-            return item.first.connection_handle == connection_handle;
-        });
+        std::erase_if(track_samples_,
+                      [&](const auto& item) { return item.first.connection_handle == connection_handle; });
+    }
+
+    void MetricsPublisher::RemovePublishTrack(std::uint64_t connection_handle, const quicr::FullTrackName& track_name)
+    {
+        RemoveTrackSample(TypeName(MetricType::kSubscribe), connection_handle, track_name);
+    }
+
+    void MetricsPublisher::RemoveSubscribeTrack(std::uint64_t connection_handle, const quicr::FullTrackName& track_name)
+    {
+        RemoveTrackSample(TypeName(MetricType::kPublish), connection_handle, track_name);
+    }
+
+    void MetricsPublisher::RemoveTrackSample(const char* type,
+                                             std::uint64_t connection_handle,
+                                             const quicr::FullTrackName& track_name)
+    {
+        TrackSampleKey key{ type, track_name.NamespaceStr(), std::string(track_name.NameStr()), connection_handle };
+        std::lock_guard<std::mutex> lock(tracks_mutex_);
+        track_samples_.erase(key);
     }
 
     std::string MetricsPublisher::Dump() const
@@ -374,8 +392,9 @@ namespace laps {
         out << "}\n";
 
         const auto line = out.str();
-        RememberTrack(TrackSampleKey{ TypeName(MetricType::kSubscribe), track_namespace, std::string(name), connection_handle },
-                      line);
+        RememberTrack(
+          TrackSampleKey{ TypeName(MetricType::kSubscribe), track_namespace, std::string(name), connection_handle },
+          line);
         QueueSample({ line });
     }
 
@@ -402,8 +421,9 @@ namespace laps {
         out << "}\n";
 
         const auto line = out.str();
-        RememberTrack(TrackSampleKey{ TypeName(MetricType::kPublish), track_namespace, std::string(name), connection_handle },
-                      line);
+        RememberTrack(
+          TrackSampleKey{ TypeName(MetricType::kPublish), track_namespace, std::string(name), connection_handle },
+          line);
         QueueSample({ line });
     }
 

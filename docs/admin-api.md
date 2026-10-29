@@ -102,7 +102,7 @@ The interest is installed in `AdminService::Start()`, after metrics setup and be
 
 ## Request and reply objects
 
-Both directions use stream track mode. One RPC message is one MoQ object. The payload is a single JSON value encoded as UTF-8. Payloads larger than 65536 bytes are rejected.
+Both directions use stream track mode. One RPC message is one MoQ object. The payload is a single JSON value encoded as UTF-8. Payloads larger than 65536 bytes are rejected. Nesting deeper than 32 arrays or objects is rejected as well.
 
 `lapsAdmin` sends one object per call. Call index N uses group N, object 0, and subgroup 0, so the first call is group 0. The relay sends each reply as a new group on that client's reply track, with object 0 and subgroup 0. The reply group id starts at 0 and increases by one for each response to that client.
 
@@ -194,6 +194,7 @@ Error on the wire:
 | Condition | `error.message` |
 | --- | --- |
 | Payload larger than 65536 bytes | `request exceeds 65536 bytes` |
+| JSON nested deeper than 32 arrays or objects | `JSON nesting is too deep` |
 | Body is not one JSON object | Parser reason, such as `expected an object` |
 | Object has no `method` string | `request requires a method` |
 | `method` is not implemented | `unknown method` |
@@ -473,7 +474,7 @@ A successful result is printed at `results["add-peer"]`:
 
 Method name: `metrics`.
 
-The result is the latest sample of each connection and each track. These are the same JSON objects the relay publishes on the metrics track, held until the next sample replaces them. A connection or track that has not been sampled yet is omitted. Sampling follows the relay's metrics interval, which defaults to 5000 ms, so a dump immediately after a connection opens can be empty.
+The result is the latest sample of each connection and each track that is still active. These are the same JSON objects the relay publishes on the metrics track, held until the next sample replaces them. A track sample is dropped when that track's handler is destroyed, including a relay-local or peered track on connection handle 0. Closing a connection drops that connection's samples too. A connection or track that has not been sampled yet is omitted. Sampling follows the relay's metrics interval, which defaults to 5000 ms, so a dump immediately after a connection opens can be empty.
 
 `connections` is connection-level metrics, one object per connection, ordered by `connection_handle`. `tracks` is track-level metrics. A track the relay is sending to a subscriber has `type` `subscribe`. A track the relay is receiving from a publisher has `type` `publish`. Tracks are ordered by namespace, name, type, then connection handle. Field meanings are in [METRICS.md](METRICS.md).
 

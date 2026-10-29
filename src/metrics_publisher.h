@@ -60,6 +60,12 @@ namespace laps {
         void SetConnectionEndpointId(std::uint64_t connection_handle, const std::string& endpoint_id);
         void RemoveConnection(std::uint64_t connection_handle);
 
+        /// Drop the latest sample for a relay publish track (exported type "subscribe").
+        void RemovePublishTrack(std::uint64_t connection_handle, const quicr::FullTrackName& track_name);
+
+        /// Drop the latest sample for a relay subscribe track (exported type "publish").
+        void RemoveSubscribeTrack(std::uint64_t connection_handle, const quicr::FullTrackName& track_name);
+
         /// Latest sample of each connection and each track, as the admin `metrics` result body.
         std::string Dump() const;
 
@@ -155,6 +161,9 @@ namespace laps {
         RemoteInfo LookupRemote(std::uint64_t connection_handle);
         void RememberConnection(std::uint64_t connection_handle, const std::string& json_line);
         void RememberTrack(TrackSampleKey key, const std::string& json_line);
+        void RemoveTrackSample(const char* type,
+                               std::uint64_t connection_handle,
+                               const quicr::FullTrackName& track_name);
 
         bool QueueSample(MetricsSample sample);
 

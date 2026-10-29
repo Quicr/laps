@@ -65,6 +65,19 @@ TEST_CASE("admin rpc json")
     const auto broken = laps::ParseAdminMessage("{");
     CHECK_FALSE(broken.valid);
 
+    std::string nested(32, '[');
+    nested += "1";
+    nested.append(32, ']');
+    const auto deep_enough = laps::ParseAdminMessage("{\"method\":\"state\",\"extra\":" + nested + "}");
+    CHECK(deep_enough.valid);
+
+    nested.insert(nested.begin(), '[');
+    nested.push_back(']');
+    const auto too_deep = laps::ParseAdminMessage("{\"method\":\"state\",\"extra\":" + nested + "}");
+    CHECK_FALSE(too_deep.valid);
+    CHECK(too_deep.error.find("nesting") != std::string::npos);
+    CHECK_FALSE(laps::PrettyPrintJson(nested).has_value());
+
     laps::AdminRelayIdentity identity;
     identity.relay_id = "relay-b";
     identity.node_id = "0.0:0.1001";

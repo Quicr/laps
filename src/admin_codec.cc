@@ -15,6 +15,10 @@ namespace laps {
     namespace {
         constexpr std::size_t kMaxNamespaceEntries = 32;
 
+        /// Nested arrays and objects beyond this are rejected. The payload cap is 65536 bytes, which is
+        /// enough to nest past a thread stack when every level is one recursive call.
+        constexpr int kMaxJsonDepth = 32;
+
         std::string JsonEscape(std::string_view value);
 
         /// UTC `YYYY-MM-DD HH:MM:SS` for a Unix time in microseconds. Empty when `epoch_us` is 0.
@@ -137,8 +141,11 @@ namespace laps {
 
             void SkipRawValue() { SkipValue(); }
 
-            void SkipValue()
+            void SkipValue(int depth = 0)
             {
+                if (depth > kMaxJsonDepth) {
+                    throw std::runtime_error("JSON nesting is too deep");
+                }
                 SkipWs();
                 if (index_ >= input_.size()) {
                     throw std::runtime_error("expected a JSON value");
@@ -150,11 +157,11 @@ namespace laps {
                     return;
                 }
                 if (ch == '{') {
-                    SkipObject();
+                    SkipObject(depth);
                     return;
                 }
                 if (ch == '[') {
-                    SkipArray();
+                    SkipArray(depth);
                     return;
                 }
                 if (ch == 't') {
@@ -190,6 +197,9 @@ namespace laps {
             /// One JSON value, indented by depth * 2 spaces. Objects and arrays break across lines.
             std::string PrettyValue(int depth)
             {
+                if (depth > kMaxJsonDepth) {
+                    throw std::runtime_error("JSON nesting is too deep");
+                }
                 SkipWs();
                 if (index_ >= input_.size()) {
                     throw std::runtime_error("expected a JSON value");
@@ -324,7 +334,7 @@ namespace laps {
                 }
             }
 
-            void SkipObject()
+            void SkipObject(int depth)
             {
                 if (!Consume('{')) {
                     throw std::runtime_error("expected an object");
@@ -337,7 +347,7 @@ namespace laps {
                     if (!Consume(':')) {
                         throw std::runtime_error("expected ':'");
                     }
-                    SkipValue();
+                    SkipValue(depth + 1);
                     if (Consume('}')) {
                         return;
                     }
@@ -347,7 +357,7 @@ namespace laps {
                 }
             }
 
-            void SkipArray()
+            void SkipArray(int depth)
             {
                 if (!Consume('[')) {
                     throw std::runtime_error("expected an array");
@@ -356,7 +366,7 @@ namespace laps {
                     return;
                 }
                 while (true) {
-                    SkipValue();
+                    SkipValue(depth + 1);
                     if (Consume(']')) {
                         return;
                     }
