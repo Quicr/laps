@@ -178,35 +178,7 @@ namespace laps {
         SPDLOG_LOGGER_DEBUG(LOGGER, "Connection closed; connection_handle: {0} ", connection_handle);
 
         metrics_publisher_.RemoveConnection(connection_handle);
-
-        // Remove all subscribe announces for this connection handle
-        std::vector<quicr::TrackNamespace> remove_ns;
-        {
-            std::lock_guard state_lock(state_.state_mutex);
-            for (auto& [ns, conns] : state_.subscribe_tracks) {
-                auto it = conns.find(connection_handle);
-                if (it != conns.end()) {
-                    remove_ns.emplace_back(ns);
-                }
-            }
-        }
-
-        for (auto ns : remove_ns) {
-            UnsubscribeNamespaceReceived(session, ns);
-        }
-
-        std::vector<quicr::TrackNamespace> remove_sub_ns;
-        {
-            std::lock_guard state_lock(state_.state_mutex);
-            for (const auto& [ns, conns] : state_.subscribe_namespaces) {
-                if (conns.find(connection_handle) != conns.end()) {
-                    remove_sub_ns.push_back(ns);
-                }
-            }
-        }
-        for (const auto& ns : remove_sub_ns) {
-            DropSubscribeNamespace(connection_handle, ns);
-        }
+        PurgeConnectionNamespaces(connection_handle);
 
         // Subscriptions are keyed by the connection, not by a live session. The session was
         // already dropped above, so a later lookup cannot be what removes them.
@@ -231,12 +203,6 @@ namespace laps {
                     ++it;
                 }
             }
-        }
-
-        // Drop any namespaces that were fanned out to this connection
-        std::lock_guard state_lock(state_.state_mutex);
-        for (auto it = fanout_namespaces_.begin(); it != fanout_namespaces_.end();) {
-            it = it->first.second == connection_handle ? fanout_namespaces_.erase(it) : std::next(it);
         }
 
         PurgeClosedConnections();
@@ -961,7 +927,7 @@ namespace laps {
         {
             std::lock_guard lock(state_.state_mutex);
             const auto consider = [&](std::uint64_t handle) {
-                if (handle != 0 && !live.contains(handle)) {
+                if (handle != 0 && handle != kLocalAdminSubscriberConnection && !live.contains(handle)) {
                     stale.insert(handle);
                 }
             };
@@ -980,10 +946,27 @@ namespace laps {
             for (const auto& [key, _] : state_.requests) {
                 consider(key.first);
             }
+            for (const auto& [_, conns] : state_.subscribe_tracks) {
+                for (const auto& [handle, _] : conns) {
+                    consider(handle);
+                }
+            }
+            for (const auto& [_, conns] : state_.subscribe_namespaces) {
+                for (const auto handle : conns) {
+                    consider(handle);
+                }
+            }
+            for (const auto& [key, _] : fanout_namespaces_) {
+                consider(key.second);
+            }
+            for (const auto& entry : notified_namespaces_) {
+                consider(entry.second);
+            }
         }
 
         for (const auto handle : stale) {
             SPDLOG_LOGGER_INFO(LOGGER, "Purging state for closed connection handle {}", handle);
+            PurgeConnectionNamespaces(handle);
             ReleaseAdminReplies(handle);
             PurgePublishState(handle);
             PurgeSubscribeState(handle);
@@ -999,6 +982,40 @@ namespace laps {
         }
 
         ReleaseOrphanAdminReplies();
+    }
+
+    void ClientManager::PurgeConnectionNamespaces(std::uint64_t connection_handle)
+    {
+        std::vector<quicr::TrackNamespace> track_prefixes;
+        std::vector<quicr::TrackNamespace> namespace_prefixes;
+        {
+            std::lock_guard state_lock(state_.state_mutex);
+            for (const auto& [ns, conns] : state_.subscribe_tracks) {
+                if (conns.contains(connection_handle)) {
+                    track_prefixes.push_back(ns);
+                }
+            }
+            for (const auto& [ns, conns] : state_.subscribe_namespaces) {
+                if (conns.contains(connection_handle)) {
+                    namespace_prefixes.push_back(ns);
+                }
+            }
+        }
+
+        for (const auto& ns : track_prefixes) {
+            ReleaseSubscribeTracks(connection_handle, ns);
+        }
+        for (const auto& ns : namespace_prefixes) {
+            DropSubscribeNamespace(connection_handle, ns);
+        }
+
+        std::lock_guard state_lock(state_.state_mutex);
+        for (auto it = fanout_namespaces_.begin(); it != fanout_namespaces_.end();) {
+            it = it->first.second == connection_handle ? fanout_namespaces_.erase(it) : std::next(it);
+        }
+        for (auto it = notified_namespaces_.begin(); it != notified_namespaces_.end();) {
+            it = it->second == connection_handle ? notified_namespaces_.erase(it) : std::next(it);
+        }
     }
 
     void ClientManager::ReleaseOrphanAdminReplies()
@@ -1197,6 +1214,7 @@ namespace laps {
 
     std::vector<AdminNamespaceEntry> ClientManager::CollectAdminPublishNamespaces()
     {
+        PurgeClosedConnections();
         std::vector<AdminNamespaceEntry> entries;
         std::lock_guard state_lock(state_.state_mutex);
         entries.reserve(state_.pub_namespace_active.size());
@@ -1231,6 +1249,7 @@ namespace laps {
 
     std::vector<AdminNamespaceEntry> ClientManager::CollectAdminSubscribeNamespaces()
     {
+        PurgeClosedConnections();
         std::vector<AdminNamespaceEntry> entries;
         std::lock_guard state_lock(state_.state_mutex);
         for (const auto& [prefix, connections] : state_.subscribe_namespaces) {
@@ -1247,6 +1266,7 @@ namespace laps {
 
     std::vector<AdminNamespaceEntry> ClientManager::CollectAdminSubscribeTracks()
     {
+        PurgeClosedConnections();
         std::vector<AdminNamespaceEntry> entries;
         std::lock_guard state_lock(state_.state_mutex);
         for (const auto& [prefix, connections] : state_.subscribe_tracks) {
@@ -1781,8 +1801,13 @@ namespace laps {
     void ClientManager::UnsubscribeNamespaceReceived(const std::shared_ptr<quicr::Session>& session,
                                                      const quicr::TrackNamespace& prefix_namespace)
     {
+        ReleaseSubscribeTracks(ConnectionHandle(session), prefix_namespace);
+    }
+
+    void ClientManager::ReleaseSubscribeTracks(std::uint64_t connection_handle,
+                                               const quicr::TrackNamespace& prefix_namespace)
+    {
         std::lock_guard state_lock(state_.state_mutex);
-        const auto connection_handle = ConnectionHandle(session);
         DropSubscribeNamespace(connection_handle, prefix_namespace);
 
         auto it = state_.subscribe_tracks.find(prefix_namespace);

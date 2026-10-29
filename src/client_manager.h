@@ -426,6 +426,12 @@ namespace laps {
         /// Drop publish and subscribe state for connections that are no longer in sessions_.
         void PurgeClosedConnections();
 
+        /// Drop subscribe-tracks, subscribe-namespace, fan-out, and notified-namespace state for one connection.
+        void PurgeConnectionNamespaces(std::uint64_t connection_handle);
+
+        /// Drop one SUBSCRIBE_TRACKS interest. The caller does not hold state_mutex.
+        void ReleaseSubscribeTracks(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix);
+
         /// Drop connection-0 admin replies whose request publish is gone.
         void ReleaseOrphanAdminReplies();
 
