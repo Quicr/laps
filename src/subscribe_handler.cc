@@ -228,8 +228,9 @@ namespace laps {
 
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
-        // Cache Object
+        // Cache Object. The same lock covers a peered admin snapshot of this cache.
         if (!server_.config_.disable_cache) {
+            std::lock_guard cache_lock(server_.cache_mutex_);
             if (server_.cache_.count(GetTrackAlias().value()) == 0) {
                 server_.cache_.insert(std::make_pair(
                   GetTrackAlias().value(),

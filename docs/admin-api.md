@@ -205,7 +205,7 @@ Error on the wire:
 
 Method name: `state`.
 
-The map counts are taken while `state_.state_mutex` is held. `accepted_connections` is taken under `sessions_mutex_` and `peering_interests` under `peering_interest_mutex_` during that hold. The `peers` method is separate and does not hold `state_mutex`. The object cache has no separate lock. A request from a client connected to this relay runs on the transport thread, which is also the thread that inserts cache entries. A request that arrived through peering runs on the peering thread.
+The map counts are taken while `state_.state_mutex` is held. `accepted_connections` is taken under `sessions_mutex_` and `peering_interests` under `peering_interest_mutex_` during that hold. The `peers` method is separate and does not hold `state_mutex`. The object cache has its own lock, taken by object insertion, fetch, largest-object lookup, and this snapshot. A request from a client connected to this relay runs on the transport thread, which is also the thread that inserts cache entries. A request that arrived through peering runs on the peering thread and can read the cache while that insert is in progress.
 
 `cache_tracks` remains the number of cached tracks. The same count is `cache.tracks`.
 
@@ -556,7 +556,7 @@ The client connects, reads the endpoint id from the relay SETUP, subscribes to t
 | method parameters | next argument | Required after `add-peer`, `remove-peer`, and `restart-peer`. Commas separate values. Each value is one call, as `host:port` or `[ipv6]:port`. |
 | `--uri` | `moq://127.0.0.1:33435` | Relay URI. `33435` is the `lapsRelay` default listen port. |
 | `--target-endpoint` | SETUP endpoint id | Target relay endpoint. It may differ from the relay at `--uri`. Omit it to use the SETUP endpoint id. |
-| `--endpoint-id` | `admin-<pid>` | This client's endpoint id, appended to the request namespace and placed before the relay id in the reply namespace. It must not begin with the target relay endpoint. |
+| `--endpoint-id` | `admin-<pid>-<random>` | This client's endpoint id, appended to the request namespace and placed before the relay id in the reply namespace. The random suffix keeps two clients with the same pid from sharing a track. It must not begin with the target relay endpoint. |
 | `--admin-namespace` | `laps/admin` | Same base prefix the relay was given. |
 | `--timeout-ms` | `5000` | Time allowed to connect, to be allowed to publish, and to receive each reply. The QUIC idle timeout is twice this value. |
 | `--out` | stdout | Write the JSON document to this file instead of stdout. |

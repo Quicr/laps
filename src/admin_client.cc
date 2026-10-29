@@ -26,6 +26,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -126,7 +128,7 @@ namespace {
             << "Options:\n"
             << "  --uri URI                  Relay URI (default moq://127.0.0.1:33435)\n"
             << "  --target-endpoint ID       Target relay endpoint (default: the id from relay SETUP)\n"
-            << "  --endpoint-id ID           This admin client endpoint id (default admin-<pid>)\n"
+            << "  --endpoint-id ID           This admin client endpoint id (default admin-<pid>-<random>)\n"
             << "  --admin-namespace PREFIX   Slash-delimited base prefix (default laps/admin)\n"
             << "  --timeout-ms MS            How long to wait for each response (default 5000)\n"
             << "  --out FILE                 Write the JSON document to FILE instead of stdout\n"
@@ -152,7 +154,12 @@ namespace {
     Options ParseArgs(int argc, char* argv[])
     {
         Options options;
-        options.endpoint_id = "admin-" + std::to_string(static_cast<long long>(::getpid()));
+        // A pid is reused across hosts and containers. The random suffix keeps two clients from sharing a track.
+        std::random_device device;
+        std::uniform_int_distribution<std::uint64_t> dist;
+        std::ostringstream endpoint_id;
+        endpoint_id << "admin-" << ::getpid() << "-" << std::hex << dist(device);
+        options.endpoint_id = endpoint_id.str();
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg(argv[i]);
@@ -346,10 +353,8 @@ main(int argc, char* argv[])
                 }
                 relay_endpoint = *options.target_endpoint;
                 if (relay_endpoint != connected_endpoint) {
-                    SPDLOG_LOGGER_INFO(logger,
-                                       "Connected to relay {}; admin namespace uses {}",
-                                       connected_endpoint,
-                                       relay_endpoint);
+                    SPDLOG_LOGGER_INFO(
+                      logger, "Connected to relay {}; admin namespace uses {}", connected_endpoint, relay_endpoint);
                 }
             } else {
                 relay_endpoint = connected_endpoint;
@@ -363,9 +368,9 @@ main(int argc, char* argv[])
                 throw std::runtime_error(layout_error);
             }
 
-            const auto request_base = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                         std::chrono::system_clock::now().time_since_epoch())
-                                         .count();
+            const auto request_base =
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
 
             SPDLOG_LOGGER_INFO(logger,
                                "Admin request {} -> {} name {}",
@@ -428,9 +433,8 @@ main(int argc, char* argv[])
                 if (!response.has_value()) {
                     failed = true;
                     errors.push_back("timed out waiting for the admin response to " + call.method);
-                    replies.push_back(
-                      laps::AdminResultCall{ call.method,
-                                             R"({"error":{"message":"timed out waiting for the admin response"}})" });
+                    replies.push_back(laps::AdminResultCall{
+                      call.method, R"({"error":{"message":"timed out waiting for the admin response"}})" });
                     break;
                 }
 

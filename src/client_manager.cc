@@ -879,8 +879,8 @@ namespace laps {
                 RemoveOrPausePublisherSubscribe(th.track_fullname_hash);
             }
 
-            const auto track_alias = handler ? handler->GetTrackAlias().value_or(th.track_fullname_hash)
-                                             : th.track_fullname_hash;
+            const auto track_alias =
+              handler ? handler->GetTrackAlias().value_or(th.track_fullname_hash) : th.track_fullname_hash;
             for (auto& [prefix, connections] : state_.subscribe_tracks) {
                 const auto prefix_match = prefix.IsPrefixOf(track_full_name.name_space);
                 if (prefix_match != std::partial_ordering::less && prefix_match != std::partial_ordering::equivalent) {
@@ -1047,11 +1047,9 @@ namespace laps {
             sizes.total_connections = state_.conn_state_metrics.size();
             sizes.fanout_namespaces = fanout_namespaces_.size();
             sizes.notified_namespaces = notified_namespaces_.size();
-            sizes.cache_tracks = cache_.size();
             sizes.cache.enabled = !config_.disable_cache;
             sizes.cache.duration_ms = cache_duration_ms_;
             sizes.cache.interval_ms = kCacheBucketIntervalMs;
-            sizes.cache.tracks = cache_.size();
 
             std::map<std::uint64_t, std::pair<std::string, std::string>> track_names;
             for (const auto& [key, handler] : state_.pub_subscribes) {
@@ -1063,33 +1061,38 @@ namespace laps {
                                     std::pair{ track_name.NamespaceStr(), std::string(track_name.NameStr()) });
             }
 
-            for (auto& [alias, cache] : cache_) {
-                AdminCacheTrack track;
-                track.track_alias = alias;
-                if (const auto name = track_names.find(alias); name != track_names.end()) {
-                    track.track_namespace = name->second.first;
-                    track.track_name = name->second.second;
+            {
+                std::lock_guard cache_lock(cache_mutex_);
+                sizes.cache_tracks = cache_.size();
+                sizes.cache.tracks = cache_.size();
+                for (auto& [alias, cache] : cache_) {
+                    AdminCacheTrack track;
+                    track.track_alias = alias;
+                    if (const auto name = track_names.find(alias); name != track_names.end()) {
+                        track.track_namespace = name->second.first;
+                        track.track_name = name->second.second;
+                    }
+
+                    cache.ForEachGroup([&track](std::uint64_t group_id, const std::set<CacheObject>& objects) {
+                        if (!track.has_groups || group_id < track.oldest_group) {
+                            track.oldest_group = group_id;
+                        }
+                        if (!track.has_groups || group_id > track.newest_group) {
+                            track.newest_group = group_id;
+                        }
+                        track.has_groups = true;
+                        track.groups++;
+                        track.objects += objects.size();
+                        for (const auto& object : objects) {
+                            track.bytes += object.data.size();
+                        }
+                    });
+
+                    sizes.cache.groups += track.groups;
+                    sizes.cache.objects += track.objects;
+                    sizes.cache.bytes += track.bytes;
+                    sizes.cache.entries.push_back(std::move(track));
                 }
-
-                cache.ForEachGroup([&track](std::uint64_t group_id, const std::set<CacheObject>& objects) {
-                    if (!track.has_groups || group_id < track.oldest_group) {
-                        track.oldest_group = group_id;
-                    }
-                    if (!track.has_groups || group_id > track.newest_group) {
-                        track.newest_group = group_id;
-                    }
-                    track.has_groups = true;
-                    track.groups++;
-                    track.objects += objects.size();
-                    for (const auto& object : objects) {
-                        track.bytes += object.data.size();
-                    }
-                });
-
-                sizes.cache.groups += track.groups;
-                sizes.cache.objects += track.objects;
-                sizes.cache.bytes += track.bytes;
-                sizes.cache.entries.push_back(std::move(track));
             }
             std::sort(sizes.cache.entries.begin(),
                       sizes.cache.entries.end(),
@@ -2142,6 +2145,7 @@ namespace laps {
         std::optional<uint64_t> largest_object_id = std::nullopt;
 
         const auto& th = quicr::TrackHash(track_name);
+        std::lock_guard cache_lock(cache_mutex_);
         const auto cache_entry_it = cache_.find(th.track_fullname_hash);
         if (cache_entry_it != cache_.end()) {
             auto& [_, cache] = *cache_entry_it;
@@ -2174,9 +2178,20 @@ namespace laps {
 
         const auto largest_location = GetLargestAvailable(track_full_name);
 
-        const auto cache_entry_it = cache_.find(th.track_fullname_hash);
-        auto cache_entries = cache_entry_it != cache_.end() ? cache_entry_it->second.Get(start.group, end.group)
-                                                            : std::vector<std::shared_ptr<std::set<CacheObject>>>{};
+        // Copy the groups while the cache lock is held. The sender thread publishes from that copy, so it
+        // does not read sets that object insertion is still mutating.
+        std::vector<std::set<CacheObject>> cache_entries;
+        {
+            std::lock_guard cache_lock(cache_mutex_);
+            const auto cache_entry_it = cache_.find(th.track_fullname_hash);
+            if (cache_entry_it != cache_.end()) {
+                for (const auto& group : cache_entry_it->second.Get(start.group, end.group)) {
+                    if (group) {
+                        cache_entries.push_back(*group);
+                    }
+                }
+            }
+        }
 
         // Why the cache cannot answer the fetch, which is the error reported if the publisher cannot either
         std::optional<quicr::FetchErrorCode> cache_miss = std::nullopt;
@@ -2340,13 +2355,13 @@ namespace laps {
             // sent in the requested group order. Object IDs remain ascending within a group.
             if (resolved_group_order == quicr::messages::GroupOrder::kDescending) {
                 for (auto entry_it = cache_entries.rbegin(); entry_it != cache_entries.rend(); ++entry_it) {
-                    if (!publish_group(**entry_it)) {
+                    if (!publish_group(*entry_it)) {
                         return;
                     }
                 }
             } else {
                 for (const auto& entry : cache_entries) {
-                    if (!publish_group(*entry)) {
+                    if (!publish_group(entry)) {
                         return;
                     }
                 }

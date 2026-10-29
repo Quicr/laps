@@ -481,6 +481,10 @@ namespace laps {
         std::map<std::pair<std::uint64_t, std::uint64_t>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
+
+        /// Guards cache_ and the object sets inside each track. Object insert, fetch, largest-object
+        /// lookup, and the admin state snapshot take this lock. Do not acquire state_mutex while holding it.
+        std::mutex cache_mutex_;
         std::map<std::uint64_t, ObjectCache> cache_;
 
         // Key is track namespace hash
