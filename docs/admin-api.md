@@ -114,7 +114,7 @@ A request from a client connected to this relay is consumed on the transport thr
 
 ## RPC messages
 
-Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as `<milliseconds since the Unix epoch>-<call index>`. The relay copies the received `id` into the response and keeps its JSON type: a number stays a number, and a string stays a string. A response produced before an id is parsed uses an empty string id.
+Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as `<milliseconds since the Unix epoch>-<call index>`. The relay copies the received `id` into the response and keeps its JSON type: a number stays a number, and a string stays a string. When `id` appears more than once, the last value is the one copied, and the reply uses that value's type. A response produced before an id is parsed uses an empty string id.
 
 A `\u` escape is one Unicode code point. A character outside the basic multilingual plane may be written as a surrogate pair, such as `\uD83D\uDE00`. An unpaired surrogate is rejected.
 

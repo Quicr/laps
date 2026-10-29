@@ -834,6 +834,7 @@ namespace laps {
                             message.id_is_number = true;
                         } else {
                             message.id = reader.ParseString();
+                            message.id_is_number = false;
                         }
                     } else if (key == "method") {
                         message.method = reader.ParseString();

@@ -78,6 +78,18 @@ TEST_CASE("admin rpc json")
     const auto numeric_error = laps::EncodeAdminError(numeric_id, identity, "unknown method");
     CHECK(numeric_error.find(R"("id":42,)") != std::string::npos);
 
+    const auto string_wins = laps::ParseAdminMessage(R"({"id":1,"id":"abc","method":"state"})");
+    CHECK(string_wins.valid);
+    CHECK(string_wins.id == "abc");
+    CHECK_FALSE(string_wins.id_is_number);
+    const auto string_reply = laps::EncodeAdminResult(string_wins, identity, R"({"accepted_connections":0})");
+    CHECK(string_reply.find(R"("id":"abc",)") != std::string::npos);
+
+    const auto number_wins = laps::ParseAdminMessage(R"({"id":"abc","id":7,"method":"state"})");
+    CHECK(number_wins.valid);
+    CHECK(number_wins.id == "7");
+    CHECK(number_wins.id_is_number);
+
     const auto fractional = laps::ParseAdminMessage(R"({"id":42.5,"method":"state"})");
     CHECK(fractional.valid);
     CHECK(fractional.id_is_number);
