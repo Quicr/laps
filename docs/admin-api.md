@@ -118,7 +118,7 @@ Every message is one JSON object. Unknown object fields are ignored. `id` may be
 
 A `\u` escape is one Unicode code point. A character outside the basic multilingual plane may be written as a surrogate pair, such as `\uD83D\uDE00`. An unpaired surrogate is rejected.
 
-The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. The api_version changes only when there is a schema change. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
+The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. It stays at 1 until the API is released. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
 
 `relay_id` is the answering relay's `--endpoint_id`. `node_id` is that relay's peering node id, written as `high.high:low.low`. With `--target-endpoint`, both name the target relay, which may not be the relay at `--uri`. `start_time_us` is the Unix time in microseconds when that relay started, recorded when it begins startup and before it listens. `start_time` is that same instant as UTC `YYYY-MM-DD HH:MM:SS`, truncated to the second. It is an empty string when `start_time_us` is `0`.
 
