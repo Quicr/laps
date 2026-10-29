@@ -60,7 +60,42 @@ TEST_CASE("admin rpc json")
     const auto numeric_id = laps::ParseAdminMessage(R"({"id":42,"method":"state"})");
     CHECK(numeric_id.valid);
     CHECK(numeric_id.id == "42");
+    CHECK(numeric_id.id_is_number);
     CHECK_FALSE(numeric_id.has_params);
+    CHECK_FALSE(request.id_is_number);
+
+    laps::AdminRelayIdentity identity;
+    identity.relay_id = "relay-b";
+    identity.node_id = "0.0:0.1001";
+    identity.start_time_us = 1720000000000000;
+    const auto numeric_reply = laps::EncodeAdminResult(numeric_id, identity, R"({"accepted_connections":0})");
+    CHECK(numeric_reply.find(R"("id":42,)") != std::string::npos);
+    CHECK(numeric_reply.find(R"("id":"42")") == std::string::npos);
+    const auto numeric_again = laps::ParseAdminMessage(numeric_reply);
+    CHECK(numeric_again.id_is_number);
+    CHECK(numeric_again.id == "42");
+
+    const auto numeric_error = laps::EncodeAdminError(numeric_id, identity, "unknown method");
+    CHECK(numeric_error.find(R"("id":42,)") != std::string::npos);
+
+    const auto fractional = laps::ParseAdminMessage(R"({"id":42.5,"method":"state"})");
+    CHECK(fractional.valid);
+    CHECK(fractional.id_is_number);
+    CHECK(fractional.id == "42.5");
+
+    const auto emoji = laps::ParseAdminMessage(R"({"id":"\uD83D\uDE00","method":"state"})");
+    CHECK(emoji.valid);
+    CHECK(emoji.id == "\xF0\x9F\x98\x80");
+    CHECK(laps::ParseAdminMessage(R"({"method":"state","note":"\uD83D\uDE00"})").valid);
+    CHECK(laps::ParseAdminMessage(R"({"method":"add-peer","params":{"host":"\uD83D\uDE00"}})").valid);
+    CHECK(laps::PrettyPrintJson(R"("\uD83D\uDE00")").has_value());
+
+    const auto unpaired = laps::ParseAdminMessage(R"({"id":"\uD83D","method":"state"})");
+    CHECK_FALSE(unpaired.valid);
+    CHECK(unpaired.error.find("surrogate") != std::string::npos);
+    CHECK_FALSE(laps::ParseAdminMessage(R"({"id":"\uDE00","method":"state"})").valid);
+    CHECK_FALSE(laps::ParseAdminMessage(R"({"method":"state","note":"\uD83D\u0041"})").valid);
+    CHECK_FALSE(laps::PrettyPrintJson(R"("\uD83D")").has_value());
 
     const auto broken = laps::ParseAdminMessage("{");
     CHECK_FALSE(broken.valid);
@@ -77,11 +112,6 @@ TEST_CASE("admin rpc json")
     CHECK_FALSE(too_deep.valid);
     CHECK(too_deep.error.find("nesting") != std::string::npos);
     CHECK_FALSE(laps::PrettyPrintJson(nested).has_value());
-
-    laps::AdminRelayIdentity identity;
-    identity.relay_id = "relay-b";
-    identity.node_id = "0.0:0.1001";
-    identity.start_time_us = 1720000000000000;
 
     laps::AdminStateSizes sizes;
     sizes.accepted_connections = 2;

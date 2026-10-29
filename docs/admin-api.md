@@ -114,7 +114,9 @@ A request from a client connected to this relay is consumed on the transport thr
 
 ## RPC messages
 
-Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as `<milliseconds since the Unix epoch>-<call index>`. The relay copies the received `id` into the response. A response produced before an id is parsed uses an empty id.
+Every message is one JSON object. Unknown object fields are ignored. `id` may be a JSON string or a JSON number. `lapsAdmin` sends `id` as `<milliseconds since the Unix epoch>-<call index>`. The relay copies the received `id` into the response and keeps its JSON type: a number stays a number, and a string stays a string. A response produced before an id is parsed uses an empty string id.
+
+A `\u` escape is one Unicode code point. A character outside the basic multilingual plane may be written as a surrogate pair, such as `\uD83D\uDE00`. An unpaired surrogate is rejected.
 
 The relay adds `api_version`, `relay_id`, and `node_id` to every result and every error. `api_version` is an unsigned integer and identifies the admin RPC this process speaks. The api_version changes only when there is a schema change. `lapsAdmin` is built for the same constant. After the session closes it logs the version the relay reported. A missing version, or a version other than the one this client speaks, is a warning on stderr. The JSON result is still printed after that log.
 
@@ -195,6 +197,7 @@ Error on the wire:
 | --- | --- |
 | Payload larger than 65536 bytes | `request exceeds 65536 bytes` |
 | JSON nested deeper than 32 arrays or objects | `JSON nesting is too deep` |
+| Unpaired `\uD800`–`\uDFFF` escape | `unpaired unicode surrogate` |
 | Body is not one JSON object | Parser reason, such as `expected an object` |
 | Object has no `method` string | `request requires a method` |
 | `method` is not implemented | `unknown method` |

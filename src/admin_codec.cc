@@ -114,9 +114,27 @@ namespace laps {
                             case 't':
                                 value.push_back('\t');
                                 break;
-                            case 'u':
-                                AppendUtf8(value, ParseHex4());
+                            case 'u': {
+                                const auto unit = ParseHex4();
+                                if (unit >= 0xD800 && unit <= 0xDBFF) {
+                                    if (index_ + 2 > input_.size() || input_[index_] != '\\' ||
+                                        input_[index_ + 1] != 'u') {
+                                        throw std::runtime_error("unpaired unicode surrogate");
+                                    }
+                                    index_ += 2;
+                                    const auto low = ParseHex4();
+                                    if (low < 0xDC00 || low > 0xDFFF) {
+                                        throw std::runtime_error("unpaired unicode surrogate");
+                                    }
+                                    const auto code_point = 0x10000u + ((unit - 0xD800u) << 10) + (low - 0xDC00u);
+                                    AppendUtf8(value, code_point);
+                                } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+                                    throw std::runtime_error("unpaired unicode surrogate");
+                                } else {
+                                    AppendUtf8(value, unit);
+                                }
                                 break;
+                            }
                             default:
                                 throw std::runtime_error("invalid string escape");
                         }
@@ -394,9 +412,6 @@ namespace laps {
                     } else {
                         throw std::runtime_error("invalid unicode escape");
                     }
-                }
-                if (code_point > 0x10FFFF || (code_point >= 0xD800 && code_point <= 0xDFFF)) {
-                    throw std::runtime_error("invalid unicode code point");
                 }
                 return code_point;
             }
@@ -816,6 +831,7 @@ namespace laps {
                     if (key == "id") {
                         if (reader.StartsNumber()) {
                             message.id = reader.CaptureValue();
+                            message.id_is_number = true;
                         } else {
                             message.id = reader.ParseString();
                         }
@@ -899,6 +915,16 @@ namespace laps {
         }
     }
 
+    void AppendAdminId(std::ostringstream& out, std::string_view id, bool id_is_number)
+    {
+        out << "\"id\":";
+        if (id_is_number) {
+            out << id;
+        } else {
+            out << '"' << JsonEscape(id) << '"';
+        }
+    }
+
     std::string EncodeAdminRequest(std::string_view id,
                                    std::string_view method,
                                    std::optional<std::string_view> params_json)
@@ -912,25 +938,48 @@ namespace laps {
         return out.str();
     }
 
-    std::string EncodeAdminResult(std::string_view id, const AdminRelayIdentity& identity, std::string_view result_json)
+    std::string EncodeAdminResult(std::string_view id,
+                                  const AdminRelayIdentity& identity,
+                                  std::string_view result_json,
+                                  bool id_is_number)
     {
         std::ostringstream out;
-        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\""
-            << JsonEscape(identity.relay_id) << "\",\"node_id\":\"" << JsonEscape(identity.node_id)
-            << "\",\"start_time_us\":" << identity.start_time_us << ",\"start_time\":\""
-            << JsonEscape(FormatUtcTimestamp(identity.start_time_us)) << "\",\"result\":" << result_json << '}';
+        out << '{';
+        AppendAdminId(out, id, id_is_number);
+        out << ",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\"" << JsonEscape(identity.relay_id)
+            << "\",\"node_id\":\"" << JsonEscape(identity.node_id) << "\",\"start_time_us\":" << identity.start_time_us
+            << ",\"start_time\":\"" << JsonEscape(FormatUtcTimestamp(identity.start_time_us))
+            << "\",\"result\":" << result_json << '}';
         return out.str();
     }
 
-    std::string EncodeAdminError(std::string_view id, const AdminRelayIdentity& identity, std::string_view message)
+    std::string EncodeAdminError(std::string_view id,
+                                 const AdminRelayIdentity& identity,
+                                 std::string_view message,
+                                 bool id_is_number)
     {
         std::ostringstream out;
-        out << "{\"id\":\"" << JsonEscape(id) << "\",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\""
-            << JsonEscape(identity.relay_id) << "\",\"node_id\":\"" << JsonEscape(identity.node_id)
-            << "\",\"start_time_us\":" << identity.start_time_us << ",\"start_time\":\""
-            << JsonEscape(FormatUtcTimestamp(identity.start_time_us)) << "\",\"error\":{\"message\":\""
-            << JsonEscape(message) << "\"}}";
+        out << '{';
+        AppendAdminId(out, id, id_is_number);
+        out << ",\"api_version\":" << kAdminApiVersion << ",\"relay_id\":\"" << JsonEscape(identity.relay_id)
+            << "\",\"node_id\":\"" << JsonEscape(identity.node_id) << "\",\"start_time_us\":" << identity.start_time_us
+            << ",\"start_time\":\"" << JsonEscape(FormatUtcTimestamp(identity.start_time_us))
+            << "\",\"error\":{\"message\":\"" << JsonEscape(message) << "\"}}";
         return out.str();
+    }
+
+    std::string EncodeAdminResult(const AdminRpcMessage& message,
+                                  const AdminRelayIdentity& identity,
+                                  std::string_view result_json)
+    {
+        return EncodeAdminResult(message.id, identity, result_json, message.id_is_number);
+    }
+
+    std::string EncodeAdminError(const AdminRpcMessage& message,
+                                 const AdminRelayIdentity& identity,
+                                 std::string_view error_message)
+    {
+        return EncodeAdminError(message.id, identity, error_message, message.id_is_number);
     }
 
     std::string EncodeAdminResultsDocument(const std::vector<AdminResultCall>& calls,

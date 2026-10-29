@@ -137,49 +137,49 @@ namespace laps {
                 const auto message = ParseAdminMessage(payload);
                 if (!message.valid || !message.has_method || message.method.empty()) {
                     const auto reason = message.error.empty() ? "request requires a method" : message.error;
-                    response = EncodeAdminError(message.id, identity, reason);
+                    response = EncodeAdminError(message, identity, reason);
                 } else if (message.method == kAdminStateSizesMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response =
-                      EncodeAdminResult(message.id, identity, EncodeAdminStateSizes(server_.CollectAdminStateSizes()));
+                      EncodeAdminResult(message, identity, EncodeAdminStateSizes(server_.CollectAdminStateSizes()));
                 } else if (message.method == kAdminPeersMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
-                    response = EncodeAdminResult(message.id, identity, EncodeAdminPeers(server_.CollectAdminPeers()));
+                    response = EncodeAdminResult(message, identity, EncodeAdminPeers(server_.CollectAdminPeers()));
                 } else if (message.method == kAdminMetricsMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
-                    response = EncodeAdminResult(message.id, identity, server_.CollectAdminMetrics());
+                    response = EncodeAdminResult(message, identity, server_.CollectAdminMetrics());
                 } else if (message.method == kAdminSubscriptionsMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response = EncodeAdminResult(
-                      message.id, identity, EncodeAdminTrackList("subscriptions", server_.CollectAdminSubscriptions()));
+                      message, identity, EncodeAdminTrackList("subscriptions", server_.CollectAdminSubscriptions()));
                 } else if (message.method == kAdminPublishesMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response = EncodeAdminResult(
-                      message.id, identity, EncodeAdminTrackList("publishes", server_.CollectAdminPublishes()));
+                      message, identity, EncodeAdminTrackList("publishes", server_.CollectAdminPublishes()));
                 } else if (message.method == kAdminPublishNamespacesMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response = EncodeAdminResult(
-                      message.id,
+                      message,
                       identity,
                       EncodeAdminNamespaceList("publish_namespaces", server_.CollectAdminPublishNamespaces()));
                 } else if (message.method == kAdminSubscribeNamespacesMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response = EncodeAdminResult(
-                      message.id,
+                      message,
                       identity,
                       EncodeAdminNamespaceList("subscribe_namespaces", server_.CollectAdminSubscribeNamespaces()));
                 } else if (message.method == kAdminSubscribeTracksMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     response = EncodeAdminResult(
-                      message.id,
+                      message,
                       identity,
                       EncodeAdminNamespaceList("subscribe_tracks", server_.CollectAdminSubscribeTracks()));
                 } else if (message.method == kAdminAddPeerMethod || message.method == kAdminRemovePeerMethod ||
@@ -188,12 +188,12 @@ namespace laps {
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     if (!message.has_params) {
                         response =
-                          EncodeAdminError(message.id, identity, std::string(message.method) + " requires host:port");
+                          EncodeAdminError(message, identity, std::string(message.method) + " requires host:port");
                     } else {
                         std::string params_error;
                         const auto endpoint = ParseAdminPeerParams(message.params_json, params_error);
                         if (!endpoint.has_value()) {
-                            response = EncodeAdminError(message.id, identity, params_error);
+                            response = EncodeAdminError(message, identity, params_error);
                         } else {
                             moq::peering::PeerAdminResult outcome;
                             if (message.method == kAdminAddPeerMethod) {
@@ -204,14 +204,14 @@ namespace laps {
                                 outcome = server_.AdminRestartPeer(endpoint->host, endpoint->port);
                             }
                             if (!outcome.ok) {
-                                response = EncodeAdminError(message.id, identity, outcome.message);
+                                response = EncodeAdminError(message, identity, outcome.message);
                             } else {
                                 AdminPeerCommand command;
                                 command.host = outcome.host;
                                 command.port = outcome.port;
                                 command.action = outcome.action;
                                 command.message = outcome.message;
-                                response = EncodeAdminResult(message.id, identity, EncodeAdminPeerCommand(command));
+                                response = EncodeAdminResult(message, identity, EncodeAdminPeerCommand(command));
                             }
                         }
                     }
@@ -221,7 +221,7 @@ namespace laps {
                                        message.method,
                                        client_key,
                                        message.id);
-                    response = EncodeAdminError(message.id, identity, "unknown method");
+                    response = EncodeAdminError(message, identity, "unknown method");
                 }
             }
 

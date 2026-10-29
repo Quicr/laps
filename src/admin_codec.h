@@ -210,6 +210,9 @@ namespace laps {
         bool valid{ false };
         std::string error;
         std::string id;
+        /// True when `id` was a JSON number. The text is the number as it was written, and the reply emits it
+        /// without quotes.
+        bool id_is_number{ false };
         bool has_method{ false };
         std::string method;
         bool has_params{ false };
@@ -279,9 +282,21 @@ namespace laps {
 
     std::string EncodeAdminResult(std::string_view id,
                                   const AdminRelayIdentity& identity,
+                                  std::string_view result_json,
+                                  bool id_is_number = false);
+
+    std::string EncodeAdminResult(const AdminRpcMessage& message,
+                                  const AdminRelayIdentity& identity,
                                   std::string_view result_json);
 
-    std::string EncodeAdminError(std::string_view id, const AdminRelayIdentity& identity, std::string_view message);
+    std::string EncodeAdminError(std::string_view id,
+                                 const AdminRelayIdentity& identity,
+                                 std::string_view message,
+                                 bool id_is_number = false);
+
+    std::string EncodeAdminError(const AdminRpcMessage& message,
+                                 const AdminRelayIdentity& identity,
+                                 std::string_view error_message);
 
     /**
      * @brief One JSON document for every reply from a command
