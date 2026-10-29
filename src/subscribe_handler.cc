@@ -7,6 +7,7 @@
 #include "publish_namespace_handler.h"
 
 #include <quicr/handlers/forwarding_subscribe_track_handler.h>
+#include <quicr/messages/message_serialisation.h>
 #include <quicr/session.h>
 
 namespace laps {
@@ -30,6 +31,7 @@ namespace laps {
 
     SubscribeTrackHandler::~SubscribeTrackHandler()
     {
+        server_.metrics_publisher_.RemoveSubscribeTrack(GetConnectionId(), GetFullTrackName());
         for (auto& [conn_handle, handler] : subscribers_) {
             server_.UnbindPublisherTrack(conn_handle, GetConnectionId(), handler);
         }
@@ -204,6 +206,11 @@ namespace laps {
                                                quicr::BytesSpan data,
                                                std::optional<quicr::messages::StreamHeaderProperties> stream_mode)
     {
+        // Admin requests are consumed here, including a copy that arrived through peering.
+        if (server_.DispatchAdminObject(GetFullTrackName(), data)) {
+            return;
+        }
+
         if (object_headers.track_mode.has_value()) {
             is_datagram_ = *object_headers.track_mode == quicr::TrackMode::kDatagram;
         }
@@ -222,13 +229,13 @@ namespace laps {
 
         CacheObject object{ object_headers, { data.begin(), data.end() } };
 
-        // Cache Object
+        // Cache Object. The same lock covers a peered admin snapshot of this cache.
         if (!server_.config_.disable_cache) {
+            std::lock_guard cache_lock(server_.cache_mutex_);
             if (server_.cache_.count(GetTrackAlias().value()) == 0) {
-                server_.cache_.insert(
-                  std::make_pair(GetTrackAlias().value(),
-                                 quicr::Cache<std::uint64_t, std::set<CacheObject>>{
-                                   server_.cache_duration_ms_, 1000, server_.config_.tick_service_ }));
+                server_.cache_.insert(std::make_pair(
+                  GetTrackAlias().value(),
+                  ObjectCache{ server_.cache_duration_ms_, kCacheBucketIntervalMs, server_.config_.tick_service_ }));
             }
 
             auto& cache_entry = server_.cache_.at(GetTrackAlias().value());
@@ -266,6 +273,50 @@ namespace laps {
         } catch (const std::exception& e) {
             SPDLOG_ERROR("Caught exception trying to publish. (error={})", e.what());
         }
+    }
+
+    void SubscribeTrackHandler::ForwardLocalObject(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data)
+    {
+        if (!subscribers_.contains(0) || !GetTrackAlias().has_value()) {
+            return;
+        }
+
+        const auto track_alias = *GetTrackAlias();
+        const auto priority = GetSubscriberPriority();
+        const auto ttl = static_cast<std::uint32_t>(
+          GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count());
+
+        // Same subgroup header libquicr writes for a stream publish when the caller does not set one.
+        const quicr::messages::StreamHeaderProperties properties(
+          true, quicr::messages::SubgroupIdType::kExplicit, false, false, true);
+
+        quicr::Bytes bytes;
+        quicr::messages::StreamHeaderSubGroup header;
+        header.properties.emplace(properties);
+        header.track_alias = track_alias;
+        header.group_id = object_headers.group_id;
+        header.subgroup_id = object_headers.subgroup_id;
+        header.publisher_priority = priority;
+        bytes << header;
+
+        quicr::messages::StreamSubGroupObject object;
+        object.object_delta = object_headers.object_id;
+        object.object_status = object_headers.status;
+        object.properties.emplace(properties);
+        object.extensions = object_headers.extensions;
+        object.immutable_extensions = object_headers.immutable_extensions;
+        object.payload.assign(data.begin(), data.end());
+        bytes << object;
+
+        auto encoded = std::make_shared<std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
+        server_.peer_manager_.SendData(track_alias,
+                                       priority,
+                                       ttl,
+                                       moq::peering::DataType::kNewStream,
+                                       object_headers.group_id,
+                                       object_headers.subgroup_id,
+                                       encoded);
+        server_.peer_manager_.EndSubgroup(track_alias, object_headers.group_id, object_headers.subgroup_id, false);
     }
 
     void SubscribeTrackHandler::SubgroupStarted(std::uint64_t group_id,
@@ -719,6 +770,7 @@ namespace laps {
                 case Status::kError:
                     reason = "subscribe error";
                     if (GetTrackAlias().has_value()) {
+                        std::lock_guard state_lock(server_.state_.state_mutex);
                         auto& anno_tracks =
                           server_.state_.pub_namespace_active[{ GetFullTrackName().name_space, GetConnectionId() }];
                         anno_tracks.erase(GetTrackAlias().value());

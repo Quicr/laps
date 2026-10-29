@@ -5,18 +5,28 @@ if(CLANG_TIDY_EXE)
   set_target_properties(quicr PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
 endif()
 
+add_library(laps_admin_codec STATIC admin_codec.cc)
+target_link_libraries(laps_admin_codec PUBLIC quicr)
+target_include_directories(laps_admin_codec PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(laps_admin_codec
+        PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS ON)
+
 add_executable(lapsRelay
         main.cc
         config.cc
         client_manager.cc
         metrics_publisher.cc
+        admin_service.cc
         subscribe_handler.cc
         publish_handler.cc
         fetch_handler.cc
         publish_namespace_handler.cc
 )
 
-target_link_libraries(lapsRelay PRIVATE quicr moq::peering spdlog::spdlog)
+target_link_libraries(lapsRelay PRIVATE quicr moq::peering spdlog::spdlog laps_admin_codec)
 target_include_directories(lapsRelay PRIVATE
         ${PROJECT_SOURCE_DIR}/dependencies/oss)
 
@@ -32,6 +42,19 @@ set_target_properties(lapsRelay
         CXX_EXTENSIONS ON)
 
 target_compile_definitions(lapsRelay PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+add_executable(lapsAdmin admin_client.cc)
+target_link_libraries(lapsAdmin PRIVATE laps_admin_codec quicr spdlog::spdlog)
+target_include_directories(lapsAdmin PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_options(lapsAdmin
+        PRIVATE
+        $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
+        $<$<CXX_COMPILER_ID:MSVC>: >)
+set_target_properties(lapsAdmin
+        PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS ON)
 
 add_library(relay_health_check_lib STATIC relay_health_check_internal.cpp)
 target_include_directories(relay_health_check_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

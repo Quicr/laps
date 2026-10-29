@@ -29,6 +29,11 @@ namespace laps {
     {
     }
 
+    PublishTrackHandler::~PublishTrackHandler()
+    {
+        server_.metrics_publisher_.RemovePublishTrack(GetConnectionId(), GetFullTrackName());
+    }
+
     void PublishTrackHandler::StatusChanged(Status status)
     {
         if (status == Status::kOk) {

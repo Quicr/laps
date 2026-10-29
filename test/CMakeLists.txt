@@ -5,10 +5,11 @@ add_executable(laps_test
         main.cc
         track_ranking.cc
         relay_health_check_test.cc
+        admin_codec_test.cc
 )
 target_include_directories(laps_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
-target_link_libraries(laps_test PRIVATE quicr spdlog::spdlog doctest::doctest relay_health_check_lib)
+target_link_libraries(laps_test PRIVATE quicr spdlog::spdlog doctest::doctest relay_health_check_lib laps_admin_codec)
 
 target_compile_options(laps_test
         PRIVATE

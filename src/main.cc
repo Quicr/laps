@@ -11,9 +11,9 @@
 #include <spdlog/spdlog.h>
 
 #include "client_manager.h"
-#include <moq/peering/peer_manager.h>
 #include "signal_handler.h"
 #include "state.h"
+#include <moq/peering/peer_manager.h>
 
 #include <quicr/session.h>
 
@@ -109,6 +109,7 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
     cfg.relay_id_ = cli_opts["endpoint_id"].as<std::string>();
     cfg.metrics_namespace_ = cli_opts.count("metrics_namespace") ? cli_opts["metrics_namespace"].as<std::string>()
                                                                  : "metrics/" + cfg.relay_id_;
+    cfg.admin_namespace_ = cli_opts["admin_namespace"].as<std::string>();
 
     if (cli_opts.count("cache_key")) {
         cfg.cache_key = cli_opts["cache_key"].as<std::uint64_t>();
@@ -161,6 +162,9 @@ main(int argc, char* argv[])
             cxxopts::value<size_t>()->default_value("60000"))
         ("cache_key", "Value of isCached extension key", cxxopts::value<std::uint64_t>())
         ("metrics_namespace", "Metrics publish namespace", cxxopts::value<std::string>())
+        ("admin_namespace",
+            "Admin subscribe-tracks prefix. Slash separates tuple entries. The endpoint id is appended",
+            cxxopts::value<std::string>()->default_value("laps/admin"))
         ("l,detached_subs", "Enable support for detached subscribers")
         ("disable_cache", "Disable object caching")
         ("allow_self", "Allow subscribe namespace self-subscriptions");
@@ -189,6 +193,7 @@ main(int argc, char* argv[])
 
     quicr::ServerConfig server_config = InitConfig(result, laps_config);
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Using metrics namespace: {}", laps_config.metrics_namespace_);
+    SPDLOG_LOGGER_INFO(laps_config.logger_, "Using admin namespace prefix: {}", laps_config.admin_namespace_);
 
     moq::peering::Config peer_config;
     peer_config.node_id = laps_config.relay_id_;

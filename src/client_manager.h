@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client_manager.h"
+#include "admin_service.h"
 #include "metrics_publisher.h"
 #include "state.h"
 
@@ -52,6 +52,30 @@ struct std::less<laps::CacheObject>
         return lhs.headers.object_id < rhs.headers.object_id;
     }
 };
+
+namespace laps {
+    /// Bucket width used when a track cache is created. Groups expire on this interval.
+    inline constexpr std::size_t kCacheBucketIntervalMs = 1000;
+
+    /// Relay object cache that can report the groups it currently holds.
+    class ObjectCache : public quicr::Cache<std::uint64_t, std::set<CacheObject>>
+    {
+      public:
+        using quicr::Cache<std::uint64_t, std::set<CacheObject>>::Cache;
+
+        template<typename Fn>
+        void ForEachGroup(Fn&& fn)
+        {
+            Advance();
+            for (const auto& [group_id, objects] : cache_) {
+                if (!objects) {
+                    continue;
+                }
+                fn(group_id, static_cast<const std::set<CacheObject>&>(*objects));
+            }
+        }
+    };
+} // namespace laps
 
 namespace laps {
     /**
@@ -126,6 +150,65 @@ namespace laps {
          *      PublishReceived(nullptr, 0, ...) directly for relay-local publishes.
          */
         void RegisterLocalPublish(const quicr::PublishAttributes& publish_attributes);
+
+        /// Announce a relay-local track so a peer that already subscribed can attach, as metrics does.
+        void AnnounceLocalTrack(const quicr::FullTrackName& track_full_name);
+
+        /**
+         * @brief Remove a relay-local publish
+         *
+         * @param track_full_name    Track registered with connection handle 0
+         * @param withdraw_announce  True when this relay announced the track and peers should drop it
+         */
+        void RemoveLocalPublish(const quicr::FullTrackName& track_full_name, bool withdraw_announce);
+
+        /**
+         * @brief Record the relay's own subscribe-tracks interest
+         *
+         * @details Used for the admin control prefix. The handler does not forward publishes.
+         */
+        void InstallLocalAdminSubscribe(const quicr::TrackNamespace& prefix,
+                                        const std::shared_ptr<PublishNamespaceHandler>& handler);
+
+        void RemoveLocalAdminSubscribe(const quicr::TrackNamespace& prefix);
+
+        /// Sizes of the relay maps, for the admin state RPC.
+        AdminStateSizes CollectAdminStateSizes();
+
+        /// Subscriber tracks, for the admin subscriptions RPC.
+        std::vector<AdminTrackBinding> CollectAdminSubscriptions();
+
+        /// Publisher tracks, for the admin publishes RPC.
+        std::vector<AdminTrackBinding> CollectAdminPublishes();
+
+        /// Announced publish namespaces and the track names under each one.
+        std::vector<AdminNamespaceEntry> CollectAdminPublishNamespaces();
+
+        /// SUBSCRIBE_NAMESPACE prefixes, one entry per connection that holds the prefix.
+        std::vector<AdminNamespaceEntry> CollectAdminSubscribeNamespaces();
+
+        /// SUBSCRIBE_TRACKS prefixes, one entry per connection that holds the prefix.
+        std::vector<AdminNamespaceEntry> CollectAdminSubscribeTracks();
+
+        /// Accepted and dialed peering sessions, for the admin peers RPC.
+        AdminPeers CollectAdminPeers();
+
+        /// Latest connection and track metrics samples, for the admin metrics RPC.
+        std::string CollectAdminMetrics() const;
+
+        /// Endpoint id and the peering node id, copied onto every admin reply.
+        AdminRelayIdentity CollectAdminRelayIdentity() const;
+
+        moq::peering::PeerAdminResult AdminAddPeer(const std::string& host, std::uint16_t port);
+        moq::peering::PeerAdminResult AdminRemovePeer(const std::string& host, std::uint16_t port);
+        moq::peering::PeerAdminResult AdminRestartPeer(const std::string& host, std::uint16_t port);
+
+        /**
+         * @brief Deliver one object to the admin RPC when it is a request track
+         *
+         * @return True when the object was consumed and must not be forwarded as media
+         */
+        bool DispatchAdminObject(const quicr::FullTrackName& track, quicr::BytesSpan data);
 
         void ProcessSubscribe(std::uint64_t connection_handle,
                               uint64_t request_id,
@@ -328,6 +411,30 @@ namespace laps {
 
         void PurgePublishState(std::uint64_t connection_handle);
 
+        /// Remove every subscribe recorded for this connection, including when its session is already gone.
+        void PurgeSubscribeState(std::uint64_t connection_handle);
+
+        /// Caller holds state_.state_mutex. Drops one subscriber record and detaches it from publishers.
+        void EraseSubscribeLocked(std::uint64_t connection_handle,
+                                  std::uint64_t request_id,
+                                  const quicr::FullTrackName& track_full_name,
+                                  std::uint64_t track_alias);
+
+        /// Remove admin reply tracks whose request publish is on this connection.
+        void ReleaseAdminReplies(std::uint64_t connection_handle);
+
+        /// Drop publish and subscribe state for connections that are no longer in sessions_.
+        void PurgeClosedConnections();
+
+        /// Drop subscribe-tracks, subscribe-namespace, fan-out, and notified-namespace state for one connection.
+        void PurgeConnectionNamespaces(std::uint64_t connection_handle);
+
+        /// Drop one SUBSCRIBE_TRACKS interest. The caller does not hold state_mutex.
+        void ReleaseSubscribeTracks(std::uint64_t connection_handle, const quicr::TrackNamespace& prefix);
+
+        /// Drop connection-0 admin replies whose request publish is gone.
+        void ReleaseOrphanAdminReplies();
+
         /**
          * @brief Drop handlers that call back into this relay
          *
@@ -352,6 +459,9 @@ namespace laps {
         moq::peering::PeerManager& peer_manager_;
         std::shared_ptr<timeq::tick_service> tick_service_;
         MetricsPublisher metrics_publisher_;
+        AdminService admin_service_;
+        /// Unix time in microseconds when Start() began. 0 until the relay starts.
+        std::uint64_t relay_start_time_us_{ 0 };
 
         std::unique_ptr<quicr::SessionManager> session_manager_;
 
@@ -377,7 +487,11 @@ namespace laps {
         std::map<std::pair<std::uint64_t, std::uint64_t>, std::atomic_bool> stop_fetch_;
 
         size_t cache_duration_ms_ = 0;
-        std::map<std::uint64_t, quicr::Cache<std::uint64_t, std::set<CacheObject>>> cache_;
+
+        /// Guards cache_ and the object sets inside each track. Object insert, fetch, largest-object
+        /// lookup, and the admin state snapshot take this lock. Do not acquire state_mutex while holding it.
+        std::mutex cache_mutex_;
+        std::map<std::uint64_t, ObjectCache> cache_;
 
         // Key is track namespace hash
         std::unordered_map<std::uint64_t, std::shared_ptr<TrackRanking>> track_rankings_;

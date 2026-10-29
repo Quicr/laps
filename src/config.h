@@ -1,8 +1,8 @@
 #pragma once
 
-#include <moq/peering/types.h>
 #include "spdlog_logger.h"
 #include "version_config.h"
+#include <moq/peering/types.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <list>
@@ -42,6 +42,9 @@ namespace laps {
 
         std::string relay_id_;
         std::string metrics_namespace_;
+
+        /// Slash-delimited base prefix for the admin subscribe-tracks interest. The relay endpoint id is appended.
+        std::string admin_namespace_{ "laps/admin" };
         std::string tls_cert_filename_;
         std::string tls_key_filename_;
         std::string qlog_path_;

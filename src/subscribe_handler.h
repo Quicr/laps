@@ -46,6 +46,11 @@ namespace laps {
         void ObjectReceived(const quicr::ObjectHeaders& object_headers,
                             quicr::BytesSpan data,
                             std::optional<quicr::messages::StreamHeaderProperties> stream_mode = std::nullopt) override;
+
+        /// Encode one relay-local object and send it to a peering subscriber.
+        /// A client publisher's bytes are forwarded as they arrive. A local publish, such as metrics or an
+        /// admin reply, has no stream bytes, and the object fan-out skips the peering subscriber.
+        void ForwardLocalObject(const quicr::ObjectHeaders& object_headers, quicr::BytesSpan data);
         void MetricsSampled(const quicr::SubscribeTrackMetrics& metrics) override;
 
         void StatusChanged(Status status) override;

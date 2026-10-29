@@ -73,6 +73,14 @@ namespace laps {
         constexpr void SetPropertyType(const uint64_t prop) { property_type_ = prop; }
         constexpr uint64_t GetPropertyType() { return property_type_.value_or(0); }
 
+        /**
+         * @brief True when a matching publish should be forwarded on this subscription
+         *
+         * @details The relay's own admin subscribe-tracks interest consumes objects locally and has
+         *      no session to publish on.
+         */
+        virtual bool ForwardsPublishedTracks() const { return true; }
+
       private:
         uint64_t max_tracks_selected_{ 1 };       // Max tracks to select as candidate top-n
         uint64_t inactive_age_ms_{ 10000 };       // Age in ms of a track that is considered stale/inactive

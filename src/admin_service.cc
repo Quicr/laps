@@ -1,0 +1,361 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 Cisco Systems
+// SPDX-License-Identifier: BSD-2-Clause
+
+#include "admin_service.h"
+
+#include "client_manager.h"
+#include "config.h"
+#include "publish_namespace_handler.h"
+
+#include <quicr/attributes.h>
+#include <quicr/messages/object.h>
+
+#include <limits>
+#include <stdexcept>
+#include <string_view>
+
+namespace laps {
+    namespace {
+        constexpr std::size_t kMaxAdminPayloadBytes = 65'536;
+
+        /// Subscribe-tracks interest owned by the relay. Matching publishes are consumed here.
+        class LocalAdminNamespaceHandler : public PublishNamespaceHandler
+        {
+          public:
+            using PublishNamespaceHandler::PublishNamespaceHandler;
+
+            bool ForwardsPublishedTracks() const override { return false; }
+
+            void PublishTrack(std::shared_ptr<quicr::PublishTrackHandler>) override {}
+        };
+    } // namespace
+
+    AdminService::AdminService(ClientManager& server, const Config& config)
+      : server_(server)
+      , config_(config)
+      , base_entries_(
+          SplitTrackNamespace(config.admin_namespace_.empty() ? kDefaultAdminPrefix : config.admin_namespace_))
+      , relay_entries_(SplitTrackNamespace(config.relay_id_))
+    {
+        subscribe_prefix_ = base_entries_;
+        subscribe_prefix_.insert(subscribe_prefix_.end(), relay_entries_.begin(), relay_entries_.end());
+    }
+
+    void AdminService::Start()
+    {
+        if (base_entries_.empty() || relay_entries_.empty()) {
+            throw std::invalid_argument("admin namespace and relay endpoint id must be non-empty");
+        }
+        if (subscribe_prefix_.size() >= 32) {
+            throw std::invalid_argument("admin subscribe prefix exceeds 32 tuple entries");
+        }
+
+        local_prefix_ = quicr::TrackNamespace(subscribe_prefix_);
+        auto handler = std::shared_ptr<LocalAdminNamespaceHandler>(
+          new LocalAdminNamespaceHandler(local_prefix_, server_.GetTickService()));
+        server_.InstallLocalAdminSubscribe(local_prefix_, handler);
+        started_ = true;
+
+        SPDLOG_LOGGER_INFO(config_.logger_,
+                           "Admin subscribe tracks prefix: {} name {}",
+                           JoinTrackNamespace(subscribe_prefix_),
+                           kAdminRpcTrackName);
+    }
+
+    void AdminService::Stop()
+    {
+        if (!started_) {
+            return;
+        }
+        started_ = false;
+        server_.RemoveLocalAdminSubscribe(local_prefix_);
+        {
+            std::lock_guard lock(reply_mutex_);
+            reply_tracks_.clear();
+        }
+        SPDLOG_LOGGER_INFO(config_.logger_, "Admin subscribe tracks stopped");
+    }
+
+    bool AdminService::InterestedIn(const quicr::FullTrackName& track) const
+    {
+        return started_ && track.NameStr() == kAdminRpcTrackName &&
+               AdminClientSuffix(track.name_space, subscribe_prefix_).has_value();
+    }
+
+    std::optional<std::string> AdminService::ForeignRequestWarning(const quicr::FullTrackName& track) const
+    {
+        if (!started_ || InterestedIn(track) || track.NameStr() != kAdminRpcTrackName) {
+            return std::nullopt;
+        }
+
+        const auto& entries = track.name_space.GetEntries();
+        if (entries.size() < base_entries_.size()) {
+            return std::nullopt;
+        }
+        for (std::size_t i = 0; i < base_entries_.size(); ++i) {
+            const std::string_view entry(reinterpret_cast<const char*>(entries[i].data()), entries[i].size());
+            if (entry != base_entries_[i]) {
+                return std::nullopt;
+            }
+        }
+
+        return "Admin request " + track.NamespaceStr() + " (" + std::string(track.NameStr()) +
+               ") is outside subscribe prefix " + JoinTrackNamespace(subscribe_prefix_) +
+               "; this relay did not consume it";
+    }
+
+    bool AdminService::Consume(const quicr::FullTrackName& track, quicr::BytesSpan data)
+    {
+        if (!InterestedIn(track)) {
+            return false;
+        }
+
+        const auto client_entries = AdminClientSuffix(track.name_space, subscribe_prefix_);
+        if (!client_entries.has_value()) {
+            return false;
+        }
+        const auto client_key = JoinTrackNamespace(*client_entries);
+        const auto& client_entries_ref = *client_entries;
+        if (AdminReplyOverlapsSubscribePrefix(client_entries_ref, relay_entries_)) {
+            SPDLOG_LOGGER_WARN(config_.logger_,
+                               "Admin request {} ({}) was not answered; its reply namespace is under the subscribe "
+                               "prefix {}",
+                               track.NamespaceStr(),
+                               track.NameStr(),
+                               JoinTrackNamespace(subscribe_prefix_));
+            return true;
+        }
+
+        AdminRelayIdentity identity;
+        try {
+            identity = server_.CollectAdminRelayIdentity();
+            std::string response;
+            if (data.size() > kMaxAdminPayloadBytes) {
+                response = EncodeAdminError("", identity, "request exceeds 65536 bytes");
+            } else {
+                const std::string payload(reinterpret_cast<const char*>(data.data()), data.size());
+                const auto message = ParseAdminMessage(payload);
+                if (!message.valid || !message.has_method || message.method.empty()) {
+                    const auto reason = message.error.empty() ? "request requires a method" : message.error;
+                    response = EncodeAdminError(message, identity, reason);
+                } else if (message.method == kAdminStateSizesMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response =
+                      EncodeAdminResult(message, identity, EncodeAdminStateSizes(server_.CollectAdminStateSizes()));
+                } else if (message.method == kAdminPeersMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(message, identity, EncodeAdminPeers(server_.CollectAdminPeers()));
+                } else if (message.method == kAdminMetricsMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(message, identity, server_.CollectAdminMetrics());
+                } else if (message.method == kAdminSubscriptionsMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message, identity, EncodeAdminTrackList("subscriptions", server_.CollectAdminSubscriptions()));
+                } else if (message.method == kAdminPublishesMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message, identity, EncodeAdminTrackList("publishes", server_.CollectAdminPublishes()));
+                } else if (message.method == kAdminPublishNamespacesMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message,
+                      identity,
+                      EncodeAdminNamespaceList("publish_namespaces", server_.CollectAdminPublishNamespaces()));
+                } else if (message.method == kAdminSubscribeNamespacesMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message,
+                      identity,
+                      EncodeAdminNamespaceList("subscribe_namespaces", server_.CollectAdminSubscribeNamespaces()));
+                } else if (message.method == kAdminSubscribeTracksMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    response = EncodeAdminResult(
+                      message,
+                      identity,
+                      EncodeAdminNamespaceList("subscribe_tracks", server_.CollectAdminSubscribeTracks()));
+                } else if (message.method == kAdminAddPeerMethod || message.method == kAdminRemovePeerMethod ||
+                           message.method == kAdminRestartPeerMethod) {
+                    SPDLOG_LOGGER_INFO(
+                      config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
+                    if (!message.has_params) {
+                        response =
+                          EncodeAdminError(message, identity, std::string(message.method) + " requires host:port");
+                    } else {
+                        std::string params_error;
+                        const auto endpoint = ParseAdminPeerParams(message.params_json, params_error);
+                        if (!endpoint.has_value()) {
+                            response = EncodeAdminError(message, identity, params_error);
+                        } else {
+                            moq::peering::PeerAdminResult outcome;
+                            if (message.method == kAdminAddPeerMethod) {
+                                outcome = server_.AdminAddPeer(endpoint->host, endpoint->port);
+                            } else if (message.method == kAdminRemovePeerMethod) {
+                                outcome = server_.AdminRemovePeer(endpoint->host, endpoint->port);
+                            } else {
+                                outcome = server_.AdminRestartPeer(endpoint->host, endpoint->port);
+                            }
+                            if (!outcome.ok) {
+                                response = EncodeAdminError(message, identity, outcome.message);
+                            } else {
+                                AdminPeerCommand command;
+                                command.host = outcome.host;
+                                command.port = outcome.port;
+                                command.action = outcome.action;
+                                command.message = outcome.message;
+                                response = EncodeAdminResult(message, identity, EncodeAdminPeerCommand(command));
+                            }
+                        }
+                    }
+                } else {
+                    SPDLOG_LOGGER_INFO(config_.logger_,
+                                       "Admin RPC unknown method {} from {} id {}",
+                                       message.method,
+                                       client_key,
+                                       message.id);
+                    response = EncodeAdminError(message, identity, "unknown method");
+                }
+            }
+
+            PublishReply(client_entries_ref, response);
+        } catch (const std::exception& ex) {
+            SPDLOG_LOGGER_WARN(config_.logger_, "Admin RPC failed for {}: {}", client_key, ex.what());
+            try {
+                PublishReply(client_entries_ref, EncodeAdminError("", identity, ex.what()));
+            } catch (const std::exception& publish_error) {
+                SPDLOG_LOGGER_WARN(config_.logger_, "Admin RPC error response failed: {}", publish_error.what());
+            }
+        }
+
+        return true;
+    }
+
+    void AdminService::ReleaseRequest(const quicr::FullTrackName& request_track)
+    {
+        const auto client_entries = AdminClientSuffix(request_track.name_space, subscribe_prefix_);
+        if (!client_entries.has_value()) {
+            return;
+        }
+        ReleaseClient(*client_entries);
+    }
+
+    void AdminService::ReleaseRepliesExcept(const std::set<std::vector<std::string>>& live_client_keys)
+    {
+        std::vector<std::vector<std::string>> stale;
+        {
+            std::lock_guard lock(reply_mutex_);
+            for (const auto& [client_key, _] : reply_tracks_) {
+                if (!live_client_keys.contains(client_key)) {
+                    stale.push_back(client_key);
+                }
+            }
+        }
+        for (const auto& client_key : stale) {
+            ReleaseClient(client_key);
+        }
+    }
+
+    void AdminService::ReleaseClient(const std::vector<std::string>& client_entries)
+    {
+        bool remove = false;
+        {
+            std::lock_guard lock(reply_mutex_);
+            remove = reply_tracks_.erase(client_entries) != 0;
+        }
+        if (!remove) {
+            return;
+        }
+
+        std::vector<std::string> entries = base_entries_;
+        entries.insert(entries.end(), client_entries.begin(), client_entries.end());
+        entries.insert(entries.end(), relay_entries_.begin(), relay_entries_.end());
+        const auto reply_track = AdminFullTrackName(entries);
+        server_.RemoveLocalPublish(reply_track, true);
+        SPDLOG_LOGGER_INFO(config_.logger_,
+                           "Admin reply track removed namespace: {} name {}",
+                           reply_track.NamespaceStr(),
+                           reply_track.NameStr());
+    }
+
+    AdminService::ReplyTrack& AdminService::EnsureReplyTrack(const std::vector<std::string>& client_entries)
+    {
+        // Caller holds reply_mutex_.
+        if (const auto it = reply_tracks_.find(client_entries); it != reply_tracks_.end()) {
+            return it->second;
+        }
+        if (AdminReplyOverlapsSubscribePrefix(client_entries, relay_entries_)) {
+            throw std::invalid_argument("admin reply namespace overlaps the subscribe prefix");
+        }
+
+        std::vector<std::string> entries = base_entries_;
+        entries.insert(entries.end(), client_entries.begin(), client_entries.end());
+        entries.insert(entries.end(), relay_entries_.begin(), relay_entries_.end());
+
+        const auto full_track_name = AdminFullTrackName(entries);
+        const auto track_hash = quicr::TrackHash(full_track_name);
+        const quicr::PublishAttributes attributes{ full_track_name,
+                                                   track_hash.track_fullname_hash,
+                                                   {},
+                                                   std::nullopt,
+                                                   std::nullopt,
+                                                   true,
+                                                   quicr::messages::GroupOrder::kAscending,
+                                                   false,
+                                                   kDefaultPriority,
+                                                   std::nullopt,
+                                                   config_.object_ttl_,
+                                                   {} };
+        server_.RegisterLocalPublish(attributes);
+        // The admin client subscribes before this track exists. Announcing it attaches that peering subscribe,
+        // the same way a metrics reader attaches to a track the relay has published.
+        server_.AnnounceLocalTrack(full_track_name);
+
+        SPDLOG_LOGGER_INFO(config_.logger_,
+                           "Admin reply track namespace: {} name {}",
+                           full_track_name.NamespaceStr(),
+                           full_track_name.NameStr());
+
+        const auto [it, _] = reply_tracks_.emplace(client_entries, ReplyTrack{ track_hash.track_fullname_hash, 0 });
+        return it->second;
+    }
+
+    void AdminService::PublishReply(const std::vector<std::string>& client_entries, const std::string& json)
+    {
+        std::uint64_t track_hash = 0;
+        std::uint64_t group_id = 0;
+        {
+            std::lock_guard lock(reply_mutex_);
+            auto& track = EnsureReplyTrack(client_entries);
+            track_hash = track.track_fullname_hash;
+            group_id = track.next_group_id++;
+        }
+        std::vector<std::uint8_t> payload(json.begin(), json.end());
+
+        const auto ttl = config_.object_ttl_ > std::numeric_limits<std::uint16_t>::max()
+                           ? std::numeric_limits<std::uint16_t>::max()
+                           : static_cast<std::uint16_t>(config_.object_ttl_);
+        const quicr::ObjectHeaders headers{ .group_id = group_id,
+                                            .object_id = 0,
+                                            .subgroup_id = 0,
+                                            .payload_length = payload.size(),
+                                            .status = quicr::ObjectStatus::kAvailable,
+                                            .priority = kDefaultPriority,
+                                            .ttl = ttl,
+                                            .track_mode = quicr::TrackMode::kStream,
+                                            .extensions = std::nullopt,
+                                            .immutable_extensions = std::nullopt };
+
+        if (!server_.PublishLocalObject(track_hash, headers, payload)) {
+            SPDLOG_LOGGER_WARN(
+              config_.logger_, "Admin reply track is not registered for {}", JoinTrackNamespace(client_entries));
+        }
+    }
+} // namespace laps
