@@ -2721,9 +2721,11 @@ namespace laps {
                 ForgetPeeringSubscribe(track_hash);
                 peer_manager_.Unsubscribe(track_hash);
                 admin_service_.ReleaseRequest(track_full_name);
-                RemoveLocalPublish(track_full_name, false);
             }
-            PublishDoneReceived(nullptr, 0);
+            // A peered announce is stored under connection 0 and is not indexed by request id.
+            // PublishDoneReceived(nullptr, 0) cannot find it, so the publish stayed after the
+            // announce was withdrawn. Admin replies show up here once per client.
+            RemoveLocalPublish(track_full_name, false);
         }
     }
 
