@@ -1136,7 +1136,8 @@ namespace laps {
             }
             out << ",\"metrics\":{\"srtt_us\":" << peer.srtt_us << ",\"connect_time_us\":" << peer.connect_time_us
                 << ",\"connect_time\":\"" << JsonEscape(FormatUtcTimestamp(peer.connect_time_us))
-                << "\",\"subscribe_tracks\":" << peer.subscribe_tracks << ",\"publishes\":" << peer.publishes << "}}";
+                << "\",\"subscribe_tracks\":" << peer.subscribe_tracks << ",\"publishes\":" << peer.publishes
+                << ",\"active_streams\":" << peer.active_streams << "}}";
         }
         out << "]}";
         return out.str();

@@ -1354,14 +1354,15 @@ namespace laps {
             entry.connect_time_us = peer.connect_time_us;
             entry.subscribe_tracks = peer.subscribe_tracks;
             entry.publishes = peer.publishes;
+            entry.active_streams = peer.active_streams;
             result.peers.push_back(std::move(entry));
         }
         return result;
     }
 
     moq::peering::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host,
-                                                             std::uint16_t port,
-                                                             std::optional<std::uint64_t> metric)
+                                                              std::uint16_t port,
+                                                              std::optional<std::uint64_t> metric)
     {
         return peer_manager_.AddPeer(host, port, metric);
     }
@@ -1377,8 +1378,8 @@ namespace laps {
     }
 
     moq::peering::PeerAdminResult ClientManager::AdminSetPeerMetric(const std::string& host,
-                                                                   std::uint16_t port,
-                                                                   std::uint64_t metric)
+                                                                    std::uint16_t port,
+                                                                    std::uint64_t metric)
     {
         return peer_manager_.SetPeerMetric(host, port, metric);
     }

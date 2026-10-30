@@ -195,6 +195,7 @@ TEST_CASE("admin rpc json")
     accepted.connect_time_us = 1720000000000000;
     accepted.subscribe_tracks = 4;
     accepted.publishes = 2;
+    accepted.active_streams = 3;
     laps::AdminPeer dialed;
     dialed.session_id = 12;
     dialed.role = "dialed";
@@ -210,10 +211,10 @@ TEST_CASE("admin rpc json")
     CHECK(peer_json.find("\"contact\":\"relay-a\"") != std::string::npos);
     CHECK(peer_json.find("\"node_type\":\"edge\"") != std::string::npos);
     CHECK(peer_json.find("\"metrics\":{\"srtt_us\":1500,\"connect_time_us\":1720000000000000,"
-                         "\"connect_time\":\"2024-07-03 09:46:40\",\"subscribe_tracks\":4,\"publishes\":2}") !=
-          std::string::npos);
+                         "\"connect_time\":\"2024-07-03 09:46:40\",\"subscribe_tracks\":4,\"publishes\":2,"
+                         "\"active_streams\":3}") != std::string::npos);
     CHECK(peer_json.find("\"metrics\":{\"srtt_us\":0,\"connect_time_us\":0,\"connect_time\":\"\",\"subscribe_tracks\":"
-                         "0,\"publishes\":0}") != std::string::npos);
+                         "0,\"publishes\":0,\"active_streams\":0}") != std::string::npos);
     CHECK(peer_json.find("192.0.2.20") != std::string::npos);
     CHECK(peer_json.find("\"node_id\":\"0.0:0.42\"") != std::string::npos);
     const auto dialed_pos = peer_json.find("\"role\":\"dialed\"");

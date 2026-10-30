@@ -1,6 +1,6 @@
 # LAPS Admin API
 
-LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, and `subscribe_tracks` list the entries behind those counts. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `metrics` reports the latest connection and track metrics samples. `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric` change those sessions.
+LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, and `subscribe_tracks` list the entries behind those counts. `peers` reports each peering session, whether this relay accepted it or dialed it, how many subscribe tracks and publishes are being forwarded over it, and how many QUIC streams that session has open. `metrics` reports the latest connection and track metrics samples. `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric` change those sessions.
 
 The relay binary is `lapsRelay`. The admin client is `lapsAdmin`.
 
@@ -385,7 +385,7 @@ The result lists the peering sessions this relay currently holds. A session this
 
 A peer's `node_id`, `contact`, and `node_type` are present after the peering handshake identifies the remote node. That `node_id` is the remote peer's id. `contact` is that peer's relay endpoint id. The document's own `node_id` is this relay. `metrics.srtt_us` is the smoothed RTT in microseconds, sampled when the RPC runs. It is `0` when the connection has no sample yet. `metrics.connect_time_us` is the Unix time in microseconds when this attempt became connected. It is `0` while the peer is connecting or disconnected, and it is recorded again after a reconnect. `metrics.connect_time` is that same instant as UTC `YYYY-MM-DD HH:MM:SS`, truncated to the second. It is an empty string when `connect_time_us` is `0`.
 
-`metrics.subscribe_tracks` is the number of tracks this relay is currently forwarding to that peer. That is the client forwarding table for the peer, plus each peer-to-peer flow sent onward to it. `metrics.publishes` is the number of tracks arriving from that peer that this relay is forwarding to a local subscriber or to another peer. Both are gauges of the forwarding tables at the moment of the RPC. A session with no connection reports `0` for both. The local client path uses session id 0 and is not a peer, so it is not included.
+`metrics.subscribe_tracks` is the number of tracks this relay is currently forwarding to that peer. That is the client forwarding table for the peer, plus each peer-to-peer flow sent onward to it. `metrics.publishes` is the number of tracks arriving from that peer that this relay is forwarding to a local subscriber or to another peer. `metrics.active_streams` is the number of QUIC streams that session currently has open: the control stream when it is open, object streams received from the peer that have not closed, and object streams this relay has opened toward the peer and still holds. All three are gauges at the moment of the RPC. A session with no connection reports `0`. The local client path uses session id 0 and is not a peer, so it is not included.
 
 `lapsAdmin` prints this object at `results["peers"]`:
 
@@ -408,7 +408,8 @@ A peer's `node_id`, `contact`, and `node_type` are present after the peering han
         "connect_time_us": 1720000000000000,
         "connect_time": "2024-07-03 09:46:40",
         "subscribe_tracks": 4,
-        "publishes": 2
+        "publishes": 2,
+        "active_streams": 3
       }
     },
     {
@@ -424,7 +425,8 @@ A peer's `node_id`, `contact`, and `node_type` are present after the peering han
         "connect_time_us": 0,
         "connect_time": "",
         "subscribe_tracks": 0,
-        "publishes": 0
+        "publishes": 0,
+        "active_streams": 0
       }
     }
   ]
@@ -449,6 +451,7 @@ A peer's `node_id`, `contact`, and `node_type` are present after the peering han
 | `metrics.connect_time` | Same instant as UTC `YYYY-MM-DD HH:MM:SS`. Empty when the peer is not connected. |
 | `metrics.subscribe_tracks` | Tracks this relay is forwarding to the peer because of a subscribe. |
 | `metrics.publishes` | Tracks arriving from the peer that this relay is forwarding onward. |
+| `metrics.active_streams` | QUIC streams currently open on this session: the control stream, object streams received from the peer, and object streams opened toward the peer. |
 
 ## `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric`
 

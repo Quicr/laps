@@ -160,6 +160,8 @@ namespace laps {
         std::uint64_t connect_time_us{ 0 };
         std::uint64_t subscribe_tracks{ 0 };
         std::uint64_t publishes{ 0 };
+        /// QUIC streams currently open on this peering session.
+        std::uint64_t active_streams{ 0 };
     };
 
     /// Peers this relay has accepted or dialed.
