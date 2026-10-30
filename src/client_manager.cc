@@ -1349,6 +1349,8 @@ namespace laps {
                     break;
             }
             entry.srtt_us = peer.srtt_us;
+            entry.metric = peer.metric;
+            entry.node_metric = peer.node_metric;
             entry.connect_time_us = peer.connect_time_us;
             entry.subscribe_tracks = peer.subscribe_tracks;
             entry.publishes = peer.publishes;
@@ -1357,9 +1359,11 @@ namespace laps {
         return result;
     }
 
-    moq::peering::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host, std::uint16_t port)
+    moq::peering::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host,
+                                                             std::uint16_t port,
+                                                             std::optional<std::uint64_t> metric)
     {
-        return peer_manager_.AddPeer(host, port);
+        return peer_manager_.AddPeer(host, port, metric);
     }
 
     moq::peering::PeerAdminResult ClientManager::AdminRemovePeer(const std::string& host, std::uint16_t port)
@@ -1370,6 +1374,13 @@ namespace laps {
     moq::peering::PeerAdminResult ClientManager::AdminRestartPeer(const std::string& host, std::uint16_t port)
     {
         return peer_manager_.RestartPeer(host, port);
+    }
+
+    moq::peering::PeerAdminResult ClientManager::AdminSetPeerMetric(const std::string& host,
+                                                                   std::uint16_t port,
+                                                                   std::uint64_t metric)
+    {
+        return peer_manager_.SetPeerMetric(host, port, metric);
     }
 
     bool ClientManager::DispatchAdminObject(const quicr::FullTrackName& track, quicr::BytesSpan data)

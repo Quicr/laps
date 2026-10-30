@@ -1128,7 +1128,8 @@ namespace laps {
             first = false;
             out << "{\"session_id\":" << peer.session_id << ",\"role\":\"" << JsonEscape(peer.role)
                 << "\",\"status\":\"" << JsonEscape(peer.status) << "\",\"host\":\"" << JsonEscape(peer.host)
-                << "\",\"port\":" << peer.port;
+                << "\",\"port\":" << peer.port << ",\"metric\":" << peer.metric
+                << ",\"node_metric\":" << peer.node_metric;
             if (peer.identified) {
                 out << ",\"node_id\":\"" << JsonEscape(peer.node_id) << "\",\"contact\":\"" << JsonEscape(peer.contact)
                     << "\",\"node_type\":\"" << JsonEscape(peer.node_type) << '"';
@@ -1234,37 +1235,76 @@ namespace laps {
         return parts;
     }
 
-    std::optional<AdminPeerEndpoint> ParseAdminPeerEndpoint(std::string_view text, std::string& error)
+    std::optional<std::uint64_t> ParseMetricText(const std::string& text, std::string& error)
+    {
+        if (text.empty() || text.front() == '-') {
+            error = "metric must be an unsigned integer";
+            return std::nullopt;
+        }
+        std::size_t consumed = 0;
+        unsigned long long value = 0;
+        try {
+            value = std::stoull(text, &consumed);
+        } catch (const std::exception&) {
+            error = "metric must be an unsigned integer";
+            return std::nullopt;
+        }
+        if (consumed != text.size()) {
+            error = "metric must be an unsigned integer";
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    std::optional<AdminPeerEndpoint> ParseAdminPeerEndpoint(std::string_view text,
+                                                            std::string& error,
+                                                            bool require_metric)
     {
         const auto trimmed = SplitAdminParams(text);
         if (trimmed.size() != 1 || trimmed.front().empty()) {
-            error = "expected host:port";
+            error = require_metric ? "expected host:port:metric" : "expected host:port";
             return std::nullopt;
         }
         const auto& value = trimmed.front();
 
         std::string host;
         std::string port_text;
+        std::optional<std::string> metric_text;
         if (!value.empty() && value.front() == '[') {
             const auto end = value.find(']');
             if (end == std::string::npos || end + 1 >= value.size() || value[end + 1] != ':') {
-                error = "expected [ipv6]:port";
+                error = require_metric ? "expected [ipv6]:port:metric" : "expected [ipv6]:port";
                 return std::nullopt;
             }
             host = value.substr(1, end - 1);
-            port_text = value.substr(end + 2);
+            const auto rest = value.substr(end + 2);
+            const auto colon = rest.find(':');
+            if (colon == std::string::npos) {
+                port_text = rest;
+            } else {
+                port_text = rest.substr(0, colon);
+                metric_text = rest.substr(colon + 1);
+            }
         } else {
-            const auto colon = value.rfind(':');
-            if (colon == std::string::npos || colon == 0 || colon + 1 >= value.size()) {
-                error = "expected host:port";
+            const auto colon_count = static_cast<std::size_t>(std::count(value.begin(), value.end(), ':'));
+            if (colon_count == 1) {
+                const auto colon = value.find(':');
+                host = value.substr(0, colon);
+                port_text = value.substr(colon + 1);
+            } else if (colon_count == 2) {
+                const auto first = value.find(':');
+                const auto second = value.find(':', first + 1);
+                host = value.substr(0, first);
+                port_text = value.substr(first + 1, second - first - 1);
+                metric_text = value.substr(second + 1);
+            } else {
+                error = require_metric ? "expected host:port:metric" : "expected host:port";
                 return std::nullopt;
             }
-            host = value.substr(0, colon);
-            port_text = value.substr(colon + 1);
         }
 
-        if (host.empty()) {
-            error = "expected host:port";
+        if (host.empty() || port_text.empty()) {
+            error = require_metric ? "expected host:port:metric" : "expected host:port";
             return std::nullopt;
         }
 
@@ -1284,6 +1324,16 @@ namespace laps {
         AdminPeerEndpoint endpoint;
         endpoint.host = std::move(host);
         endpoint.port = static_cast<std::uint16_t>(port);
+        if (metric_text.has_value()) {
+            const auto metric = ParseMetricText(*metric_text, error);
+            if (!metric.has_value()) {
+                return std::nullopt;
+            }
+            endpoint.metric = *metric;
+        } else if (require_metric) {
+            error = "expected host:port:metric";
+            return std::nullopt;
+        }
         return endpoint;
     }
 
@@ -1298,6 +1348,7 @@ namespace laps {
 
             std::optional<std::string> host;
             std::optional<std::uint16_t> port;
+            std::optional<std::uint64_t> metric;
             if (!reader.Consume('}')) {
                 while (true) {
                     const auto key = reader.ParseString();
@@ -1320,6 +1371,17 @@ namespace laps {
                             return std::nullopt;
                         }
                         port = static_cast<std::uint16_t>(value);
+                    } else if (key == "metric") {
+                        if (!reader.StartsNumber()) {
+                            error = "metric must be an unsigned integer";
+                            return std::nullopt;
+                        }
+                        const auto text = reader.CaptureValue();
+                        const auto value = ParseMetricText(text, error);
+                        if (!value.has_value()) {
+                            return std::nullopt;
+                        }
+                        metric = *value;
                     } else {
                         reader.SkipValue();
                     }
@@ -1345,6 +1407,7 @@ namespace laps {
             AdminPeerEndpoint endpoint;
             endpoint.host = *host;
             endpoint.port = *port;
+            endpoint.metric = metric;
             return endpoint;
         } catch (const std::exception& ex) {
             error = ex.what();
@@ -1355,15 +1418,23 @@ namespace laps {
     std::string EncodeAdminPeerParams(const AdminPeerEndpoint& endpoint)
     {
         std::ostringstream out;
-        out << "{\"host\":\"" << JsonEscape(endpoint.host) << "\",\"port\":" << endpoint.port << '}';
+        out << "{\"host\":\"" << JsonEscape(endpoint.host) << "\",\"port\":" << endpoint.port;
+        if (endpoint.metric.has_value()) {
+            out << ",\"metric\":" << *endpoint.metric;
+        }
+        out << '}';
         return out.str();
     }
 
     std::string EncodeAdminPeerCommand(const AdminPeerCommand& command)
     {
         std::ostringstream out;
-        out << "{\"host\":\"" << JsonEscape(command.host) << "\",\"port\":" << command.port << ",\"action\":\""
-            << JsonEscape(command.action) << "\",\"message\":\"" << JsonEscape(command.message) << "\"}";
+        out << "{\"host\":\"" << JsonEscape(command.host) << "\",\"port\":" << command.port;
+        if (command.metric.has_value()) {
+            out << ",\"metric\":" << *command.metric;
+        }
+        out << ",\"action\":\"" << JsonEscape(command.action) << "\",\"message\":\"" << JsonEscape(command.message)
+            << "\"}";
         return out.str();
     }
 } // namespace laps

@@ -292,14 +292,31 @@ TEST_CASE("admin peer command params")
     REQUIRE(v6.has_value());
     CHECK(v6->host == "2001:db8::1");
     CHECK(v6->port == 33434);
+    CHECK_FALSE(v6->metric.has_value());
     CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10", error).has_value());
     CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10:0", error).has_value());
+
+    const auto with_metric = laps::ParseAdminPeerEndpoint("192.0.2.10:33434:250", error);
+    REQUIRE(with_metric.has_value());
+    CHECK(*with_metric->metric == 250);
+    const auto v6_metric = laps::ParseAdminPeerEndpoint("[2001:db8::1]:33434:100", error);
+    REQUIRE(v6_metric.has_value());
+    CHECK(v6_metric->host == "2001:db8::1");
+    CHECK(*v6_metric->metric == 100);
+    CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10:33434", error, true).has_value());
+    CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10:33434:-1", error).has_value());
 
     const auto encoded = laps::EncodeAdminPeerParams(*endpoint);
     const auto parsed = laps::ParseAdminPeerParams(encoded, error);
     REQUIRE(parsed.has_value());
     CHECK(parsed->host == "192.0.2.10");
     CHECK(parsed->port == 33434);
+    CHECK_FALSE(parsed->metric.has_value());
+
+    const auto metric_json = laps::EncodeAdminPeerParams(*with_metric);
+    const auto parsed_metric = laps::ParseAdminPeerParams(metric_json, error);
+    REQUIRE(parsed_metric.has_value());
+    CHECK(*parsed_metric->metric == 250);
 
     laps::AdminPeerCommand command;
     command.host = "192.0.2.10";

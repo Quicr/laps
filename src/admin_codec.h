@@ -51,6 +51,9 @@ namespace laps {
     /// Disconnect a peer and drop its forwarding state. A dialed peer is connected again.
     inline constexpr std::string_view kAdminRestartPeerMethod = "restart-peer";
 
+    /// Set the metric advertised on one peering session when it is greater than the node metric.
+    inline constexpr std::string_view kAdminSetPeerMetricMethod = "set-peer-metric";
+
     /// Admin RPC spoken by this build. Stays at 1 until the API is released.
     inline constexpr std::uint64_t kAdminApiVersion = 1;
 
@@ -150,6 +153,10 @@ namespace laps {
         std::string contact;
         std::string node_type;
         std::uint64_t srtt_us{ 0 };
+        /// Metric configured for this peering session. Zero when none was set.
+        std::uint64_t metric{ 0 };
+        /// Metric this relay advertises for itself on this session.
+        std::uint64_t node_metric{ 0 };
         std::uint64_t connect_time_us{ 0 };
         std::uint64_t subscribe_tracks{ 0 };
         std::uint64_t publishes{ 0 };
@@ -188,18 +195,21 @@ namespace laps {
         std::vector<AdminNamespaceTrack> tracks;
     };
 
-    /// host:port argument of add-peer, remove-peer, and restart-peer.
+    /// host:port argument of add-peer, remove-peer, restart-peer, and set-peer-metric.
     struct AdminPeerEndpoint
     {
         std::string host;
         std::uint16_t port{ 0 };
+        /// Present when the command includes a session metric.
+        std::optional<std::uint64_t> metric;
     };
 
-    /// Result of add-peer, remove-peer, or restart-peer.
+    /// Result of add-peer, remove-peer, restart-peer, or set-peer-metric.
     struct AdminPeerCommand
     {
         std::string host;
         std::uint16_t port{ 0 };
+        std::optional<std::uint64_t> metric;
         std::string action;
         std::string message;
     };
@@ -325,10 +335,16 @@ namespace laps {
     /// Split a comma-delimited parameter argument. Tokens are trimmed. Empty tokens are kept.
     std::vector<std::string> SplitAdminParams(std::string_view text);
 
-    /// Parse `host:port`. IPv6 addresses use `[addr]:port`.
-    std::optional<AdminPeerEndpoint> ParseAdminPeerEndpoint(std::string_view text, std::string& error);
+    /**
+     * @brief Parse `host:port` or `host:port:metric`
+     *
+     * @param require_metric  True for set-peer-metric, which always includes a metric
+     */
+    std::optional<AdminPeerEndpoint> ParseAdminPeerEndpoint(std::string_view text,
+                                                            std::string& error,
+                                                            bool require_metric = false);
 
-    /// Parse `{"host":"...","port":N}`.
+    /// Parse `{"host":"...","port":N}` and an optional `"metric"`.
     std::optional<AdminPeerEndpoint> ParseAdminPeerParams(std::string_view params_json, std::string& error);
 
     std::string EncodeAdminPeerParams(const AdminPeerEndpoint& endpoint);

@@ -1,6 +1,6 @@
 # LAPS Admin API
 
-LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, and `subscribe_tracks` list the entries behind those counts. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `metrics` reports the latest connection and track metrics samples. `add-peer`, `remove-peer`, and `restart-peer` change those sessions.
+LAPS exposes a runtime admin API over MoQ publish and subscribe tracks. An admin client publishes a JSON request to the relay and subscribes to a JSON reply on a second track. `state` reports the sizes of the relay's internal maps and the contents of the object cache. `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, and `subscribe_tracks` list the entries behind those counts. `peers` reports each peering session, whether this relay accepted it or dialed it, and how many subscribe tracks and publishes are being forwarded over it. `metrics` reports the latest connection and track metrics samples. `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric` change those sessions.
 
 The relay binary is `lapsRelay`. The admin client is `lapsAdmin`.
 
@@ -398,6 +398,8 @@ A peer's `node_id`, `contact`, and `node_type` are present after the peering han
       "status": "connected",
       "host": "192.0.2.10",
       "port": 33434,
+      "metric": 250,
+      "node_metric": 250,
       "node_id": "0.0:0.42",
       "contact": "relay-a",
       "node_type": "edge",
@@ -415,6 +417,8 @@ A peer's `node_id`, `contact`, and `node_type` are present after the peering han
       "status": "connecting",
       "host": "192.0.2.20",
       "port": 33434,
+      "metric": 0,
+      "node_metric": 100,
       "metrics": {
         "srtt_us": 0,
         "connect_time_us": 0,
@@ -438,21 +442,25 @@ A peer's `node_id`, `contact`, and `node_type` are present after the peering han
 | `node_id` | Remote peer's peering node id, `high.high:low.low`. Omitted until the handshake identifies the peer. |
 | `contact` | Remote relay endpoint id. Omitted until the handshake identifies the peer. |
 | `node_type` | `edge`, `via`, or `stub`. Omitted until the handshake identifies the peer. |
+| `metric` | Metric configured for this peering session. `0` when add-peer did not set one. |
+| `node_metric` | Metric this relay writes into its own node advertisements on this session. This is the node metric, default 100, unless `metric` is greater. |
 | `metrics.srtt_us` | Smoothed RTT in microseconds. |
 | `metrics.connect_time_us` | Unix time in microseconds when this attempt became connected. `0` when the peer is not connected. |
 | `metrics.connect_time` | Same instant as UTC `YYYY-MM-DD HH:MM:SS`. Empty when the peer is not connected. |
 | `metrics.subscribe_tracks` | Tracks this relay is forwarding to the peer because of a subscribe. |
 | `metrics.publishes` | Tracks arriving from the peer that this relay is forwarding onward. |
 
-## `add-peer`, `remove-peer`, and `restart-peer`
+## `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric`
 
-Each method takes one address, `host:port`. On the wire that is a params object:
+`remove-peer` and `restart-peer` take one address, `host:port`. `add-peer` takes `host:port` and an optional metric, `host:port:metric`. `set-peer-metric` takes `host:port:metric`. On the wire that is a params object:
 
 ```json
-{"host":"192.0.2.10","port":33434}
+{"host":"192.0.2.10","port":33434,"metric":250}
 ```
 
-An IPv6 address is written `[2001:db8::1]:33434` on the command line. The host stored in params does not include the brackets.
+`metric` is omitted when `add-peer` does not set one. An IPv6 address is written `[2001:db8::1]:33434` or `[2001:db8::1]:33434:250` on the command line. The host stored in params does not include the brackets.
+
+The metric is the cost this relay advertises for itself on that peering session. The node metric defaults to 100. The session value is used only when it is greater than the node metric. A lower or equal session value leaves the advertised metric at the node metric. Path selection prefers the lower sum of those metrics, then fewer hops, then lower smoothed RTT.
 
 `add-peer` dials that address and keeps retrying it. If a session to that host is already accepted, the relay does not open a second connection. It remembers the address and dials it if the inbound session later closes. The relay logs `Added peer <host>:<port> but it is already accepted as inbound`. If that exact address is already dialed, the result is an error, `duplicate peer <host>:<port>`.
 
@@ -471,7 +479,9 @@ A successful result is printed at `results["add-peer"]`:
 }
 ```
 
-`action` is `added`, `removed`, or `restarted`.
+`set-peer-metric` updates the metric on a dialed or accepted session. A remembered redial for that address keeps the new value. A missing peer is an error, `peer <host>:<port> does not exist`. When the advertised metric changes on a connected session, this relay sends its node advertisement again and forwards the nodes it already knows with the new hop metric.
+
+`action` is `added`, `removed`, `restarted`, or `metric`. A result that carried a metric includes `"metric"`.
 
 ## `metrics`
 
@@ -556,8 +566,8 @@ The client connects, reads the endpoint id from the relay SETUP, subscribes to t
 
 | Option | Default | Role |
 | --- | --- | --- |
-| positional methods | required | One or more of `state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, `subscribe_tracks`, `add-peer`, `remove-peer`, and `restart-peer`. Any other string is sent as the method so an unknown-method error can be observed. |
-| method parameters | next argument | Required after `add-peer`, `remove-peer`, and `restart-peer`. Commas separate values. Each value is one call, as `host:port` or `[ipv6]:port`. |
+| positional methods | required | One or more of `state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, `subscribe_tracks`, `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric`. Any other string is sent as the method so an unknown-method error can be observed. |
+| method parameters | next argument | Required after `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric`. Commas separate values. Each value is one call, as `host:port`, `host:port:metric`, or `[ipv6]:port`. `set-peer-metric` requires the metric. `add-peer` accepts it. |
 | `--uri` | `moq://127.0.0.1:33435` | Relay URI. `33435` is the `lapsRelay` default listen port. |
 | `--target-endpoint` | SETUP endpoint id | Target relay endpoint. It may differ from the relay at `--uri`. Omit it to use the SETUP endpoint id. |
 | `--endpoint-id` | `admin-<pid>-<random>` | This client's endpoint id, appended to the request namespace and placed before the relay id in the reply namespace. The random suffix keeps two clients with the same pid from sharing a track. It must not begin with the target relay endpoint. |
@@ -586,11 +596,11 @@ lapsAdmin --uri moq://127.0.0.1:33435 \
 
 ## Authorization and scope
 
-The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes, cache summary, track and namespace lists, and metrics, and can add, remove, or restart peers.
+The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes, cache summary, track and namespace lists, and metrics, and can add, remove, restart, or set the metric of peers.
 
 The relay consumes a request only when the namespace endpoint id is its own. `--target-endpoint` selects that id and may name a different relay than the one at `--uri`. The client publishes the request so the connected relay can announce the full track name. The named relay subscribes to that track through peering and consumes the object when it arrives. Peering carries the full track name, not the subscribe-tracks prefix.
 
-`state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, `subscribe_tracks`, `add-peer`, `remove-peer`, and `restart-peer` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
+`state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, `subscribe_tracks`, `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
 
 ## Code
 
