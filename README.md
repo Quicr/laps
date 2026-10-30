@@ -22,6 +22,12 @@ Publishers and subscribers connect to LAPS with Media over QUIC Transport. LAPS 
 
 This peering layer provides low-latency data forwarding, traffic engineering, and policy-aware relay selection for global deployments.
 
+## Admin API
+
+`lapsRelay` answers runtime queries over MoQ tracks. The `lapsAdmin` client publishes a JSON request and reads the JSON reply. Methods cover relay state, peer sessions, metrics, track and namespace lists, and adding, removing, restarting, or setting the metric of a peer. `--target-endpoint` names the relay that should answer. That relay can be the one at `--uri`, the next peer, or a relay further along the peering path.
+
+The track layout, methods, and `lapsAdmin` options are in [docs/admin-api.md](docs/admin-api.md).
+
 ## MOQT Relay Features
 
 - Media over QUIC Transport (MOQT) relay support for publisher and subscriber client connections
@@ -34,6 +40,7 @@ This peering layer provides low-latency data forwarding, traffic engineering, an
 - Source-routed data forwarding with Subscribe Node Set (SNS) advertisements
 - Track ranking for selecting top tracks from subscribed namespaces
 - Docker images and a `relay_health_check` probe for monitoring a LAPS relay or another MOQT relay
+- Admin API and the `lapsAdmin` client for runtime state, peers, and metrics. See [docs/admin-api.md](docs/admin-api.md)
 
 ## Relay Peering At Scale
 

@@ -183,25 +183,31 @@ namespace laps {
                       identity,
                       EncodeAdminNamespaceList("subscribe_tracks", server_.CollectAdminSubscribeTracks()));
                 } else if (message.method == kAdminAddPeerMethod || message.method == kAdminRemovePeerMethod ||
-                           message.method == kAdminRestartPeerMethod) {
+                           message.method == kAdminRestartPeerMethod || message.method == kAdminSetPeerMetricMethod) {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     if (!message.has_params) {
+                        const auto expected = message.method == kAdminSetPeerMetricMethod ? "host:port:metric"
+                                                                                          : "host:port";
                         response =
-                          EncodeAdminError(message, identity, std::string(message.method) + " requires host:port");
+                          EncodeAdminError(message, identity, std::string(message.method) + " requires " + expected);
                     } else {
                         std::string params_error;
                         const auto endpoint = ParseAdminPeerParams(message.params_json, params_error);
                         if (!endpoint.has_value()) {
                             response = EncodeAdminError(message, identity, params_error);
+                        } else if (message.method == kAdminSetPeerMetricMethod && !endpoint->metric.has_value()) {
+                            response = EncodeAdminError(message, identity, "set-peer-metric requires a metric");
                         } else {
                             moq::peering::PeerAdminResult outcome;
                             if (message.method == kAdminAddPeerMethod) {
-                                outcome = server_.AdminAddPeer(endpoint->host, endpoint->port);
+                                outcome = server_.AdminAddPeer(endpoint->host, endpoint->port, endpoint->metric);
                             } else if (message.method == kAdminRemovePeerMethod) {
                                 outcome = server_.AdminRemovePeer(endpoint->host, endpoint->port);
-                            } else {
+                            } else if (message.method == kAdminRestartPeerMethod) {
                                 outcome = server_.AdminRestartPeer(endpoint->host, endpoint->port);
+                            } else {
+                                outcome = server_.AdminSetPeerMetric(endpoint->host, endpoint->port, *endpoint->metric);
                             }
                             if (!outcome.ok) {
                                 response = EncodeAdminError(message, identity, outcome.message);
@@ -209,6 +215,7 @@ namespace laps {
                                 AdminPeerCommand command;
                                 command.host = outcome.host;
                                 command.port = outcome.port;
+                                command.metric = outcome.metric;
                                 command.action = outcome.action;
                                 command.message = outcome.message;
                                 response = EncodeAdminResult(message, identity, EncodeAdminPeerCommand(command));

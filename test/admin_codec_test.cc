@@ -195,6 +195,7 @@ TEST_CASE("admin rpc json")
     accepted.connect_time_us = 1720000000000000;
     accepted.subscribe_tracks = 4;
     accepted.publishes = 2;
+    accepted.active_streams = 3;
     laps::AdminPeer dialed;
     dialed.session_id = 12;
     dialed.role = "dialed";
@@ -210,10 +211,10 @@ TEST_CASE("admin rpc json")
     CHECK(peer_json.find("\"contact\":\"relay-a\"") != std::string::npos);
     CHECK(peer_json.find("\"node_type\":\"edge\"") != std::string::npos);
     CHECK(peer_json.find("\"metrics\":{\"srtt_us\":1500,\"connect_time_us\":1720000000000000,"
-                         "\"connect_time\":\"2024-07-03 09:46:40\",\"subscribe_tracks\":4,\"publishes\":2}") !=
-          std::string::npos);
+                         "\"connect_time\":\"2024-07-03 09:46:40\",\"subscribe_tracks\":4,\"publishes\":2,"
+                         "\"active_streams\":3}") != std::string::npos);
     CHECK(peer_json.find("\"metrics\":{\"srtt_us\":0,\"connect_time_us\":0,\"connect_time\":\"\",\"subscribe_tracks\":"
-                         "0,\"publishes\":0}") != std::string::npos);
+                         "0,\"publishes\":0,\"active_streams\":0}") != std::string::npos);
     CHECK(peer_json.find("192.0.2.20") != std::string::npos);
     CHECK(peer_json.find("\"node_id\":\"0.0:0.42\"") != std::string::npos);
     const auto dialed_pos = peer_json.find("\"role\":\"dialed\"");
@@ -292,14 +293,31 @@ TEST_CASE("admin peer command params")
     REQUIRE(v6.has_value());
     CHECK(v6->host == "2001:db8::1");
     CHECK(v6->port == 33434);
+    CHECK_FALSE(v6->metric.has_value());
     CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10", error).has_value());
     CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10:0", error).has_value());
+
+    const auto with_metric = laps::ParseAdminPeerEndpoint("192.0.2.10:33434:250", error);
+    REQUIRE(with_metric.has_value());
+    CHECK(*with_metric->metric == 250);
+    const auto v6_metric = laps::ParseAdminPeerEndpoint("[2001:db8::1]:33434:100", error);
+    REQUIRE(v6_metric.has_value());
+    CHECK(v6_metric->host == "2001:db8::1");
+    CHECK(*v6_metric->metric == 100);
+    CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10:33434", error, true).has_value());
+    CHECK_FALSE(laps::ParseAdminPeerEndpoint("192.0.2.10:33434:-1", error).has_value());
 
     const auto encoded = laps::EncodeAdminPeerParams(*endpoint);
     const auto parsed = laps::ParseAdminPeerParams(encoded, error);
     REQUIRE(parsed.has_value());
     CHECK(parsed->host == "192.0.2.10");
     CHECK(parsed->port == 33434);
+    CHECK_FALSE(parsed->metric.has_value());
+
+    const auto metric_json = laps::EncodeAdminPeerParams(*with_metric);
+    const auto parsed_metric = laps::ParseAdminPeerParams(metric_json, error);
+    REQUIRE(parsed_metric.has_value());
+    CHECK(*parsed_metric->metric == 250);
 
     laps::AdminPeerCommand command;
     command.host = "192.0.2.10";

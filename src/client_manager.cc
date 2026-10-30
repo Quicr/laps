@@ -560,6 +560,9 @@ namespace laps {
     {
         // Snapshot of tracks to remove from top-n.
         std::vector<std::shared_ptr<SubscribeTrackHandler>> top_n_removal;
+        // Announces to withdraw after the lock is released. Peering sends on the QUIC thread.
+        std::vector<quicr::FullTrackName> withdraw_tracks;
+        std::vector<quicr::TrackNamespace> withdraw_namespaces;
 
         {
             std::lock_guard _(state_.state_mutex);
@@ -583,6 +586,9 @@ namespace laps {
                 // Remove from top-n if no other connection publishes this track.
                 const auto next = state_.pub_subscribes.lower_bound({ remove_key.first, 0 });
                 if (next == state_.pub_subscribes.end() || next->first.first != remove_key.first) {
+                    if (handler) {
+                        withdraw_tracks.push_back(handler->GetFullTrackName());
+                    }
                     top_n_removal.emplace_back(std::move(handler));
                 }
             }
@@ -604,7 +610,19 @@ namespace laps {
             }
 
             for (const auto& remove_key : anno_remove_list) {
+                withdraw_namespaces.push_back(remove_key.first);
                 state_.pub_namespace_active.erase(remove_key);
+            }
+        }
+
+        // The client is gone. Drop the peering announce so the next hop releases the publish
+        // and the object streams opened for it. Doing this under state_mutex deadlocks the QUIC thread.
+        for (const auto& track : withdraw_tracks) {
+            peer_manager_.Withdraw(ToPeeringTrack(track), moq::peering::Announcement::kTrack);
+        }
+        for (const auto& track_namespace : withdraw_namespaces) {
+            if (!NamespaceStillPublished(track_namespace)) {
+                peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
             }
         }
 
@@ -1349,17 +1367,22 @@ namespace laps {
                     break;
             }
             entry.srtt_us = peer.srtt_us;
+            entry.metric = peer.metric;
+            entry.node_metric = peer.node_metric;
             entry.connect_time_us = peer.connect_time_us;
             entry.subscribe_tracks = peer.subscribe_tracks;
             entry.publishes = peer.publishes;
+            entry.active_streams = peer.active_streams;
             result.peers.push_back(std::move(entry));
         }
         return result;
     }
 
-    moq::peering::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host, std::uint16_t port)
+    moq::peering::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host,
+                                                              std::uint16_t port,
+                                                              std::optional<std::uint64_t> metric)
     {
-        return peer_manager_.AddPeer(host, port);
+        return peer_manager_.AddPeer(host, port, metric);
     }
 
     moq::peering::PeerAdminResult ClientManager::AdminRemovePeer(const std::string& host, std::uint16_t port)
@@ -1370,6 +1393,13 @@ namespace laps {
     moq::peering::PeerAdminResult ClientManager::AdminRestartPeer(const std::string& host, std::uint16_t port)
     {
         return peer_manager_.RestartPeer(host, port);
+    }
+
+    moq::peering::PeerAdminResult ClientManager::AdminSetPeerMetric(const std::string& host,
+                                                                    std::uint16_t port,
+                                                                    std::uint64_t metric)
+    {
+        return peer_manager_.SetPeerMetric(host, port, metric);
     }
 
     bool ClientManager::DispatchAdminObject(const quicr::FullTrackName& track, quicr::BytesSpan data)
@@ -2691,9 +2721,11 @@ namespace laps {
                 ForgetPeeringSubscribe(track_hash);
                 peer_manager_.Unsubscribe(track_hash);
                 admin_service_.ReleaseRequest(track_full_name);
-                RemoveLocalPublish(track_full_name, false);
             }
-            PublishDoneReceived(nullptr, 0);
+            // A peered announce is stored under connection 0 and is not indexed by request id.
+            // PublishDoneReceived(nullptr, 0) cannot find it, so the publish stayed after the
+            // announce was withdrawn. Admin replies show up here once per client.
+            RemoveLocalPublish(track_full_name, false);
         }
     }
 
