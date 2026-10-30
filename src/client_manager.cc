@@ -560,6 +560,9 @@ namespace laps {
     {
         // Snapshot of tracks to remove from top-n.
         std::vector<std::shared_ptr<SubscribeTrackHandler>> top_n_removal;
+        // Announces to withdraw after the lock is released. Peering sends on the QUIC thread.
+        std::vector<quicr::FullTrackName> withdraw_tracks;
+        std::vector<quicr::TrackNamespace> withdraw_namespaces;
 
         {
             std::lock_guard _(state_.state_mutex);
@@ -583,6 +586,9 @@ namespace laps {
                 // Remove from top-n if no other connection publishes this track.
                 const auto next = state_.pub_subscribes.lower_bound({ remove_key.first, 0 });
                 if (next == state_.pub_subscribes.end() || next->first.first != remove_key.first) {
+                    if (handler) {
+                        withdraw_tracks.push_back(handler->GetFullTrackName());
+                    }
                     top_n_removal.emplace_back(std::move(handler));
                 }
             }
@@ -604,7 +610,19 @@ namespace laps {
             }
 
             for (const auto& remove_key : anno_remove_list) {
+                withdraw_namespaces.push_back(remove_key.first);
                 state_.pub_namespace_active.erase(remove_key);
+            }
+        }
+
+        // The client is gone. Drop the peering announce so the next hop releases the publish
+        // and the object streams opened for it. Doing this under state_mutex deadlocks the QUIC thread.
+        for (const auto& track : withdraw_tracks) {
+            peer_manager_.Withdraw(ToPeeringTrack(track), moq::peering::Announcement::kTrack);
+        }
+        for (const auto& track_namespace : withdraw_namespaces) {
+            if (!NamespaceStillPublished(track_namespace)) {
+                peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
             }
         }
 
