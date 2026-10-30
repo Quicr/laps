@@ -56,33 +56,41 @@ sequenceDiagram
 
 ## Reaching a peered relay
 
-`--target-endpoint` names the relay that should answer. That may be the relay at `--uri`, or another relay that one is peered with. The client publishes the request namespace and the request track. The connected relay announces both to its peers. It consumes the request only when the endpoint id in the namespace is its own. Otherwise it pauses the publish until the target relay subscribes.
+`--target-endpoint` names the relay that should answer. That may be the relay at `--uri`, the next peer, or a relay further along the peering path. The client publishes the request namespace and the request track. The connected relay announces both. Each relay forwards that announce to its other peers. A relay consumes the request only when the endpoint id in the namespace is its own. Any other relay pauses a local publisher until the target's subscribe arrives, and records a connection-handle 0 publish for the announced track.
 
-The target relay learns the full track name from that announce and subscribes to it, the same way a reader subscribes to a metrics track. That subscribe resumes the client's publish. The client then sends the request object, and the connected relay forwards the stream. The target consumes the object.
+The target learns the full track name from the announce and subscribes, the same way a reader subscribes to a metrics track. Peering forwards that subscribe back toward the publisher. Each hop installs forwarding for the subscriber, which resumes the client's publish. The client then sends the request object. The subgroup header and the object bytes are separate writes on that stream. A hop that is still opening the egress stream keeps those object bytes and sends them once the stream exists, then finishes the stream. The target consumes the object.
 
-The reply is a relay-local publish, like the metrics track. The client subscribed to it before it existed, so the target announces the reply after creating it. That announce attaches the peering subscribe that is already waiting. The reply object is encoded as a subgroup stream and sent on that subscribe, because a relay-local object has no publisher stream bytes and the object fan-out does not send to the peering subscriber. The connected relay delivers the object to the client.
+The reply is a relay-local publish, like the metrics track. The client subscribed to it before it existed, so that subscribe is already in the mesh when the target creates the reply. The target announces the reply. The announce attaches the waiting subscribe and is forwarded along the same path. The reply object is encoded as one subgroup stream and sent on that subscribe, because a relay-local object has no publisher stream bytes and the object fan-out does not send to the peering subscriber. Each hop delivers that stream to the next, and the relay the client connected to delivers it to the client.
 
-`relay_id`, `node_id`, `start_time_us`, and `start_time` in the printed document are the target relay, not the relay at `--uri`.
+When the client session closes, the connected relay withdraws the request announce. The target drops that request publish and withdraws the reply. Every relay that recorded a connection-handle 0 publish for either track removes it when the withdraw arrives, and finishes the object streams it opened for them. `publishes` and `metrics.active_streams` drop with those tracks. A control stream on a session that is still connected stays in `active_streams`.
+
+`relay_id`, `node_id`, `start_time_us`, and `start_time` in the printed document are the target relay, not the relay at `--uri`. A direct peer is the same exchange with the middle relay omitted.
 
 ```mermaid
 sequenceDiagram
     participant Admin as lapsAdmin
-    participant Ingress as relay-b
+    participant Ingress as relay-c
+    participant Via as relay-b
     participant Target as relay-a
 
     Admin->>Ingress: QUIC + SETUP
     Note over Admin: --target-endpoint relay-a
     Admin->>Ingress: SUBSCRIBE laps/admin/admin-client/relay-a name rpc
-    Ingress->>Target: peering subscribe for the reply
+    Ingress->>Via: peering subscribe for the reply
+    Via->>Target: peering subscribe for the reply
     Admin->>Ingress: PUBLISH_NAMESPACE and PUBLISH request track
     Note over Ingress: Not this relay's prefix.<br/>Announce, then pause.
-    Ingress->>Target: announce namespace and track
-    Target->>Ingress: peering subscribe for the request
+    Ingress->>Via: announce namespace and track
+    Via->>Target: announce namespace and track
+    Target->>Via: peering subscribe for the request
+    Via->>Ingress: peering subscribe for the request
     Note over Ingress: Resume the publish.
     Admin->>Ingress: JSON request
-    Ingress->>Target: request stream
+    Ingress->>Via: request stream
+    Via->>Target: request stream
     Note over Target: Consume. Announce the reply.<br/>Encode the object as a subgroup stream.
-    Target->>Ingress: reply stream
+    Target->>Via: reply stream
+    Via->>Ingress: reply stream
     Ingress-->>Admin: JSON result
 ```
 
@@ -96,7 +104,7 @@ libquicr sends `SUBSCRIBE_TRACKS` only from a server-mode session, and a client-
 
 When a publish arrives, the relay treats a subscribe-tracks prefix as a match only when the prefix is shorter than or equal to the published namespace (`TrackNamespace::IsPrefixOf`). A matching admin request is marked as having a subscriber, so the publisher is asked to forward. The local admin handler does not create a forwarding publish track and does not mirror the objects back out.
 
-A publish whose name is `rpc` and whose namespace starts with the admin base, but not with this relay's endpoint id, is outside the interest. The relay does not consume it. It pauses the publish when nothing else is subscribed and logs that the request is outside its prefix. The ingress relay still announces that publish to its peers. The relay named in the namespace subscribes to the full track, which resumes the publish.
+A publish whose name is `rpc` and whose namespace starts with the admin base, but not with this relay's endpoint id, is outside the interest. The relay does not consume it. It pauses the publish when nothing else is subscribed and logs that the request is outside its prefix. The ingress relay still announces that publish, and each hop forwards the announce. The relay named in the namespace subscribes to the full track, which resumes the publish.
 
 The interest is installed in `AdminService::Start()`, after metrics setup and before the relay listens. `AdminService::Stop()` removes it.
 
@@ -106,7 +114,7 @@ Both directions use stream track mode. One RPC message is one MoQ object. The pa
 
 `lapsAdmin` sends one object per call. Call index N uses group N, object 0, and subgroup 0, so the first call is group 0. The relay sends each reply as a new group on that client's reply track, with object 0 and subgroup 0. The reply group id starts at 0 and increases by one for each response to that client.
 
-The reply track is registered the first time a request from that client is consumed. The relay remembers it by the client namespace tuples, so a slash byte inside one tuple is a different client from those same bytes split into several tuples. Registration uses the same local-publish path as metrics: connection handle 0, request id 0, and no session. It is removed when that client's request publish ends, either because the client session closed or because a peered request was withdrawn. A later `state`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, or `subscribe_tracks` call also drops any publish, subscription, subscribe-tracks interest, or subscribe-namespace interest whose connection is no longer present, along with that connection's fan-out and notified-namespace entries, and drops an admin reply that no longer has a request. The relay's own admin subscribe-tracks interest stays. The client's subscription to that reply track is removed with it. The metrics track stays. The client subscribes to the reply before that publish exists, so the relay then announces the reply track. That announce attaches a peering subscribe that is already waiting. The reply object is then encoded as a subgroup stream and sent on that subscribe. A client publisher's bytes are forwarded as they arrive. A relay-local object has no stream bytes, and the object fan-out skips the peering subscriber, so this encode-and-send is what carries the reply across a peer.
+The reply track is registered the first time a request from that client is consumed. The relay remembers it by the client namespace tuples, so a slash byte inside one tuple is a different client from those same bytes split into several tuples. Registration uses the same local-publish path as metrics: connection handle 0, request id 0, and no session. It is removed when that client's request publish ends, either because the client session closed or because a peered request was withdrawn. A later `state`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, or `subscribe_tracks` call also drops any publish, subscription, subscribe-tracks interest, or subscribe-namespace interest whose connection is no longer present, along with that connection's fan-out and notified-namespace entries, and drops an admin reply that no longer has a request. The relay's own admin subscribe-tracks interest stays. The client's subscription to that reply track is removed with it. The metrics track stays. The client subscribes to the reply before that publish exists, so the relay then announces the reply track. That announce attaches a peering subscribe that is already waiting. The reply object is then encoded as a subgroup stream and sent on that subscribe. A client publisher's bytes are forwarded as they arrive. A relay-local object has no stream bytes, and the object fan-out skips the peering subscriber, so this encode-and-send is what carries the reply across each peer.
 
 Admin objects are taken in `SubscribeTrackHandler::ObjectReceived` before cache and fan-out. A consumed admin object is not forwarded as media. An object that arrived through peering is consumed when the track is this relay's admin request. A request aimed at a different relay is not consumed here; that relay consumes the peered copy.
 
@@ -312,7 +320,7 @@ Reading the cache advances its time buckets, so groups that have already expired
 
 Method names: `subscriptions` and `publishes`.
 
-Each result lists one entry for every track in the matching `state` count. `subscriptions` is `state_.subscribes`: a subscriber connection and the track it subscribed to. `publishes` is `state_.pub_subscribes`: a publisher connection and the track the relay subscribed to in order to receive it. Connection handle 0 is a relay-local publish, such as the metrics track or an admin reply.
+Each result lists one entry for every track in the matching `state` count. `subscriptions` is `state_.subscribes`: a subscriber connection and the track it subscribed to. `publishes` is `state_.pub_subscribes`: a publisher connection and the track the relay subscribed to in order to receive it. Connection handle 0 is a relay-local publish, such as the metrics track or an admin reply, or a track this relay recorded from a peered announce, such as another relay's admin request or reply. A peered announce is removed from `publishes` when that announce is withdrawn. An admin client's own request publish uses the client's connection handle and leaves with that session.
 
 Entries are ordered by namespace, name, then connection handle. Namespace and name are the track's bytes. Valid UTF-8 is written as JSON text. A byte that is not valid UTF-8 is written as `\u00XX`, which is also how cache entries and `publish_namespaces` encode those fields. `lapsAdmin` prints the object at `results["subscriptions"]` or `results["publishes"]`:
 
@@ -385,7 +393,7 @@ The result lists the peering sessions this relay currently holds. A session this
 
 A peer's `node_id`, `contact`, and `node_type` are present after the peering handshake identifies the remote node. That `node_id` is the remote peer's id. `contact` is that peer's relay endpoint id. The document's own `node_id` is this relay. `metrics.srtt_us` is the smoothed RTT in microseconds, sampled when the RPC runs. It is `0` when the connection has no sample yet. `metrics.connect_time_us` is the Unix time in microseconds when this attempt became connected. It is `0` while the peer is connecting or disconnected, and it is recorded again after a reconnect. `metrics.connect_time` is that same instant as UTC `YYYY-MM-DD HH:MM:SS`, truncated to the second. It is an empty string when `connect_time_us` is `0`.
 
-`metrics.subscribe_tracks` is the number of tracks this relay is currently forwarding to that peer. That is the client forwarding table for the peer, plus each peer-to-peer flow sent onward to it. `metrics.publishes` is the number of tracks arriving from that peer that this relay is forwarding to a local subscriber or to another peer. `metrics.active_streams` is the number of QUIC streams that session currently has open: the control stream when it is open, object streams received from the peer that have not closed, and object streams this relay has opened toward the peer and still holds. All three are gauges at the moment of the RPC. A session with no connection reports `0`. The local client path uses session id 0 and is not a peer, so it is not included.
+`metrics.subscribe_tracks` is the number of tracks this relay is currently forwarding to that peer. That is the client forwarding table for the peer, plus each peer-to-peer flow sent onward to it. `metrics.publishes` is the number of tracks arriving from that peer that this relay is forwarding to a local subscriber or to another peer. `metrics.active_streams` is the number of QUIC streams that session currently has open: the control stream when it is open, object streams received from the peer that have not closed, and object streams this relay has opened toward the peer and still holds. An admin request or reply is counted only while its object stream is open. The stream is finished when the subgroup ends, including after the client disconnects and the announce is withdrawn. All three are gauges at the moment of the RPC. A session with no connection reports `0`. The local client path uses session id 0 and is not a peer, so it is not included.
 
 `lapsAdmin` prints this object at `results["peers"]`:
 
@@ -579,7 +587,7 @@ The client connects, reads the endpoint id from the relay SETUP, subscribes to t
 | `--out` | stdout | Write the JSON document to this file instead of stdout. |
 | `--debug` | off | Debug logging. |
 
-When `--target-endpoint` differs from the connected relay, the client still publishes and subscribes in that other relay's admin namespace. The connected relay announces the publish to its peers and does not consume it. The named relay subscribes through peering, the connected relay resumes the publish, and the client sends the request. The reply comes back on the track the client subscribed to. If nobody subscribes before the timeout, the client reports that the request was not accepted.
+When `--target-endpoint` differs from the connected relay, the client still publishes and subscribes in that other relay's admin namespace. The connected relay announces the publish and does not consume it. Peering carries the announce and the target's subscribe across every hop between them. The connected relay resumes the publish, and the client sends the request. The reply comes back on the track the client subscribed to. If nobody subscribes before the timeout, the client reports that the request was not accepted.
 
 Example against a relay that advertises `relay-b`:
 
@@ -587,7 +595,7 @@ Example against a relay that advertises `relay-b`:
 lapsAdmin --uri moq://127.0.0.1:33435 --endpoint-id admin-client-xyz state peers
 ```
 
-Example that addresses a different relay than the one at `--uri`:
+Example that addresses the next peer:
 
 ```text
 lapsAdmin --uri moq://127.0.0.1:33435 \
@@ -597,11 +605,17 @@ lapsAdmin --uri moq://127.0.0.1:33435 \
   state
 ```
 
+Example that addresses a relay two hops away, with the client connected to relay-c and relay-b between them:
+
+```text
+lapsAdmin --uri moq://relay-c.example:33435 --target-endpoint relay-a peers
+```
+
 ## Authorization and scope
 
 The admin prefix is not authenticated. Any client that can open a session and publish under that prefix can read the map sizes, cache summary, track and namespace lists, and metrics, and can add, remove, restart, or set the metric of peers.
 
-The relay consumes a request only when the namespace endpoint id is its own. `--target-endpoint` selects that id and may name a different relay than the one at `--uri`. The client publishes the request so the connected relay can announce the full track name. The named relay subscribes to that track through peering and consumes the object when it arrives. Peering carries the full track name, not the subscribe-tracks prefix.
+The relay consumes a request only when the namespace endpoint id is its own. `--target-endpoint` selects that id and may name a different relay than the one at `--uri`, including one reached through intermediate peers. The client publishes the request so the connected relay can announce the full track name. The named relay subscribes to that track through peering and consumes the object when it arrives. Peering carries the full track name, not the subscribe-tracks prefix.
 
 `state`, `peers`, `metrics`, `subscriptions`, `publishes`, `publish_namespaces`, `subscribe_namespaces`, `subscribe_tracks`, `add-peer`, `remove-peer`, `restart-peer`, and `set-peer-metric` are the implemented methods. The message format accepts any method string. Further methods can use the same request and reply tracks, with optional `params` and a `result` or `error` object.
 
