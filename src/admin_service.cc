@@ -187,8 +187,8 @@ namespace laps {
                     SPDLOG_LOGGER_INFO(
                       config_.logger_, "Admin RPC {} from {} id {}", message.method, client_key, message.id);
                     if (!message.has_params) {
-                        const auto expected = message.method == kAdminSetPeerMetricMethod ? "host:port:metric"
-                                                                                          : "host:port";
+                        const auto expected =
+                          message.method == kAdminSetPeerMetricMethod ? "host:port:metric" : "host:port";
                         response =
                           EncodeAdminError(message, identity, std::string(message.method) + " requires " + expected);
                     } else {

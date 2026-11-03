@@ -8,7 +8,7 @@
 
 namespace laps {
     PublishNamespaceHandler::PublishNamespaceHandler(const quicr::TrackNamespace& prefix,
-                                                     std::weak_ptr<timeq::tick_service> tick_service)
+                                                     std::weak_ptr<quicr::Clock> tick_service)
       : quicr::PublishNamespaceHandler(prefix)
       , tick_service_(tick_service)
     {
@@ -26,10 +26,9 @@ laps::PublishNamespaceHandler::PublishTrack(std::shared_ptr<quicr::PublishTrackH
 {
     quicr::PublishNamespaceHandler::PublishTrack(handler);
 
-    timeq::tick_service::tick_type cur_ticks{ 0 };
+    uint64_t cur_ticks{ 0 };
     if (auto tick_svc = tick_service_.lock()) {
-        cur_ticks =
-          static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
+        cur_ticks = tick_svc->Get().count() / 1000;
     }
     published_tracks_.emplace(handler->GetTrackAlias().value(), ActiveTrack{ cur_ticks, handler });
 }
@@ -165,10 +164,9 @@ laps::PublishNamespaceHandler::UpdateTrackRanking(
                 continue;
             }
 
-            timeq::tick_service::tick_type cur_tick{ 0 };
+            uint64_t cur_tick{ 0 };
             if (auto tick_svc = tick_service_.lock()) {
-                cur_tick =
-                  static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(tick_svc->get()).count());
+                cur_tick = tick_svc->Get().count() / 1000;
             }
 
             if (auto h = track.handler.lock()) {
