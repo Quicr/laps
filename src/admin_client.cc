@@ -121,9 +121,12 @@ namespace {
             << "  publish_namespaces              Announced publish namespaces and track names\n"
             << "  subscribe_namespaces            Subscribe-namespace prefixes and connection ids\n"
             << "  subscribe_tracks                Subscribe-tracks prefixes and connection ids\n"
-            << "  add-peer <host>:<port>          Dial a peer, or remember an accepted one\n"
+            << "  add-peer <host>:<port>[:metric] Dial a peer, or remember an accepted one\n"
+            << "                                  metric is used when it is above the node metric (100)\n"
             << "  remove-peer <host>:<port>       Disconnect a peer and drop its state\n"
             << "  restart-peer <host>:<port>      Drop a peer's state. Dialed peers reconnect\n"
+            << "  set-peer-metric <host>:<port>:<metric>\n"
+            << "                                  Set the metric advertised on that peering session\n"
             << "\n"
             << "Options:\n"
             << "  --uri URI                  Relay URI (default moq://127.0.0.1:33435)\n"
@@ -139,7 +142,7 @@ namespace {
     bool MethodTakesParams(std::string_view method)
     {
         return method == laps::kAdminAddPeerMethod || method == laps::kAdminRemovePeerMethod ||
-               method == laps::kAdminRestartPeerMethod;
+               method == laps::kAdminRestartPeerMethod || method == laps::kAdminSetPeerMetricMethod;
     }
 
     std::string RequireValue(int argc, char* argv[], int& index, std::string_view option)
@@ -198,20 +201,22 @@ namespace {
                     options.calls.push_back(Options::Call{ method, std::nullopt });
                     continue;
                 }
+                const bool require_metric = method == laps::kAdminSetPeerMetricMethod;
+                const auto expected = require_metric ? "host:port:metric" : "host:port";
                 if (i + 1 >= argc) {
-                    throw std::runtime_error(method + " requires host:port");
+                    throw std::runtime_error(method + " requires " + expected);
                 }
                 ++i;
                 const auto parts = laps::SplitAdminParams(argv[i]);
                 if (parts.empty()) {
-                    throw std::runtime_error(method + " requires host:port");
+                    throw std::runtime_error(method + " requires " + expected);
                 }
                 for (const auto& part : parts) {
                     if (part.empty()) {
                         throw std::runtime_error(method + " has an empty parameter");
                     }
                     std::string error;
-                    const auto endpoint = laps::ParseAdminPeerEndpoint(part, error);
+                    const auto endpoint = laps::ParseAdminPeerEndpoint(part, error, require_metric);
                     if (!endpoint.has_value()) {
                         throw std::runtime_error(method + " " + error + ": " + part);
                     }

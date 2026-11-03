@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 
 namespace laps {
@@ -140,7 +141,7 @@ namespace laps {
         void UnbindFetchTrack(std::uint64_t connection_handle,
                               const std::shared_ptr<quicr::PublishFetchHandler>& handler);
 
-        const std::shared_ptr<timeq::tick_service>& GetTickService() const noexcept { return tick_service_; }
+        const std::shared_ptr<quicr::Clock>& GetTickService() const noexcept { return tick_service_; }
 
         /**
          * @brief Register a relay-local publish (e.g. the internally generated metrics track)
@@ -199,9 +200,14 @@ namespace laps {
         /// Endpoint id and the peering node id, copied onto every admin reply.
         AdminRelayIdentity CollectAdminRelayIdentity() const;
 
-        moq::peering::PeerAdminResult AdminAddPeer(const std::string& host, std::uint16_t port);
+        moq::peering::PeerAdminResult AdminAddPeer(const std::string& host,
+                                                   std::uint16_t port,
+                                                   std::optional<std::uint64_t> metric = std::nullopt);
         moq::peering::PeerAdminResult AdminRemovePeer(const std::string& host, std::uint16_t port);
         moq::peering::PeerAdminResult AdminRestartPeer(const std::string& host, std::uint16_t port);
+        moq::peering::PeerAdminResult AdminSetPeerMetric(const std::string& host,
+                                                         std::uint16_t port,
+                                                         std::uint64_t metric);
 
         /**
          * @brief Deliver one object to the admin RPC when it is a request track
@@ -457,7 +463,7 @@ namespace laps {
         const Config& config_;
         const quicr::ServerConfig server_config_;
         moq::peering::PeerManager& peer_manager_;
-        std::shared_ptr<timeq::tick_service> tick_service_;
+        std::shared_ptr<quicr::Clock> tick_service_;
         MetricsPublisher metrics_publisher_;
         AdminService admin_service_;
         /// Unix time in microseconds when Start() began. 0 until the relay starts.

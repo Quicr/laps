@@ -3,8 +3,6 @@
 #include "quicr/handlers/publish_namespace_handler.h"
 #include "quicr/track_name.h"
 
-#include <timeq/tick_service.h>
-
 namespace laps {
     class PublishTrackHandler;
 
@@ -20,11 +18,11 @@ namespace laps {
          */
         struct TrackPropertyValue
         {
-            uint64_t latest_value;                         // Latest value sampled
-            timeq::tick_service::tick_type latest_tick_ms; // Latest tick value when last sampled
+            uint64_t latest_value;   // Latest value sampled
+            uint64_t latest_tick_ms; // Latest tick value when last sampled
         };
 
-        PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<timeq::tick_service> tick_service);
+        PublishNamespaceHandler(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::Clock> tick_service);
 
         std::uint64_t PublishTracksCount() const { return published_tracks_.size(); }
 
@@ -46,7 +44,7 @@ namespace laps {
         void PublishTrack(std::shared_ptr<quicr::PublishTrackHandler> handler) override;
         void UnpublishTrack(std::uint64_t track_alias);
 
-        static auto Create(const quicr::TrackNamespace& prefix, std::weak_ptr<timeq::tick_service> tick_service)
+        static auto Create(const quicr::TrackNamespace& prefix, std::weak_ptr<quicr::Clock> tick_service)
         {
             return std::shared_ptr<PublishNamespaceHandler>(new PublishNamespaceHandler(prefix, tick_service));
         }
@@ -87,7 +85,7 @@ namespace laps {
         std::optional<uint64_t> property_type_;   // Property type to rank by
         uint64_t delay_publish_done_ms_{ 20000 }; // Delay sending publish done to allow publish to come back
 
-        std::weak_ptr<timeq::tick_service> tick_service_;
+        std::weak_ptr<quicr::Clock> tick_service_;
 
         struct ActiveTrack
         {

@@ -5,11 +5,10 @@
 #include <moq/peering/types.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-#include <list>
+#include <quicr/clock.h>
 #include <quicr/config.h>
 #include <quicr/log.h>
 #include <spdlog/spdlog.h>
-#include <timeq/tick_service.h>
 
 namespace laps {
 #define LOGGER config_.logger_
@@ -23,6 +22,7 @@ namespace laps {
     constexpr uint32_t kDefaultCacheTimeQueueObjectTtl = 6'000;
     constexpr uint32_t kDefaultSubscriptionRefreshIntervalMs = 500;
     constexpr uint32_t kFetchUpstreamMaxWaitMs = 2000;
+    constexpr uint64_t kDefaultTickSleepDelayUs = 333;
 
     class Config
     {
@@ -53,7 +53,7 @@ namespace laps {
 
         moq::peering::NodeType node_type{ moq::peering::NodeType::kEdge }; /// Node type of the relay
 
-        std::shared_ptr<timeq::threaded_tick_service> tick_service_;
+        std::shared_ptr<quicr::Clock> tick_service_;
         std::optional<std::uint64_t> cache_key = std::nullopt;
 
         struct Peering
