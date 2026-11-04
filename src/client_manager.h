@@ -158,10 +158,14 @@ namespace laps {
         /**
          * @brief Remove a relay-local publish
          *
-         * @param track_full_name    Track registered with connection handle 0
-         * @param withdraw_announce  True when this relay announced the track and peers should drop it
+         * @param track_full_name         Track registered with connection handle 0
+         * @param withdraw_announce       True when this relay announced the track and peers should drop it
+         * @param keep_local_subscribers  True when a peered path dropped the track. Clients are still
+         *                                subscribed, and the next announcement has to deliver to them.
          */
-        void RemoveLocalPublish(const quicr::FullTrackName& track_full_name, bool withdraw_announce);
+        void RemoveLocalPublish(const quicr::FullTrackName& track_full_name,
+                                bool withdraw_announce,
+                                bool keep_local_subscribers = false);
 
         /**
          * @brief Record the relay's own subscribe-tracks interest

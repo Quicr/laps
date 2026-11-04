@@ -834,7 +834,9 @@ namespace laps {
         }
     }
 
-    void ClientManager::RemoveLocalPublish(const quicr::FullTrackName& track_full_name, bool withdraw_announce)
+    void ClientManager::RemoveLocalPublish(const quicr::FullTrackName& track_full_name,
+                                            bool withdraw_announce,
+                                            bool keep_local_subscribers)
     {
         if (withdraw_announce) {
             peer_manager_.Withdraw(ToPeeringTrack(track_full_name), moq::peering::Announcement::kTrack);
@@ -863,7 +865,7 @@ namespace laps {
                 --published_tracks;
             }
 
-            if (!have_publishers && !config_.detached_subs) {
+            if (!have_publishers && !config_.detached_subs && !keep_local_subscribers) {
                 std::vector<std::pair<std::uint64_t, State::SubscribePublishHandlerInfo>> subscribers;
                 for (auto sub = state_.subscribes.lower_bound({ th.track_fullname_hash, 0 });
                      sub != state_.subscribes.end() && sub->first.first == th.track_fullname_hash;
@@ -875,7 +877,7 @@ namespace laps {
                 }
             }
 
-            if (!have_publishers) {
+            if (!have_publishers && !keep_local_subscribers) {
                 RemoveOrPausePublisherSubscribe(th.track_fullname_hash);
             }
 
@@ -900,7 +902,9 @@ namespace laps {
         if (!have_publishers && handler) {
             handler->RemoveFromTrackRanking();
         }
-        if (namespace_done) {
+        // A dropped peer withdraws the announce and then advertises it again. NAMESPACE_DONE
+        // makes the client leave the namespace, so the restored publish has nobody listening.
+        if (namespace_done && !keep_local_subscribers) {
             NotifySubscribeNamespaces(track_full_name.name_space, 0, true);
         }
     }
@@ -2690,20 +2694,31 @@ namespace laps {
     void ClientManager::OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn)
     {
         const auto track_full_name = ToQuicrTrack(name);
+        const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
         if (!withdrawn) {
-            quicr::PublishAttributes attrs{ .track_full_name = track_full_name,
-                                            .track_alias = quicr::TrackHash(track_full_name).track_fullname_hash,
-                                            .auth_tokens = {},
-                                            .expires = std::nullopt,
-                                            .largest_object = std::nullopt,
-                                            .forward = true,
-                                            .default_publisher_group_order = quicr::messages::GroupOrder::kAscending,
-                                            .dynamic_groups = true,
-                                            .publisher_priority = 64,
-                                            .max_cache_duration = std::nullopt,
-                                            .delivery_timeout = kDefaultObjectTtl,
-                                            .track_properties = {} };
-            PublishReceived(nullptr, 0, attrs, {});
+            bool already_published = false;
+            {
+                std::lock_guard _(state_.state_mutex);
+                already_published = state_.pub_subscribes.contains({ track_hash, 0 });
+            }
+
+            // The handler and the client's publish binding survive a peer restart. Publishing
+            // the track again opens a second PUBLISH for an alias the client already has.
+            if (!already_published) {
+                quicr::PublishAttributes attrs{ .track_full_name = track_full_name,
+                                                .track_alias = track_hash,
+                                                .auth_tokens = {},
+                                                .expires = std::nullopt,
+                                                .largest_object = std::nullopt,
+                                                .forward = true,
+                                                .default_publisher_group_order = quicr::messages::GroupOrder::kAscending,
+                                                .dynamic_groups = true,
+                                                .publisher_priority = 64,
+                                                .max_cache_duration = std::nullopt,
+                                                .delivery_timeout = kDefaultObjectTtl,
+                                                .track_properties = {} };
+                PublishReceived(nullptr, 0, attrs, {});
+            }
 
             // A peered admin publish is addressed to this relay. Subscribe the way a metrics reader does,
             // so the ingress relay forwards the objects here.
@@ -2717,14 +2732,14 @@ namespace laps {
             }
         } else {
             if (admin_service_.InterestedIn(track_full_name)) {
-                const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
                 ForgetPeeringSubscribe(track_hash);
                 peer_manager_.Unsubscribe(track_hash);
                 admin_service_.ReleaseRequest(track_full_name);
+                RemoveLocalPublish(track_full_name, false, true);
+                return;
             }
-            // A peered announce is stored under connection 0 and is not indexed by request id.
-            // PublishDoneReceived(nullptr, 0) cannot find it, so the publish stayed after the
-            // announce was withdrawn. Admin replies show up here once per client.
+            // Peering only delivers this withdraw while the source node is still reachable,
+            // so the publisher actually stopped the track.
             RemoveLocalPublish(track_full_name, false);
         }
     }
@@ -2816,6 +2831,12 @@ namespace laps {
              ++it) {
             if (it->first.first != th.track_fullname_hash) {
                 break;
+            }
+
+            // RequestNewGroup keeps a paused publisher paused and sends forward=0. The restored
+            // peer subscribe has to turn forwarding back on before asking for the next group.
+            if (sub_from_peer && it->second->GetStatus() == quicr::SubscribeTrackHandler::Status::kPaused) {
+                it->second->Resume();
             }
 
             it->second->AddSubscriber(

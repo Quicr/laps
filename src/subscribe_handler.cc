@@ -86,7 +86,12 @@ namespace laps {
     {
         // TODO: Consider allowing add Subscriber to trigger NGR for peering when conn_handle == 0
         if (subscribers_.contains(conn_handle)) {
-            // Duplicate
+            // The peer subscriber is already attached, but the publisher was paused while the
+            // session was down. Resume, then ask for a new group with forwarding on.
+            if (conn_handle == 0 && GetStatus() == Status::kPaused) {
+                Resume();
+                RequestNewGroup();
+            }
             return;
         }
 
