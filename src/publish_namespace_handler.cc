@@ -19,6 +19,32 @@ void
 laps::PublishNamespaceHandler::UnpublishTrack(std::uint64_t track_alias)
 {
     published_tracks_.erase(track_alias);
+
+    std::shared_ptr<quicr::PublishTrackHandler> handler;
+    if (const auto it = handlers_.find(track_alias); it != handlers_.end()) {
+        handler = it->second;
+    } else {
+        for (const auto& [_, candidate] : handlers_) {
+            const auto alias = candidate ? candidate->GetTrackAlias() : std::nullopt;
+            if (alias.has_value() && *alias == track_alias) {
+                handler = candidate;
+                break;
+            }
+        }
+    }
+
+    if (!handler) {
+        return;
+    }
+
+    // Drop the MOQT publish. Leaving the handler in place makes the next PUBLISH a
+    // duplicate alias, and object forwarding keeps using the finished one.
+    if (!GetSession().lock()) {
+        handlers_.erase(quicr::TrackHash(handler->GetFullTrackName()).track_fullname_hash);
+        return;
+    }
+
+    quicr::PublishNamespaceHandler::UnPublishTrack(handler);
 }
 
 void

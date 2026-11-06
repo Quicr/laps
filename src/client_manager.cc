@@ -2738,9 +2738,10 @@ namespace laps {
                 RemoveLocalPublish(track_full_name, false, true);
                 return;
             }
-            // Peering only delivers this withdraw while the source node is still reachable,
-            // so the publisher actually stopped the track.
-            RemoveLocalPublish(track_full_name, false);
+            // The publisher stopped this track. Local clients are still subscribed, so keep
+            // their subscribe and the peering subscribe. The track is unpublished to them.
+            // The next announce publishes it again on that same subscription.
+            RemoveLocalPublish(track_full_name, false, true);
         }
     }
 
