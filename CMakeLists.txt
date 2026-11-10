@@ -85,7 +85,7 @@ else()
     CPMAddPackage(
         NAME moq-peering
         GITHUB_REPOSITORY quicr/moq-peering
-        GIT_TAG main
+        GIT_TAG d0bfdc9fd04646fddf32f062daa09be29f1b6930
     )
 endif()
 
