@@ -13,7 +13,6 @@
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 #include "subscribe_handler.h"
-#include "transport_helpers.h"
 
 #include <algorithm>
 #include <ranges>
@@ -149,11 +148,11 @@ namespace laps {
             sessions_[connection_handle] = session;
         }
 
-        // Peer address requires the owning transport; SessionManager does not expose it. See libquicr issue.
-        const auto [ip, port] = GetPeerAddress(nullptr, session->GetConnection());
-        metrics_publisher_.AddConnection(connection_handle, { ip, port });
+        // SessionManager does not expose the peer endpoint, and Transport::GetPeerAddrInfo is gone.
+        // Metrics keep an empty address for this connection.
+        metrics_publisher_.AddConnection(connection_handle, {});
 
-        SPDLOG_LOGGER_INFO(LOGGER, "New connection handle {0} accepted from {1}:{2}", connection_handle, ip, port);
+        SPDLOG_LOGGER_INFO(LOGGER, "New connection handle {0} accepted", connection_handle);
     }
 
     void ClientManager::OnSessionRemoved(const std::shared_ptr<quicr::Session>& session)
@@ -316,7 +315,7 @@ namespace laps {
             return 0;
         }
 
-        const auto& connection = session->GetConnection();
+        const auto connection = session->GetDefaultConnection();
         return connection != nullptr ? connection->GetID() : 0;
     }
 

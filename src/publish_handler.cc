@@ -133,14 +133,15 @@ namespace laps {
             case Status::kPaused:
                 [[fallthrough]];
             default: {
-                auto delivery_timeout = params.Get<std::uint64_t>(quicr::messages::ParameterType::kDeliveryTimeout);
-                auto priority = params.Get<uint8_t>(quicr::messages::ParameterType::kSubscriberPriority);
-                auto group_order =
-                  params.GetOptional<quicr::messages::GroupOrder>(quicr::messages::ParameterType::kGroupOrder);
+                const auto delivery_timeout =
+                  params.Get<std::uint64_t>(quicr::messages::ParameterType::kDeliveryTimeout).value_or(0);
+                const auto priority =
+                  params.Get<std::uint8_t>(quicr::messages::ParameterType::kSubscriberPriority).value_or(0);
+                const auto group_order = quicr::messages::ResolveGroupOrder(params);
                 const auto publisher_default_group_order = quicr::messages::GroupOrder::kAscending;
-                auto forward = params.Get<bool>(quicr::messages::ParameterType::kForward);
-                auto new_group_request_id =
-                  params.GetOptional<std::uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
+                const auto forward = quicr::messages::ResolveForward(params, true);
+                const auto new_group_request_id =
+                  params.Get<std::uint64_t>(quicr::messages::ParameterType::kNewGroupRequest);
 
                 quicr::messages::Filter filter;
                 if (params.Contains(quicr::messages::ParameterType::kSubscriptionFilter)) {
