@@ -672,9 +672,9 @@ namespace laps {
 
         quicr::messages::ObjectDatagram msg;
         if (dgram_buffer_ >> msg) {
-            if (subscribers_.contains(0)) { // Is peering subscribed
+            if (subscribers_.contains(0) && !is_from_peer_ && GetTrackAlias().has_value()) { // Is peering subscribed
                 server_.peer_manager_.SendData(
-                  msg.track_alias,
+                  *GetTrackAlias(),
                   GetSubscriberPriority(),
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   moq::peering::DataType::kDatagram,
