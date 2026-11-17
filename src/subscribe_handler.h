@@ -153,12 +153,15 @@ namespace laps {
             bool header_parsed{ false };
             /// True once peering has been given this stream under current_group_id/current_subgroup_id.
             bool peering_started{ false };
+            /// True after a protocol error. Later bytes on this stream are discarded.
+            bool dropped{ false };
             /// Header and object bytes held until the subgroup id is known, then forwarded as one new stream.
             std::vector<std::uint8_t> pending_peer_bytes;
         };
 
         void ConsumeForwardedObjects(std::uint64_t group_id, std::uint64_t subgroup_id, SubgroupForwardState& subgroup);
         void ProcessStartOfStreamData(uint64_t stream_id, PeerStream& stream, bool is_from_peer = false);
+        void DropPeerStream(std::uint64_t stream_id, PeerStream& stream, const char* reason);
         void CapturePeerStart(uint64_t stream_id, PeerStream& stream, quicr::messages::StreamHeaderSubGroup& header);
         void StartPeeringForward(PeerStream& stream);
 

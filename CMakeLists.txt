@@ -18,7 +18,7 @@ set (CMAKE_POLICY_VERSION_MINIMUM 3.5)
 ### Define the project name and version
 ###       Version will be added to version output of apps and library
 project(laps
-        VERSION 0.18.54
+        VERSION 0.18.56
         DESCRIPTION "Latency Aware Publish/Subscribe"
         LANGUAGES CXX)
 
@@ -72,19 +72,19 @@ if(TARGET fmt::fmt)
 endif()
 CPMAddPackage("gh:gabime/spdlog@1.17.0")
 
-# Prefer the sibling checkout while moq-peering is developed locally. Once it is published,
+# Prefer the sibling checkout while moq-fabric is developed locally. Once it is published,
 # a missing checkout falls back to the GitHub repository.
-set(MOQ_PEERING_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../moq-peering" CACHE PATH
-    "Local moq-peering source. Used when that directory contains CMakeLists.txt.")
-if(EXISTS "${MOQ_PEERING_SOURCE_DIR}/CMakeLists.txt")
+set(MOQ_FABRIC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../moq-fabric" CACHE PATH
+    "Local moq-fabric source. Used when that directory contains CMakeLists.txt.")
+if(EXISTS "${MOQ_FABRIC_SOURCE_DIR}/CMakeLists.txt")
     CPMAddPackage(
-        NAME moq-peering
-        SOURCE_DIR "${MOQ_PEERING_SOURCE_DIR}"
+        NAME moq-fabric
+        SOURCE_DIR "${MOQ_FABRIC_SOURCE_DIR}"
     )
 else()
     CPMAddPackage(
-        NAME moq-peering
-        GITHUB_REPOSITORY quicr/moq-peering
+        NAME moq-fabric
+        GITHUB_REPOSITORY quicr/moq-fabric
         GIT_TAG main
     )
 endif()

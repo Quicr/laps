@@ -5,7 +5,7 @@
 #include "state.h"
 
 #include "track_ranking.h"
-#include <moq/peering/peer_manager.h>
+#include <moq/fabric/peer_manager.h>
 #include <quicr/containers/cache.h>
 #include <quicr/messages/object.h>
 #include <quicr/session.h>
@@ -86,14 +86,14 @@ namespace laps {
     class ClientManager
       : public quicr::Session::ServerCallbacks
       , public quicr::SessionManager::Callbacks
-      , public moq::peering::Delegate
+      , public moq::fabric::Delegate
       , public std::enable_shared_from_this<ClientManager>
     {
       public:
         ClientManager(State& state,
                       const Config& config,
                       const quicr::ServerConfig& cfg,
-                      moq::peering::PeerManager& peer_manager,
+                      moq::fabric::PeerManager& peer_manager,
                       size_t cache_duration_ms = 60000);
         ~ClientManager();
 
@@ -204,12 +204,12 @@ namespace laps {
         /// Endpoint id and the peering node id, copied onto every admin reply.
         AdminRelayIdentity CollectAdminRelayIdentity() const;
 
-        moq::peering::PeerAdminResult AdminAddPeer(const std::string& host,
+        moq::fabric::PeerAdminResult AdminAddPeer(const std::string& host,
                                                    std::uint16_t port,
                                                    std::optional<std::uint64_t> metric = std::nullopt);
-        moq::peering::PeerAdminResult AdminRemovePeer(const std::string& host, std::uint16_t port);
-        moq::peering::PeerAdminResult AdminRestartPeer(const std::string& host, std::uint16_t port);
-        moq::peering::PeerAdminResult AdminSetPeerMetric(const std::string& host,
+        moq::fabric::PeerAdminResult AdminRemovePeer(const std::string& host, std::uint16_t port);
+        moq::fabric::PeerAdminResult AdminRestartPeer(const std::string& host, std::uint16_t port);
+        moq::fabric::PeerAdminResult AdminSetPeerMetric(const std::string& host,
                                                          std::uint16_t port,
                                                          std::uint64_t metric);
 
@@ -267,17 +267,17 @@ namespace laps {
         /// Drop local peering subscribe state after peering is unsubscribed.
         void ForgetPeeringSubscribe(std::uint64_t track_fullname_hash);
 
-        // -- moq::peering::Delegate -------------------------------------------------------------
+        // -- moq::fabric::Delegate -------------------------------------------------------------
 
-        void OnPeerSubscribe(const moq::peering::TrackName& name,
+        void OnPeerSubscribe(const moq::fabric::TrackName& name,
                              std::uint64_t track_hash,
-                             const moq::peering::SubscribeParams& params) override;
+                             const moq::fabric::SubscribeParams& params) override;
 
         void OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain) override;
 
         void OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn) override;
 
-        void OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn) override;
+        void OnPeerTrack(const moq::fabric::TrackName& name, bool withdrawn) override;
 
         void OnPeerData(std::uint64_t track_hash,
                         bool is_new_stream,
@@ -466,7 +466,7 @@ namespace laps {
         State& state_;
         const Config& config_;
         const quicr::ServerConfig server_config_;
-        moq::peering::PeerManager& peer_manager_;
+        moq::fabric::PeerManager& peer_manager_;
         std::shared_ptr<quicr::Clock> tick_service_;
         MetricsPublisher metrics_publisher_;
         AdminService admin_service_;

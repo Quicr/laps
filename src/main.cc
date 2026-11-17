@@ -13,7 +13,7 @@
 #include "client_manager.h"
 #include "signal_handler.h"
 #include "state.h"
-#include <moq/peering/peer_manager.h>
+#include <moq/fabric/peer_manager.h>
 
 #include <quicr/session.h>
 
@@ -75,11 +75,11 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
         const auto& node_type = cli_opts["node_type"].as<std::string>();
 
         if (node_type == "edge") {
-            cfg.node_type = moq::peering::NodeType::kEdge;
+            cfg.node_type = moq::fabric::NodeType::kEdge;
         } else if (node_type == "via") {
-            cfg.node_type = moq::peering::NodeType::kVia;
+            cfg.node_type = moq::fabric::NodeType::kVia;
         } else if (node_type == "stub") {
-            cfg.node_type = moq::peering::NodeType::kStub;
+            cfg.node_type = moq::fabric::NodeType::kStub;
         } else {
             SPDLOG_LOGGER_ERROR(cfg.logger_, "unknown node type: '{}'", node_type);
             exit(-1);
@@ -195,7 +195,7 @@ main(int argc, char* argv[])
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Using metrics namespace: {}", laps_config.metrics_namespace_);
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Using admin namespace prefix: {}", laps_config.admin_namespace_);
 
-    moq::peering::Config peer_config;
+    moq::fabric::Config peer_config;
     peer_config.node_id = laps_config.relay_id_;
     peer_config.node_type = laps_config.node_type;
     peer_config.listen_port = laps_config.peering.listening_port;
@@ -207,7 +207,7 @@ main(int argc, char* argv[])
     peer_config.init_queue_size = laps_config.peering.init_queue_size;
     peer_config.debug = laps_config.debug;
     peer_config.logger = laps_config.logger_;
-    moq::peering::PeerManager peer_manager(peer_config);
+    moq::fabric::PeerManager peer_manager(peer_config);
 
     try {
         auto server = std::make_shared<ClientManager>(

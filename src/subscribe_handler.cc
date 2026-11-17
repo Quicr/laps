@@ -316,7 +316,7 @@ namespace laps {
         server_.peer_manager_.SendData(track_alias,
                                        priority,
                                        ttl,
-                                       moq::peering::DataType::kNewStream,
+                                       moq::fabric::DataType::kNewStream,
                                        object_headers.group_id,
                                        object_headers.subgroup_id,
                                        encoded);
@@ -474,42 +474,88 @@ namespace laps {
         is_datagram_ = false;
         auto [stream_it, inserted] = peer_streams_.try_emplace(stream_id);
 
-        if (is_new_stream) {
-            if (!inserted) {
-                SPDLOG_ERROR("Peer stream data got a new stream for existing Stream ID {}", stream_id);
+        if (!inserted && stream_it->second.dropped) {
+            return;
+        }
+
+        try {
+            if (is_new_stream) {
+                if (!inserted) {
+                    SPDLOG_ERROR("Peer stream data got a new stream for existing Stream ID {}", stream_id);
+                    return;
+                }
+
+                stream_it->second.buffer.Push(*data);
+                stream_it->second.buffer.InitAny<quicr::messages::StreamHeaderSubGroup>();
+                pending_source_buffers_.emplace(stream_id, std::vector{ std::move(data) });
+                ProcessStartOfStreamData(stream_id, stream_it->second, true);
                 return;
             }
 
-            stream_it->second.buffer.Push(*data);
-            stream_it->second.buffer.InitAny<quicr::messages::StreamHeaderSubGroup>();
-            pending_source_buffers_.emplace(stream_id, std::vector{ std::move(data) });
-            ProcessStartOfStreamData(stream_id, stream_it->second, true);
-            return;
+            if (inserted) {
+                peer_streams_.erase(stream_it);
+                SPDLOG_ERROR("Peer stream data had no stream for expected Stream ID {}", stream_id);
+                return;
+            }
+
+            auto& stream = stream_it->second;
+            stream.buffer.Push(*data);
+
+            const auto pending_it = pending_source_buffers_.find(stream_id);
+            if (pending_it != pending_source_buffers_.end()) {
+                // Header is still incomplete. Keep the original bytes so the start can be forwarded once it parses.
+                pending_it->second.push_back(std::move(data));
+            } else if (stream.header_parsed && !stream.peering_started) {
+                // Subgroup id comes from the first object. Hold these bytes with the header.
+                stream.pending_peer_bytes.insert(stream.pending_peer_bytes.end(), data->begin(), data->end());
+            } else if (stream.peering_started && stream.next_object_id.has_value()) {
+                // ForwardPeerData already copied this chunk to other peers. Local subscribers follow the raw
+                // bytes once PublishObject has opened their stream.
+                ForwardReceivedData(false, stream.current_group_id, stream.current_subgroup_id, data, false);
+            }
+
+            ProcessStartOfStreamData(stream_id, stream, true);
+        } catch (const quicr::messages::ProtocolViolationException& ex) {
+            DropPeerStream(stream_id, stream_it->second, ex.what());
+        }
+    }
+
+    void SubscribeTrackHandler::DropPeerStream(std::uint64_t stream_id, PeerStream& stream, const char* reason)
+    {
+        const auto& track = GetFullTrackName();
+        SPDLOG_ERROR("Dropping peer stream {} for track {} ({}): {}",
+                     stream_id,
+                     track.NamespaceStr(),
+                     track.NameStr(),
+                     reason);
+
+        pending_source_buffers_.erase(stream_id);
+        stream.buffer.Clear();
+        stream.pending_peer_bytes.clear();
+
+        if (stream.peering_started) {
+            const auto group_id = stream.current_group_id;
+            const auto subgroup_id = stream.current_subgroup_id;
+            for (const auto& [conn_handle, pub_handler] : subscribers_) {
+                if (conn_handle == 0) {
+                    if (GetTrackAlias().has_value()) {
+                        server_.peer_manager_.EndSubgroup(GetTrackAlias().value(), group_id, subgroup_id, true);
+                    }
+                } else {
+                    pub_handler->EndSubgroup(group_id, subgroup_id, false);
+                }
+            }
+
+            for (const auto& [_, conn_subs] : sub_namespaces_) {
+                for (const auto& [_, handler] : conn_subs) {
+                    handler->EndSubgroup(group_id, subgroup_id, false);
+                }
+            }
+
+            stream.peering_started = false;
         }
 
-        if (inserted) {
-            peer_streams_.erase(stream_it);
-            SPDLOG_ERROR("Peer stream data had no stream for expected Stream ID {}", stream_id);
-            return;
-        }
-
-        auto& stream = stream_it->second;
-        stream.buffer.Push(*data);
-
-        const auto pending_it = pending_source_buffers_.find(stream_id);
-        if (pending_it != pending_source_buffers_.end()) {
-            // Header is still incomplete. Keep the original bytes so the start can be forwarded once it parses.
-            pending_it->second.push_back(std::move(data));
-        } else if (stream.header_parsed && !stream.peering_started) {
-            // Subgroup id comes from the first object. Hold these bytes with the header.
-            stream.pending_peer_bytes.insert(stream.pending_peer_bytes.end(), data->begin(), data->end());
-        } else if (stream.peering_started && stream.next_object_id.has_value()) {
-            // ForwardPeerData already copied this chunk to other peers. Local subscribers follow the raw
-            // bytes once PublishObject has opened their stream.
-            ForwardReceivedData(false, stream.current_group_id, stream.current_subgroup_id, data, false);
-        }
-
-        ProcessStartOfStreamData(stream_id, stream, true);
+        stream.dropped = true;
     }
 
     void SubscribeTrackHandler::CapturePeerStart(uint64_t stream_id,
@@ -677,7 +723,7 @@ namespace laps {
                   *GetTrackAlias(),
                   GetSubscriberPriority(),
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
-                  moq::peering::DataType::kDatagram,
+                  moq::fabric::DataType::kDatagram,
                   msg.group_id,
                   0,
                   data);
@@ -715,15 +761,15 @@ namespace laps {
             return;
         }
 
-        moq::peering::DataType d_type;
+        moq::fabric::DataType d_type;
 
         if (is_datagram_) {
-            d_type = moq::peering::DataType::kDatagram;
+            d_type = moq::fabric::DataType::kDatagram;
         } else {
-            d_type = moq::peering::DataType::kExistingStream;
+            d_type = moq::fabric::DataType::kExistingStream;
 
             if (is_new_stream) {
-                d_type = moq::peering::DataType::kNewStream;
+                d_type = moq::fabric::DataType::kNewStream;
 
                 if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
                     // Use default if delivery timeout is not set
@@ -825,6 +871,11 @@ namespace laps {
 
         auto stream_it = peer_streams_.find(stream_id);
         if (stream_it == peer_streams_.end()) {
+            return;
+        }
+
+        if (stream_it->second.dropped) {
+            peer_streams_.erase(stream_it);
             return;
         }
 
