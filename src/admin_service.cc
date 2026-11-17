@@ -199,7 +199,7 @@ namespace laps {
                         } else if (message.method == kAdminSetPeerMetricMethod && !endpoint->metric.has_value()) {
                             response = EncodeAdminError(message, identity, "set-peer-metric requires a metric");
                         } else {
-                            moq::peering::PeerAdminResult outcome;
+                            moq::fabric::PeerAdminResult outcome;
                             if (message.method == kAdminAddPeerMethod) {
                                 outcome = server_.AdminAddPeer(endpoint->host, endpoint->port, endpoint->metric);
                             } else if (message.method == kAdminRemovePeerMethod) {

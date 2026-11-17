@@ -23,7 +23,7 @@ namespace laps {
     ClientManager::ClientManager(State& state,
                                  const Config& config,
                                  const quicr::ServerConfig& cfg,
-                                 moq::peering::PeerManager& peer_manager,
+                                 moq::fabric::PeerManager& peer_manager,
                                  size_t cache_duration_ms)
       : state_(state)
       , config_(config)
@@ -525,7 +525,7 @@ namespace laps {
         auto& track_namespace = std::any_cast<quicr::TrackNamespace&>(it->second.related_data);
         auto th = quicr::TrackHash({ track_namespace, {} });
 
-        peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
+        peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::fabric::Announcement::kNamespace);
 
         FanoutPublishNamespaceDone(track_namespace);
 
@@ -552,7 +552,7 @@ namespace laps {
         }
 
         if (connection_handle)
-            peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kTrack);
+            peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::fabric::Announcement::kTrack);
     }
 
     void ClientManager::PurgePublishState(std::uint64_t connection_handle)
@@ -617,11 +617,11 @@ namespace laps {
         // The client is gone. Drop the peering announce so the next hop releases the publish
         // and the object streams opened for it. Doing this under state_mutex deadlocks the QUIC thread.
         for (const auto& track : withdraw_tracks) {
-            peer_manager_.Withdraw(ToPeeringTrack(track), moq::peering::Announcement::kTrack);
+            peer_manager_.Withdraw(ToPeeringTrack(track), moq::fabric::Announcement::kTrack);
         }
         for (const auto& track_namespace : withdraw_namespaces) {
             if (!NamespaceStillPublished(track_namespace)) {
-                peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
+                peer_manager_.Withdraw(ToPeeringTrack({ track_namespace, {} }), moq::fabric::Announcement::kNamespace);
             }
         }
 
@@ -733,7 +733,7 @@ namespace laps {
              * Always send announcements to peer manager so new clients can trigger subscribe matching and data
              * forwarding path creation. This needs to be done last to all other client work.
              */
-            peer_manager_.Announce(ToPeeringTrack({ track_namespace, {} }), moq::peering::Announcement::kNamespace);
+            peer_manager_.Announce(ToPeeringTrack({ track_namespace, {} }), moq::fabric::Announcement::kNamespace);
         }
 
         NotifySubscribeNamespaces(track_namespace, connection_handle, false);
@@ -758,7 +758,7 @@ namespace laps {
 
     void ClientManager::AnnounceLocalTrack(const quicr::FullTrackName& track_full_name)
     {
-        peer_manager_.Announce(ToPeeringTrack(track_full_name), moq::peering::Announcement::kTrack);
+        peer_manager_.Announce(ToPeeringTrack(track_full_name), moq::fabric::Announcement::kTrack);
     }
 
     void ClientManager::EraseSubscribeLocked(std::uint64_t connection_handle,
@@ -838,7 +838,7 @@ namespace laps {
                                             bool keep_local_subscribers)
     {
         if (withdraw_announce) {
-            peer_manager_.Withdraw(ToPeeringTrack(track_full_name), moq::peering::Announcement::kTrack);
+            peer_manager_.Withdraw(ToPeeringTrack(track_full_name), moq::fabric::Announcement::kTrack);
         }
 
         const auto th = quicr::TrackHash(track_full_name);
@@ -1307,7 +1307,7 @@ namespace laps {
     {
         AdminRelayIdentity identity;
         identity.relay_id = config_.relay_id_;
-        identity.node_id = moq::peering::FormatNodeId(peer_manager_.LocalNodeId());
+        identity.node_id = moq::fabric::FormatNodeId(peer_manager_.LocalNodeId());
         identity.start_time_us = relay_start_time_us_;
         return identity;
     }
@@ -1322,7 +1322,7 @@ namespace laps {
         AdminPeers result;
         auto peers = peer_manager_.Peers();
         std::sort(
-          peers.begin(), peers.end(), [](const moq::peering::PeerSnapshot& lhs, const moq::peering::PeerSnapshot& rhs) {
+          peers.begin(), peers.end(), [](const moq::fabric::PeerSnapshot& lhs, const moq::fabric::PeerSnapshot& rhs) {
               if (lhs.origin != rhs.origin) {
                   return lhs.origin < rhs.origin;
               }
@@ -1339,15 +1339,15 @@ namespace laps {
         for (const auto& peer : peers) {
             AdminPeer entry;
             entry.session_id = peer.session_id;
-            entry.role = peer.origin == moq::peering::PeerOrigin::kAccepted ? "accepted" : "dialed";
+            entry.role = peer.origin == moq::fabric::PeerOrigin::kAccepted ? "accepted" : "dialed";
             switch (peer.status) {
-                case moq::peering::PeerLinkStatus::kConnecting:
+                case moq::fabric::PeerLinkStatus::kConnecting:
                     entry.status = "connecting";
                     break;
-                case moq::peering::PeerLinkStatus::kConnected:
+                case moq::fabric::PeerLinkStatus::kConnected:
                     entry.status = "connected";
                     break;
-                case moq::peering::PeerLinkStatus::kDisconnected:
+                case moq::fabric::PeerLinkStatus::kDisconnected:
                     entry.status = "disconnected";
                     break;
             }
@@ -1355,17 +1355,17 @@ namespace laps {
             entry.port = peer.port;
             entry.identified = peer.identified;
             if (peer.identified) {
-                entry.node_id = moq::peering::FormatNodeId(peer.node_id);
+                entry.node_id = moq::fabric::FormatNodeId(peer.node_id);
             }
             entry.contact = peer.contact;
             switch (peer.node_type) {
-                case moq::peering::NodeType::kVia:
+                case moq::fabric::NodeType::kVia:
                     entry.node_type = "via";
                     break;
-                case moq::peering::NodeType::kEdge:
+                case moq::fabric::NodeType::kEdge:
                     entry.node_type = "edge";
                     break;
-                case moq::peering::NodeType::kStub:
+                case moq::fabric::NodeType::kStub:
                     entry.node_type = "stub";
                     break;
             }
@@ -1381,24 +1381,24 @@ namespace laps {
         return result;
     }
 
-    moq::peering::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host,
+    moq::fabric::PeerAdminResult ClientManager::AdminAddPeer(const std::string& host,
                                                               std::uint16_t port,
                                                               std::optional<std::uint64_t> metric)
     {
         return peer_manager_.AddPeer(host, port, metric);
     }
 
-    moq::peering::PeerAdminResult ClientManager::AdminRemovePeer(const std::string& host, std::uint16_t port)
+    moq::fabric::PeerAdminResult ClientManager::AdminRemovePeer(const std::string& host, std::uint16_t port)
     {
         return peer_manager_.RemovePeer(host, port);
     }
 
-    moq::peering::PeerAdminResult ClientManager::AdminRestartPeer(const std::string& host, std::uint16_t port)
+    moq::fabric::PeerAdminResult ClientManager::AdminRestartPeer(const std::string& host, std::uint16_t port)
     {
         return peer_manager_.RestartPeer(host, port);
     }
 
-    moq::peering::PeerAdminResult ClientManager::AdminSetPeerMetric(const std::string& host,
+    moq::fabric::PeerAdminResult ClientManager::AdminSetPeerMetric(const std::string& host,
                                                                     std::uint16_t port,
                                                                     std::uint64_t metric)
     {
@@ -1527,7 +1527,7 @@ namespace laps {
              */
             lock.unlock();
             peer_manager_.Announce(ToPeeringTrack(publish_attributes.track_full_name),
-                                   moq::peering::Announcement::kTrack);
+                                   moq::fabric::Announcement::kTrack);
             lock.lock();
         }
 
@@ -1925,7 +1925,7 @@ namespace laps {
 
         if (connection_handle)
             peer_manager_.Withdraw(ToPeeringTrack(publisher_handler->GetFullTrackName()),
-                                   moq::peering::Announcement::kTrack);
+                                   moq::fabric::Announcement::kTrack);
 
         std::unique_lock lock(state_.state_mutex);
 
@@ -2630,9 +2630,9 @@ namespace laps {
         return false;
     }
 
-    void ClientManager::OnPeerSubscribe(const moq::peering::TrackName& name,
+    void ClientManager::OnPeerSubscribe(const moq::fabric::TrackName& name,
                                         std::uint64_t,
-                                        const moq::peering::SubscribeParams& params)
+                                        const moq::fabric::SubscribeParams& params)
     {
         const auto track_full_name = ToQuicrTrack(name);
         const auto th = quicr::TrackHash(track_full_name);
@@ -2690,7 +2690,7 @@ namespace laps {
         }
     }
 
-    void ClientManager::OnPeerTrack(const moq::peering::TrackName& name, bool withdrawn)
+    void ClientManager::OnPeerTrack(const moq::fabric::TrackName& name, bool withdrawn)
     {
         const auto track_full_name = ToQuicrTrack(name);
         const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;

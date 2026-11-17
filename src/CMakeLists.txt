@@ -26,7 +26,7 @@ add_executable(lapsRelay
         publish_namespace_handler.cc
 )
 
-target_link_libraries(lapsRelay PRIVATE quicr moq::peering spdlog::spdlog laps_admin_codec)
+target_link_libraries(lapsRelay PRIVATE quicr moq::fabric spdlog::spdlog laps_admin_codec)
 target_include_directories(lapsRelay PRIVATE
         ${PROJECT_SOURCE_DIR}/dependencies/oss)
 

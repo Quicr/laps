@@ -2,7 +2,7 @@
 
 #include "spdlog_logger.h"
 #include "version_config.h"
-#include <moq/peering/types.h>
+#include <moq/fabric/types.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <quicr/clock.h>
@@ -51,7 +51,7 @@ namespace laps {
         uint32_t object_ttl_;
         uint32_t sub_dampen_ms_;
 
-        moq::peering::NodeType node_type{ moq::peering::NodeType::kEdge }; /// Node type of the relay
+        moq::fabric::NodeType node_type{ moq::fabric::NodeType::kEdge }; /// Node type of the relay
 
         std::shared_ptr<quicr::Clock> tick_service_;
         std::optional<std::uint64_t> cache_key = std::nullopt;

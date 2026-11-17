@@ -316,7 +316,7 @@ namespace laps {
         server_.peer_manager_.SendData(track_alias,
                                        priority,
                                        ttl,
-                                       moq::peering::DataType::kNewStream,
+                                       moq::fabric::DataType::kNewStream,
                                        object_headers.group_id,
                                        object_headers.subgroup_id,
                                        encoded);
@@ -723,7 +723,7 @@ namespace laps {
                   *GetTrackAlias(),
                   GetSubscriberPriority(),
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
-                  moq::peering::DataType::kDatagram,
+                  moq::fabric::DataType::kDatagram,
                   msg.group_id,
                   0,
                   data);
@@ -761,15 +761,15 @@ namespace laps {
             return;
         }
 
-        moq::peering::DataType d_type;
+        moq::fabric::DataType d_type;
 
         if (is_datagram_) {
-            d_type = moq::peering::DataType::kDatagram;
+            d_type = moq::fabric::DataType::kDatagram;
         } else {
-            d_type = moq::peering::DataType::kExistingStream;
+            d_type = moq::fabric::DataType::kExistingStream;
 
             if (is_new_stream) {
-                d_type = moq::peering::DataType::kNewStream;
+                d_type = moq::fabric::DataType::kNewStream;
 
                 if (GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count() == 0) {
                     // Use default if delivery timeout is not set
