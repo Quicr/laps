@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "publish_handler.h"
+#include "peering_bridge.h"
+
 #include <quicr/handlers/publish_track_handler.h>
 
 namespace laps {
@@ -117,7 +119,8 @@ namespace laps {
 
         // Notify peering manager
         if (GetTrackAlias().has_value()) {
-            server_.peer_manager_.EndSubgroup(GetTrackAlias().value(), group_id, subgroup_id, !completed);
+            server_.peer_manager_.EndSubgroup(
+              FabricTrackHash(GetFullTrackName()), group_id, subgroup_id, !completed);
         }
     }
 

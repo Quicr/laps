@@ -325,6 +325,11 @@ namespace laps {
         auto th = quicr::TrackHash(track_full_name);
         SPDLOG_INFO("New group requested received track_alais: {} group_id: {} ", th.track_fullname_hash, group_id);
 
+        {
+            std::lock_guard state_lock(state_.state_mutex);
+            RememberFabricTrack(track_full_name);
+        }
+
         // Peering is updated only when this new group is not already pending.
         quicr::SubscribeAttributes update_attrs;
         update_attrs.priority = kDefaultPriority;
@@ -1428,6 +1433,7 @@ namespace laps {
         const bool bypass_resolve = !connection_handle && !request_id;
 
         auto th = quicr::TrackHash(publish_attributes.track_full_name);
+        RememberFabricTrack(publish_attributes.track_full_name);
 
         SPDLOG_LOGGER_INFO(
           LOGGER,
@@ -1532,7 +1538,7 @@ namespace laps {
         }
 
         // Check if there are any subscribers
-        bool has_peer_subs{ peer_manager_.HasSubscribers(th.track_fullname_hash) };
+        bool has_peer_subs{ peer_manager_.HasSubscribers(FabricTrackHash(publish_attributes.track_full_name)) };
         bool has_subs{ has_peer_subs };
 
         if (has_peer_subs) {
@@ -2080,10 +2086,22 @@ namespace laps {
 
     void ClientManager::RemoveOrPausePublisherSubscribe(std::uint64_t track_fullname_hash)
     {
+        // Local maps use the libquicr hash. The fabric forwarding table uses its own hash.
+        std::uint64_t fabric_hash = FabricHashForQuicr(track_fullname_hash);
+        for (auto it = state_.pub_subscribes.lower_bound({ track_fullname_hash, 0 });
+             it != state_.pub_subscribes.end();
+             ++it) {
+            if (it->first.first != track_fullname_hash) {
+                break;
+            }
+            fabric_hash = FabricTrackHash(it->second->GetFullTrackName());
+            break;
+        }
+
         // A forwarding entry means some peer should still receive objects. That must keep the
         // publisher going. It must not keep this relay's own upstream subscribe after every local
         // client has gone, or the publisher relay still has a peer to send to.
-        const bool peers_want_data = peer_manager_.HasSubscribers(track_fullname_hash);
+        const bool peers_want_data = peer_manager_.HasSubscribers(fabric_hash);
         if (!peers_want_data) {
             PeerUnsubscribeTrack(track_fullname_hash);
         }
@@ -2131,7 +2149,7 @@ namespace laps {
 
         if (!has_local_subs) {
             ForgetPeeringSubscribe(track_fullname_hash);
-            peer_manager_.Unsubscribe(track_fullname_hash);
+            peer_manager_.Unsubscribe(fabric_hash);
         }
     }
 
@@ -2631,7 +2649,7 @@ namespace laps {
     }
 
     void ClientManager::OnPeerSubscribe(const moq::fabric::TrackName& name,
-                                        std::uint64_t,
+                                        std::uint64_t track_hash,
                                         const moq::fabric::SubscribeParams& params)
     {
         const auto track_full_name = ToQuicrTrack(name);
@@ -2639,6 +2657,7 @@ namespace laps {
 
         // Same lock PublishReceived holds until the handler's session is bound and published.
         std::lock_guard _(state_.state_mutex);
+        RememberFabricHashes(track_hash, th.track_fullname_hash);
 
         bool matches = false;
         for (auto it = state_.pub_subscribes.lower_bound({ th.track_fullname_hash, 0 });
@@ -2670,11 +2689,12 @@ namespace laps {
     void ClientManager::OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain)
     {
         std::lock_guard _(state_.state_mutex);
+        const auto quicr_hash = QuicrHashForFabric(track_hash);
 
         if (!subscribers_remain) {
-            PeerUnsubscribeTrack(track_hash);
+            PeerUnsubscribeTrack(quicr_hash);
         }
-        RemoveOrPausePublisherSubscribe(track_hash);
+        RemoveOrPausePublisherSubscribe(quicr_hash);
     }
 
     void ClientManager::OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn)
@@ -2694,6 +2714,10 @@ namespace laps {
     {
         const auto track_full_name = ToQuicrTrack(name);
         const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;
+        {
+            std::lock_guard _(state_.state_mutex);
+            RememberFabricTrack(track_full_name);
+        }
         if (!withdrawn) {
             bool already_published = false;
             {
@@ -2732,7 +2756,7 @@ namespace laps {
         } else {
             if (admin_service_.InterestedIn(track_full_name)) {
                 ForgetPeeringSubscribe(track_hash);
-                peer_manager_.Unsubscribe(track_hash);
+                peer_manager_.Unsubscribe(FabricTrackHash(track_full_name));
                 admin_service_.ReleaseRequest(track_full_name);
                 RemoveLocalPublish(track_full_name, false, true);
                 return;
@@ -2764,6 +2788,8 @@ namespace laps {
                                          const quicr::SubscribeAttributes& attrs,
                                          std::optional<quicr::messages::Location> largest)
     {
+
+        RememberFabricTrack(track_full_name);
 
         auto start_location = attrs.start_location;
         bool sub_from_peer{ false };
@@ -2924,7 +2950,8 @@ namespace laps {
         std::shared_ptr<SubscribeTrackHandler> handler;
         {
             std::lock_guard state_lock(state_.state_mutex);
-            const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
+            const auto quicr_hash = QuicrHashForFabric(track_full_name_hash);
+            const auto it = state_.pub_subscribes.find({ quicr_hash, 0 });
             if (it == state_.pub_subscribes.end()) {
                 return;
             }
@@ -2943,7 +2970,8 @@ namespace laps {
         std::shared_ptr<SubscribeTrackHandler> handler;
         {
             std::lock_guard state_lock(state_.state_mutex);
-            const auto it = state_.pub_subscribes.find({ track_full_name_hash, 0 });
+            const auto quicr_hash = QuicrHashForFabric(track_full_name_hash);
+            const auto it = state_.pub_subscribes.find({ quicr_hash, 0 });
             if (it == state_.pub_subscribes.end()) {
                 return;
             }
@@ -2951,6 +2979,33 @@ namespace laps {
         }
 
         handler->PeerStreamClosedReceived(stream_id, reset);
+    }
+
+    void ClientManager::RememberFabricTrack(const quicr::FullTrackName& track)
+    {
+        RememberFabricHashes(FabricTrackHash(track), quicr::TrackHash(track).track_fullname_hash);
+    }
+
+    void ClientManager::RememberFabricHashes(std::uint64_t fabric_hash, std::uint64_t quicr_hash)
+    {
+        if (fabric_hash == quicr_hash) {
+            return;
+        }
+
+        fabric_to_quicr_[fabric_hash] = quicr_hash;
+        quicr_to_fabric_[quicr_hash] = fabric_hash;
+    }
+
+    std::uint64_t ClientManager::QuicrHashForFabric(std::uint64_t fabric_hash) const
+    {
+        const auto it = fabric_to_quicr_.find(fabric_hash);
+        return it == fabric_to_quicr_.end() ? fabric_hash : it->second;
+    }
+
+    std::uint64_t ClientManager::FabricHashForQuicr(std::uint64_t quicr_hash) const
+    {
+        const auto it = quicr_to_fabric_.find(quicr_hash);
+        return it == quicr_to_fabric_.end() ? quicr_hash : it->second;
     }
 
     void ClientManager::MetricsSampled(const std::shared_ptr<quicr::Session>& session,

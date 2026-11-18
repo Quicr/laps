@@ -44,6 +44,20 @@ namespace laps {
         return { ToQuicrNamespace(name.name_space), name.name };
     }
 
+    /**
+     * @brief Full-name hash moq-fabric uses for SendData, HasSubscribers, and Unsubscribe
+     *
+     * @details moq-fabric hashes a namespace tuple by tuple: the first tuple is CityHash64, and each
+     *      later tuple is CityHash64 of the previous hash followed by that tuple. libquicr hashes the
+     *      concatenated tuples as one value, and LAPS keeps that value as the MoQ track alias. The two
+     *      hashes are equal for a namespace of one tuple. A namespace with several tuples has to use
+     *      this hash on fabric calls.
+     */
+    inline std::uint64_t FabricTrackHash(const quicr::FullTrackName& full)
+    {
+        return moq::fabric::PeerManager::HashTrack(ToPeeringTrack(full));
+    }
+
     inline quicr::SubscribeAttributes ToQuicrParams(const moq::fabric::SubscribeParams& params)
     {
         quicr::SubscribeAttributes attrs;

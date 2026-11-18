@@ -18,6 +18,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <unordered_map>
 
 namespace laps {
     /**
@@ -287,6 +288,16 @@ namespace laps {
         void OnPeerStreamClosed(std::uint64_t track_hash, std::uint64_t stream_id, bool reset) override;
 
       private:
+        /// Record both hashes for one track. Caller holds state_.state_mutex.
+        void RememberFabricTrack(const quicr::FullTrackName& track);
+        void RememberFabricHashes(std::uint64_t fabric_hash, std::uint64_t quicr_hash);
+
+        /// libquicr full-name hash for a hash moq-fabric reported. Caller holds state_.state_mutex.
+        std::uint64_t QuicrHashForFabric(std::uint64_t fabric_hash) const;
+
+        /// moq-fabric full-name hash for a libquicr track alias. Caller holds state_.state_mutex.
+        std::uint64_t FabricHashForQuicr(std::uint64_t quicr_hash) const;
+
         /**
          * @brief Connection handle of the session that received a request, or zero if it is already gone
          */
@@ -521,6 +532,11 @@ namespace laps {
 
         std::mutex peering_interest_mutex_;
         std::map<std::uint64_t, PeeringInterest> peering_interest_;
+
+        /// libquicr and moq-fabric full-name hashes differ when a namespace has more than one tuple.
+        /// Touched only while state_.state_mutex is held.
+        std::unordered_map<std::uint64_t, std::uint64_t> fabric_to_quicr_;
+        std::unordered_map<std::uint64_t, std::uint64_t> quicr_to_fabric_;
 
         friend class SubscribeTrackHandler;
         friend class PublishTrackHandler;

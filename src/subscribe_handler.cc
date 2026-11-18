@@ -3,6 +3,7 @@
 
 #include "subscribe_handler.h"
 #include "config.h"
+#include "peering_bridge.h"
 #include "publish_handler.h"
 #include "publish_namespace_handler.h"
 
@@ -286,6 +287,7 @@ namespace laps {
         }
 
         const auto track_alias = *GetTrackAlias();
+        const auto fabric_hash = FabricTrackHash(GetFullTrackName());
         const auto priority = GetSubscriberPriority();
         const auto ttl = static_cast<std::uint32_t>(
           GetDeliveryTimeout().value_or(std::chrono::milliseconds(server_.config_.object_ttl_)).count());
@@ -313,14 +315,14 @@ namespace laps {
         bytes << object;
 
         auto encoded = std::make_shared<std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
-        server_.peer_manager_.SendData(track_alias,
+        server_.peer_manager_.SendData(fabric_hash,
                                        priority,
                                        ttl,
                                        moq::fabric::DataType::kNewStream,
                                        object_headers.group_id,
                                        object_headers.subgroup_id,
                                        encoded);
-        server_.peer_manager_.EndSubgroup(track_alias, object_headers.group_id, object_headers.subgroup_id, false);
+        server_.peer_manager_.EndSubgroup(fabric_hash, object_headers.group_id, object_headers.subgroup_id, false);
     }
 
     void SubscribeTrackHandler::SubgroupStarted(std::uint64_t group_id,
@@ -453,7 +455,8 @@ namespace laps {
         for (auto& [conn_handle, pub_handler] : subscribers_) {
             if (conn_handle == 0) {
                 if (GetTrackAlias().has_value()) {
-                    server_.peer_manager_.EndSubgroup(GetTrackAlias().value(), group_id, subgroup_id, reset);
+                    server_.peer_manager_.EndSubgroup(
+                      FabricTrackHash(GetFullTrackName()), group_id, subgroup_id, reset);
                 }
             } else {
                 pub_handler->EndSubgroup(group_id, subgroup_id, !reset);
@@ -539,7 +542,8 @@ namespace laps {
             for (const auto& [conn_handle, pub_handler] : subscribers_) {
                 if (conn_handle == 0) {
                     if (GetTrackAlias().has_value()) {
-                        server_.peer_manager_.EndSubgroup(GetTrackAlias().value(), group_id, subgroup_id, true);
+                        server_.peer_manager_.EndSubgroup(
+                          FabricTrackHash(GetFullTrackName()), group_id, subgroup_id, true);
                     }
                 } else {
                     pub_handler->EndSubgroup(group_id, subgroup_id, false);
@@ -720,7 +724,7 @@ namespace laps {
         if (dgram_buffer_ >> msg) {
             if (subscribers_.contains(0) && !is_from_peer_ && GetTrackAlias().has_value()) { // Is peering subscribed
                 server_.peer_manager_.SendData(
-                  *GetTrackAlias(),
+                  FabricTrackHash(GetFullTrackName()),
                   GetSubscriberPriority(),
                   GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                   moq::fabric::DataType::kDatagram,
@@ -790,7 +794,7 @@ namespace laps {
             if (conn_handle == 0) { // from peer
                 if (forward_to_peers) {
                     server_.peer_manager_.SendData(
-                      *track_alias,
+                      FabricTrackHash(GetFullTrackName()),
                       GetSubscriberPriority(),
                       GetDeliveryTimeout().value_or(std::chrono::milliseconds(kDefaultObjectTtl)).count(),
                       d_type,
@@ -883,7 +887,7 @@ namespace laps {
             if (conn_handle == 0) {
                 // Only a stream that was opened under this group and subgroup has one to close.
                 if (stream_it->second.peering_started && GetTrackAlias().has_value()) {
-                    server_.peer_manager_.EndSubgroup(GetTrackAlias().value(),
+                    server_.peer_manager_.EndSubgroup(FabricTrackHash(GetFullTrackName()),
                                                       stream_it->second.current_group_id,
                                                       stream_it->second.current_subgroup_id,
                                                       use_reset);
