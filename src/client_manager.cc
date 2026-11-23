@@ -738,7 +738,9 @@ namespace laps {
              * Always send announcements to peer manager so new clients can trigger subscribe matching and data
              * forwarding path creation. This needs to be done last to all other client work.
              */
-            peer_manager_.Announce(ToPeeringTrack({ track_namespace, {} }), moq::fabric::Announcement::kNamespace);
+            peer_manager_.Announce(ToPeeringTrack({ track_namespace, {} }),
+                                   moq::fabric::Announcement::kNamespace,
+                                   moq::fabric::Encoding::kMoqt18);
         }
 
         NotifySubscribeNamespaces(track_namespace, connection_handle, false);
@@ -763,7 +765,8 @@ namespace laps {
 
     void ClientManager::AnnounceLocalTrack(const quicr::FullTrackName& track_full_name)
     {
-        peer_manager_.Announce(ToPeeringTrack(track_full_name), moq::fabric::Announcement::kTrack);
+        peer_manager_.Announce(
+          ToPeeringTrack(track_full_name), moq::fabric::Announcement::kTrack, moq::fabric::Encoding::kMoqt18);
     }
 
     void ClientManager::EraseSubscribeLocked(std::uint64_t connection_handle,
@@ -1533,7 +1536,8 @@ namespace laps {
              */
             lock.unlock();
             peer_manager_.Announce(ToPeeringTrack(publish_attributes.track_full_name),
-                                   moq::fabric::Announcement::kTrack);
+                                   moq::fabric::Announcement::kTrack,
+                                   moq::fabric::Encoding::kMoqt18);
             lock.lock();
         }
 
@@ -2697,7 +2701,9 @@ namespace laps {
         RemoveOrPausePublisherSubscribe(quicr_hash);
     }
 
-    void ClientManager::OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn)
+    void ClientManager::OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space,
+                                        moq::fabric::Encoding /*encoding*/,
+                                        bool withdrawn)
     {
         std::lock_guard _(state_.state_mutex);
 
@@ -2710,7 +2716,9 @@ namespace laps {
         }
     }
 
-    void ClientManager::OnPeerTrack(const moq::fabric::TrackName& name, bool withdrawn)
+    void ClientManager::OnPeerTrack(const moq::fabric::TrackName& name,
+                                    moq::fabric::Encoding /*encoding*/,
+                                    bool withdrawn)
     {
         const auto track_full_name = ToQuicrTrack(name);
         const auto track_hash = quicr::TrackHash(track_full_name).track_fullname_hash;

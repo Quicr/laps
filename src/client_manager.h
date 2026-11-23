@@ -276,9 +276,12 @@ namespace laps {
 
         void OnPeerUnsubscribe(std::uint64_t track_hash, bool subscribers_remain) override;
 
-        void OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space, bool withdrawn) override;
+        void OnPeerNamespace(const std::vector<std::vector<uint8_t>>& name_space,
+                             moq::fabric::Encoding encoding,
+                             bool withdrawn) override;
 
-        void OnPeerTrack(const moq::fabric::TrackName& name, bool withdrawn) override;
+        void OnPeerTrack(const moq::fabric::TrackName& name, moq::fabric::Encoding encoding, bool withdrawn)
+          override;
 
         void OnPeerData(std::uint64_t track_hash,
                         bool is_new_stream,
