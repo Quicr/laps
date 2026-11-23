@@ -368,8 +368,7 @@ namespace laps {
           const quicr::FullTrackName& track_full_name,
           const quicr::JoiningFetchAttributes& attributes) override;
 
-        quicr::Reply<void, quicr::FetchErrorCode> FetchCancelReceived(const std::shared_ptr<quicr::Session>& session,
-                                                                      std::uint64_t request_id) override;
+        void FetchCancelReceived(const std::shared_ptr<quicr::Session>& session, std::uint64_t request_id) override;
 
         // -- quicr::SessionManager::Callbacks ------------------------------------------------------
 

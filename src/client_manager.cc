@@ -2520,17 +2520,13 @@ namespace laps {
                              { largest_location->group, std::nullopt });
     }
 
-    quicr::Reply<void, quicr::FetchErrorCode> ClientManager::FetchCancelReceived(
-      const std::shared_ptr<quicr::Session>& session,
-      uint64_t request_id)
+    void ClientManager::FetchCancelReceived(const std::shared_ptr<quicr::Session>& session, uint64_t request_id)
     {
         const auto connection_handle = ConnectionHandle(session);
         SPDLOG_INFO("Canceling fetch for connection_handle: {} request_id: {}", connection_handle, request_id);
 
         if (stop_fetch_.count({ connection_handle, request_id }) == 0)
             stop_fetch_[{ connection_handle, request_id }] = true;
-
-        return {};
     }
 
     bool ClientManager::NotifyPeeringSubscribe(const quicr::FullTrackName& track_full_name,
