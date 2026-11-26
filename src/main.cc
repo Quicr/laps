@@ -10,12 +10,8 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
-#include "client_manager.h"
+#include "relay.h"
 #include "signal_handler.h"
-#include "state.h"
-#include <moq/fabric/peer_manager.h>
-
-#include <quicr/session.h>
 
 using TrackNamespaceHash = uint64_t;
 using TrackNameHash = uint64_t;
@@ -27,14 +23,11 @@ using namespace laps;
  * Main program
  * -------------------------------------------------------------------------------------------------
  */
-quicr::ServerConfig
+void
 InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
 {
-    quicr::ServerConfig config;
-
-    std::string qlog_path;
     if (cli_opts.count("qlog")) {
-        qlog_path = cli_opts["qlog"].as<std::string>();
+        cfg.qlog_path_ = cli_opts["qlog"].as<std::string>();
     }
 
     if (cli_opts.count("debug") && cli_opts["debug"].as<bool>() == true) {
@@ -115,21 +108,9 @@ InitConfig(cxxopts::ParseResult& cli_opts, Config& cfg)
         cfg.cache_key = cli_opts["cache_key"].as<std::uint64_t>();
     }
 
-    config.endpoint_id = cfg.relay_id_;
-    config.server_bind_ip = cli_opts["bind_ip"].as<std::string>();
-    config.server_port = cli_opts["port"].as<uint16_t>();
-
-    config.transport_config.debug = cfg.debug;
-    config.transport_config.tls_cert_filename = cfg.tls_cert_filename_;
-    config.transport_config.tls_key_filename = cfg.tls_key_filename_;
-    config.transport_config.quic_qlog_path = qlog_path;
-    config.transport_config.idle_timeout_ms = 10000;
-    config.transport_config.time_queue_rx_size = 10'000;
-    config.transport_config.time_queue_bucket_interval = 500;
-    config.transport_config.time_queue_max_duration = cfg.object_ttl_ * 2;
-    config.transport_config.max_connections = 5000;
-
-    return config;
+    cfg.bind_ip = cli_opts["bind_ip"].as<std::string>();
+    cfg.port = cli_opts["port"].as<uint16_t>();
+    cfg.cache_duration_ms = cli_opts["cache_duration"].as<size_t>();
 }
 
 int
@@ -138,7 +119,6 @@ main(int argc, char* argv[])
     int result_code = EXIT_SUCCESS;
 
     laps::Config laps_config;
-    State state;
 
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Starting LAPS Relay (version {0})", laps_config.Version());
 
@@ -191,43 +171,17 @@ main(int argc, char* argv[])
     // Lock the mutex so that main can then wait on it
     std::unique_lock<std::mutex> lock(gvars::main_mutex);
 
-    quicr::ServerConfig server_config = InitConfig(result, laps_config);
+    InitConfig(result, laps_config);
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Using metrics namespace: {}", laps_config.metrics_namespace_);
     SPDLOG_LOGGER_INFO(laps_config.logger_, "Using admin namespace prefix: {}", laps_config.admin_namespace_);
 
-    moq::fabric::Config peer_config;
-    peer_config.node_id = laps_config.relay_id_;
-    peer_config.node_type = laps_config.node_type;
-    peer_config.listen_port = laps_config.peering.listening_port;
-    peer_config.peers = laps_config.peering.peers;
-    peer_config.tls_cert_filename = laps_config.tls_cert_filename_;
-    peer_config.tls_key_filename = laps_config.tls_key_filename_;
-    peer_config.object_ttl_ms = laps_config.object_ttl_;
-    peer_config.check_interval_ms = laps_config.peering.check_interval_ms;
-    peer_config.init_queue_size = laps_config.peering.init_queue_size;
-    peer_config.debug = laps_config.debug;
-    peer_config.logger = laps_config.logger_;
-    moq::fabric::PeerManager peer_manager(peer_config);
-
     try {
-        auto server = std::make_shared<ClientManager>(
-          state, laps_config, server_config, peer_manager, result["cache_duration"].as<size_t>());
-        peer_manager.SetDelegate(server.get());
-
-        if (server->Start() != quicr::Session::Status::kReady) {
-            SPDLOG_ERROR("Server failed to start");
-            exit(-2);
-        }
+        const Relay relay(laps_config);
 
         // Wait until told to terminate
         gvars::cv.wait(lock, [&]() { return gvars::terminate; });
 
         lock.unlock();
-
-        // Stop transport before releasing external shared_ptr refs; SessionManager holds a
-        // shared_ptr back to ClientManager via callbacks and would otherwise prevent destruction.
-        server->Stop();
-        peer_manager.SetDelegate(nullptr);
     } catch (const std::invalid_argument& e) {
         std::cerr << "Invalid argument: " << e.what() << std::endl;
         result_code = EXIT_FAILURE;
