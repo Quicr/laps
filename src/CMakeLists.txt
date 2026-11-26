@@ -14,8 +14,8 @@ set_target_properties(laps_admin_codec
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS ON)
 
-add_executable(lapsRelay
-        main.cc
+add_library(laps STATIC
+        relay.cc
         config.cc
         client_manager.cc
         metrics_publisher.cc
@@ -26,7 +26,24 @@ add_executable(lapsRelay
         publish_namespace_handler.cc
 )
 
-target_link_libraries(lapsRelay PRIVATE quicr moq::fabric spdlog::spdlog laps_admin_codec)
+target_link_libraries(laps PUBLIC quicr moq::fabric spdlog::spdlog laps_admin_codec)
+target_include_directories(laps PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(laps PUBLIC SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+
+target_compile_options(laps
+        PRIVATE
+        $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
+        $<$<CXX_COMPILER_ID:MSVC>: >)
+
+set_target_properties(laps
+        PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS ON)
+
+add_executable(lapsRelay main.cc)
+
+target_link_libraries(lapsRelay PRIVATE laps)
 target_include_directories(lapsRelay PRIVATE
         ${PROJECT_SOURCE_DIR}/dependencies/oss)
 
@@ -40,8 +57,6 @@ set_target_properties(lapsRelay
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS ON)
-
-target_compile_definitions(lapsRelay PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
 add_executable(lapsAdmin admin_client.cc)
 target_link_libraries(lapsAdmin PRIVATE laps_admin_codec quicr spdlog::spdlog)

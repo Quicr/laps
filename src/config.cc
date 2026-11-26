@@ -10,7 +10,7 @@
 namespace laps {
 
     Config::Config()
-      : logger_(spdlog::stderr_color_mt("lapsRelay"))
+      : logger_(std::make_shared<spdlog::logger>("lapsRelay", std::make_shared<spdlog::sinks::stderr_color_sink_mt>()))
       , quicr_logger_(std::make_shared<SpdlogLogger>(logger_))
       , tick_service_(quicr::Clock::Create(kDefaultTickSleepDelayUs))
     {
